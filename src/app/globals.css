@@ -1,0 +1,1196 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --nav-width: 220px;
+  --radius: 0.625rem;
+  /* Black + White + Red — Day base. Same discipline inverted: white canvas,
+     near-black text, red as accent only. */
+  --background: #FAFAFA;
+  --foreground: #141414;
+  --card: oklch(1 0 0 / 0.6);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(0.99 0 0);
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.18 0 0);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.92 0 0);
+  --secondary-foreground: oklch(0.18 0 0);
+  --muted: oklch(0.94 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.88 0 0);
+  --accent-foreground: oklch(0.18 0 0);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0 0 0 / 0.1);
+  --input: oklch(0 0 0 / 0.1);
+  --ring: oklch(0.5 0 0);
+
+  --ink: #000000;
+  --brand-accent: #B91C1C;                /* deeper red for light bg contrast */
+  --brand-accent-soft: rgba(185, 28, 28, 0.08);
+  --brand-accent-border: rgba(185, 28, 28, 0.35);
+
+  /* Urgency ladder — only "act" is red */
+  --urgency-act: #B91C1C;
+  --urgency-act-soft: rgba(185, 28, 28, 0.08);
+  --urgency-decide: #B47614;
+  --urgency-decide-soft: rgba(180, 118, 20, 0.08);
+  --urgency-watch: #6B6B6B;
+  --urgency-watch-soft: rgba(107, 107, 107, 0.08);
+
+  /* Depth ladder — 4 levels from background up */
+  --depth-0: transparent;                                    /* page bg */
+  --depth-1: oklch(0 0 0 / 0.025);                          /* section container */
+  --depth-2: oklch(0 0 0 / 0.045);                          /* card */
+  --depth-3: oklch(0 0 0 / 0.07);                           /* elevated card */
+
+  /* Category temperature accents — neutral hints, NOT loud colors */
+  --cat-market: oklch(0.55 0.06 240 / 0.45);                /* cool blue-gray */
+  --cat-regulatory: oklch(0.55 0.05 280 / 0.45);            /* cool purple-gray */
+  --cat-macro: oklch(0.55 0.06 60 / 0.45);                  /* warm amber-gray */
+  --cat-competitors: oklch(0.55 0.06 160 / 0.45);           /* cool teal-gray */
+  --cat-market-soft: oklch(0.55 0.06 240 / 0.05);
+  --cat-regulatory-soft: oklch(0.55 0.05 280 / 0.05);
+  --cat-macro-soft: oklch(0.55 0.06 60 / 0.05);
+  --cat-competitors-soft: oklch(0.55 0.06 160 / 0.05);
+
+  --metric-bg: #FFFFFF;
+  --metric-glow: none;
+
+  --glass-bg: #FFFFFF;
+  --glass-border: rgba(0, 0, 0, 0.07);
+  --glass-highlight: none;
+  --glass-sheen: none;
+  --shadow-glass: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-glow: none;
+
+  /* Flat ground — no ambient gradients (see §7) */
+  --tertiary-foreground: #6B6B6B;
+
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.984 0.003 247.858);
+  --sidebar-foreground: oklch(0.129 0.042 264.695);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
+}
+
+.dark {
+  /* ── Black + White + Red accent system ─────────────────────────────
+     Black = structure and seriousness. White = clarity and readability.
+     Red = focus, urgency, and brand punctuation ONLY.
+
+     Red is NOT the emotional temperature of the product. It is restricted to:
+     active/selected state, true urgency, small indicators, the primary CTA,
+     and the brand mark. It must never appear on body text, dividers, large
+     background areas, or on many cards at once.
+
+     This supersedes the earlier verbatim port of glassmorphism_feed_ui.html
+     (a red-dominant social feed). Deliberate reversal, not drift. */
+
+  /* ── Values from vantage-dashboard-concept.html ─────────────────────
+     NOTE: this concept REINSTATES treatments the earlier "minimal luxury"
+     prompt removed — backdrop blur, larger radii, glowing status dots, a red
+     radial bloom on the priority card, and a brighter #ff3b30 red. The
+     concept is the newer, more concrete artefact, so it wins. Do not
+     silently re-flatten these; raise it as a question if it conflicts. */
+
+  /* Foundation */
+  --background: #090a0d;                 /* blue-black, not warm */
+  --foreground: #f1f0ef;
+  --card: rgba(23, 25, 31, 0.68);        /* concept --panel */
+  --card-foreground: #f1f0ef;
+  --popover: #171920;
+  --popover-foreground: #f1f0ef;
+  --primary: #f1f0ef;
+  --primary-foreground: #090a0d;
+  --secondary: rgba(39, 42, 50, 0.55);   /* concept --glass */
+  --secondary-foreground: #f1f0ef;
+  --muted: rgba(39, 42, 50, 0.55);
+  --muted-foreground: rgba(255, 255, 255, 0.58);   /* concept --soft */
+  --tertiary-foreground: #85888e;
+  --accent: rgba(255, 255, 255, 0.10);
+  --accent-foreground: #ffffff;
+
+  --destructive: #ff3b30;
+  --destructive-foreground: #ffffff;
+
+  /* Borders / dividers — concept --line. Notably stronger than the previous
+     0.07: at this alpha the card edges actually define the layout grid. */
+  --border: rgba(255, 255, 255, 0.13);
+  --input: rgba(255, 255, 255, 0.13);
+  --ring: rgba(136, 188, 255, 0.55);
+
+  /* --ink drives surf-1..4 / hairline / ink-bar via color-mix. Pure white so
+     every derived surface and divider stays neutral. Never tint this red. */
+  --ink: #FFFFFF;
+
+  --brand-accent: #ff3b30;               /* concept --red */
+  --brand-accent-hover: #ff4338;
+  --brand-accent-soft: rgba(255, 59, 48, 0.13);
+  --brand-accent-border: rgba(255, 59, 48, 0.55);
+  --brand-accent-grad: linear-gradient(110deg, #ff4338, #c91936);
+
+  /* Focus blue + warning amber — the concept's two non-red accents */
+  --focus-blue: #88bcff;
+  --warn-amber: #f5b83d;
+
+  /* Grid ground — tokens .grid-ground depends on (were referenced before
+     they existed; the utility silently rendered nothing until now) */
+  --grid-line: rgba(255, 255, 255, 0.028);
+  --grid-size: 22px;
+
+  /* Depth ladder */
+  --depth-0: transparent;
+  --depth-1: rgba(255, 255, 255, 0.025);
+  --depth-2: rgba(255, 255, 255, 0.05);
+  --depth-3: rgba(255, 255, 255, 0.10);
+
+  /* Urgency ladder — act red, decide amber, watch neutral */
+  --urgency-act: #ff3b30;
+  --urgency-act-soft: rgba(255, 59, 48, 0.13);
+  --urgency-decide: #f5b83d;
+  --urgency-decide-soft: rgba(245, 184, 61, 0.13);
+  --urgency-watch: #9b9da2;
+  --urgency-watch-soft: rgba(155, 157, 162, 0.13);
+
+  /* Category temperature accents — neutral hints */
+  --cat-market: oklch(0.65 0.08 240 / 0.5);
+  --cat-regulatory: oklch(0.65 0.07 280 / 0.5);
+  --cat-macro: oklch(0.7 0.1 60 / 0.5);
+  --cat-competitors: oklch(0.65 0.08 160 / 0.5);
+  --cat-market-soft: oklch(0.65 0.08 240 / 0.06);
+  --cat-regulatory-soft: oklch(0.65 0.07 280 / 0.06);
+  --cat-macro-soft: oklch(0.7 0.1 60 / 0.06);
+  --cat-competitors-soft: oklch(0.65 0.08 160 / 0.06);
+
+  /* Surfaces — the concept's .glass-card: gradient fill, inset top
+     highlight, real backdrop blur, deep soft shadow. */
+  --metric-bg: linear-gradient(145deg, rgba(35, 37, 44, 0.72), rgba(16, 17, 21, 0.72));
+  --metric-glow: inset 0 1px rgba(255, 255, 255, 0.12);
+
+  --glass-bg: linear-gradient(145deg, rgba(35, 37, 44, 0.72), rgba(16, 17, 21, 0.72));
+  --glass-border: rgba(255, 255, 255, 0.13);
+  --glass-highlight: none;
+  --glass-sheen: none;
+  --shadow-glass: inset 0 1px rgba(255, 255, 255, 0.12), 0 22px 55px rgba(0, 0, 0, 0.18);
+  --shadow-glow: 0 11px 22px rgba(255, 59, 48, 0.25);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+      "SF Pro Text", "Segoe UI", sans-serif;
+    /* Stops iOS Safari inflating text in landscape */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    /* Flat ground — no ambient gradients. Depth comes from surface elevation
+       and spacing, not from lighting effects. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.55;
+    /* Prevents the whole page rubber-banding behind the fixed bottom nav */
+    overscroll-behavior-y: none;
+  }
+
+  /* Touch behaviour: kill the grey flash on tap (we have real active states)
+     and let the browser optimise for vertical panning. */
+  @media (hover: none) and (pointer: coarse) {
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, a[href], [role="button"] {
+      touch-action: manipulation;   /* removes the 300ms double-tap delay */
+    }
+  }
+
+  /* Scrollable panes get momentum scrolling and don't chain their scroll to
+     the page behind them. */
+  .scroll-pane {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Horizontal counterpart — for tab/chip rows that would otherwise wrap to
+     several lines on a phone and push the content below them down. Scrolls
+     instead of wrapping; scrollbar hidden since the row itself (plus the
+     natural edge-of-content cutoff) is the affordance. */
+  .scroll-x-pane {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .scroll-x-pane::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* iOS zooms the viewport when focusing an input under 16px. Setting the
+     font-size to 16px on touch devices is the only reliable fix. */
+  @media (hover: none) and (pointer: coarse) {
+    input, textarea, select {
+      font-size: 16px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* The dashboard shell keeps page wrappers transparent so the single page
+     ground shows through instead of each page stacking its own opaque layer.
+     Harmless now that the ground is flat, but kept so surface colour stays
+     defined in exactly one place. */
+  /* ── Editorial layer ──────────────────────────────────────────────────
+     The VERGE-style direction: hairline grid ground, red rule-marks before
+     labels, oversized two-tone display type, one solid red CTA. These are
+     primitives — pages compose them; nothing here is page-specific. */
+
+  /* Concept `.canvas` ground: two ambient radials (cool blue top-right, warm
+     red bottom-left) over the base, plus a fine DOT grid — not lines. */
+  .grid-ground {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 76% 13%, rgba(53, 76, 114, 0.2), transparent 25%),
+      radial-gradient(circle at 18% 75%, rgba(140, 24, 24, 0.12), transparent 30%),
+      var(--background);
+  }
+  .grid-ground::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.18;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.6) 0.55px, transparent 0.6px);
+    background-size: var(--grid-size) var(--grid-size);
+  }
+
+  /* Red rule + tracked uppercase label. The signature mark of this direction.
+     Use for section eyebrows: "— EARLY ACCESS", "— PRIVATE ACCESS / 2026". */
+  .rule-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.875rem;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .rule-label::before {
+    content: "";
+    width: 2.25rem;
+    height: 1px;
+    background: var(--brand-accent);
+    flex-shrink: 0;
+  }
+  /* Variant with the rule on the right, for right-aligned headers */
+  .rule-label-end::before { content: none; }
+  .rule-label-end::after {
+    content: "";
+    width: 2.25rem;
+    height: 1px;
+    background: var(--brand-accent);
+    flex-shrink: 0;
+    order: -1;
+  }
+
+  /* Oversized editorial headline. Tight leading is what makes big type read
+     as editorial rather than merely large. */
+  .display-hero {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.035em;
+    line-height: 0.92;
+    font-size: clamp(2.75rem, 7vw, 5.5rem);
+  }
+  /* Second clause of a headline, dimmed — the "a time." in the reference.
+     Carries hierarchy through value, not colour. */
+  .display-dim { color: var(--tertiary-foreground); }
+
+  /* Corner meta: mono, tracked, quiet. Step counters, timestamps, footers. */
+  .meta-mark {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--tertiary-foreground);
+  }
+
+  /* Solid red CTA — the single strong action per view. */
+  .btn-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    background: var(--brand-accent);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 0.625rem;
+    padding: 0.9rem 1.25rem;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background-color 0.18s ease;
+  }
+  .btn-cta:hover { background: var(--brand-accent-hover); }
+
+  /* Status dot with a glow — the concept uses this for the leading/most
+     urgent item only, which is what keeps the glow meaningful. */
+  .dot-glow-act {
+    background: var(--brand-accent);
+    box-shadow: 0 0 14px var(--brand-accent);
+  }
+
+  /* Red radial bloom, bottom-right of the priority card (concept
+     `.priority:after`). One card per view — never repeat it. */
+  .bloom-corner { position: relative; overflow: hidden; }
+  .bloom-corner::after {
+    content: "";
+    position: absolute;
+    right: -155px;
+    bottom: -270px;
+    width: 420px;
+    height: 420px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 59, 48, 0.18), transparent 66%);
+    pointer-events: none;
+  }
+
+  [data-app-shell] .bg-background {
+    background-color: transparent;
+  }
+
+  /* ── Typographic scale (Swiss hierarchy) ──────────────────────────────
+     Explicit steps, applied globally so every page inherits the same
+     hierarchy instead of each file reinventing sizes:
+       Card titles      17–19px  Medium/Semibold  → text-[15px] → 18px
+       Body             15px     Regular, 1.5–1.6  → text-sm / text-[13px] / text-[14px] → 15px
+       Meta (dates,
+       sources, labels) 13px     Regular, lower contrast → text-[11px] / text-[12px] → 13px
+     Eyebrows (text-[10px], uppercase tracked labels) are a distinct
+     micro-label category the scale above doesn't cover — kept small but
+     legible, with letter-spacing added back since that's what makes
+     uppercase small caps readable at this size.
+
+     Raising the floor here fixes every page at once rather than editing the
+     same arbitrary values across 13 files (and having new pages reintroduce
+     them). */
+  [data-app-shell] .text-\[10px\] { font-size: 11.5px; letter-spacing: 0.10em; }
+  [data-app-shell] .text-\[11px\] { font-size: 13px; }
+  [data-app-shell] .text-\[12px\] { font-size: 13px; }
+  [data-app-shell] .text-xs      { font-size: 13px; }
+  [data-app-shell] .text-\[13px\] { font-size: 15px; line-height: 1.6; }
+  [data-app-shell] .text-\[14px\] { font-size: 15px; line-height: 1.6; }
+  [data-app-shell] .text-sm      { font-size: 15px; line-height: 1.6; }
+  [data-app-shell] .text-\[15px\] { font-size: 18px; }
+
+  /* Meta/timestamp rows read as tertiary rather than shrinking further */
+  [data-app-shell] .font-mono { letter-spacing: 0.02em; }
+
+  /* ── Mobile ──────────────────────────────────────────────────────────
+     The pages were written desktop-first with fixed `px-8 py-10` shells and
+     `p-10` panels. On a 375px viewport that spends ~17% of the width on
+     padding. Scaled down here rather than editing 13 files, on the same
+     principle as the type floor. */
+  @media (max-width: 767px) {
+    [data-app-shell] .px-8 { padding-left: 1rem; padding-right: 1rem; }
+    [data-app-shell] .px-6 { padding-left: 1rem; padding-right: 1rem; }
+    [data-app-shell] .py-10 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    [data-app-shell] .p-10 { padding: 1.25rem; }
+    [data-app-shell] .p-8 { padding: 1.25rem; }
+    [data-app-shell] .p-7 { padding: 1.15rem; }
+    [data-app-shell] .p-6 { padding: 1.15rem; }
+
+    /* Fixed-width children (search fields, list rails) must not force a
+       horizontal scroll on a narrow screen. */
+    [data-app-shell] .w-64 { width: 100%; }
+
+    /* Touch targets: 44px is the accepted minimum. Many controls here are
+       `py-1.5` pills sized for a cursor. */
+    [data-app-shell] button,
+    [data-app-shell] a[href],
+    [data-app-shell] [role="button"] {
+      min-height: 44px;
+    }
+    /* …but not inline text links inside paragraphs, which would get absurd
+       line spacing, nor the bottom-bar tabs which set their own height. */
+    [data-app-shell] p a[href],
+    [data-app-shell] nav a[href] {
+      min-height: 0;
+    }
+
+    /* Display type set for a 1400px canvas is oversized on a phone. */
+    [data-app-shell] .display-font { letter-spacing: -0.01em; }
+  }
+
+  /* Concept .glass-card — 25px radius, gradient fill, blur(25px). */
+  .glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border-radius: 25px;
+    position: relative;
+  }
+  /* Highlight/sheen overlays removed — §7 bans effects that add texture
+     without adding information. Kept as no-op selectors so the many
+     `glass-sheen` usages across pages don't need touching. */
+  .glass-sheen { position: relative; }
+  /* Active/selected panel — a thin accent border only. Never a glow. */
+  .glass-glow {
+    border: 1px solid var(--border);
+  }
+
+  /* Selected card — thin red left bar, the system's preferred active state. */
+  .accent-bar-left {
+    box-shadow: inset 3px 0 0 var(--brand-accent);
+  }
+
+  /* The single most important card on a screen (Priority Decision on
+     Command). Elevation comes from background tone and a slightly stronger
+     border — never a glow or shadow trick (§4: hierarchy through surface,
+     not effects). Sits at the lighter end of the "card surface" range
+     (#141414–#181818) while every other card stays at the darker end. */
+  .card-elevated {
+    background: #181818;
+    border-color: color-mix(in oklab, var(--ink) 12%, transparent);
+  }
+
+  /* Pill / segmented-control surface. Neutral by default. */
+  .glass-pill {
+    background: var(--depth-2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--glass-border);
+    border-radius: 9999px;
+  }
+
+  /* Selected segment/chip — concept `.filter.active`: soft red wash, red
+     border, white text. */
+  .glass-pill-active {
+    background: var(--brand-accent-soft);
+    border: 1px solid var(--brand-accent-border);
+    color: #ffffff;
+  }
+
+  /* Icon hover — brightens to white. Red is reserved for the ACTIVE icon,
+     so hover must not use it ("avoid red as the default hover state"). */
+  .icon-hover {
+    transition: color 0.2s ease, background-color 0.2s ease;
+  }
+  .icon-hover:hover {
+    color: var(--foreground);
+  }
+
+  /* Active sidebar icon — one of the sanctioned uses of red. */
+  .icon-active {
+    color: var(--brand-accent);
+  }
+
+  /* Nested surface inside a panel */
+  .bg-inner {
+    background: var(--depth-1);
+  }
+
+  /* ── Urgency ladder ────────────────────────────────────────────
+     ONLY "act" is red. This is the discipline that keeps red meaningful —
+     if every card is red, none of them are urgent. */
+  .urgency-act {
+    color: var(--urgency-act);
+    background-color: var(--urgency-act-soft);
+    border-color: var(--urgency-act);
+  }
+  .urgency-decide {
+    color: var(--urgency-decide);
+    background-color: var(--urgency-decide-soft);
+    border-color: var(--urgency-decide);
+  }
+  .urgency-watch {
+    color: var(--urgency-watch);
+    background-color: var(--urgency-watch-soft);
+    border-color: var(--urgency-watch);
+  }
+  /* Small status dot — the "small indicator" sanctioned use */
+  .urgency-dot-act    { background-color: var(--urgency-act); }
+  .urgency-dot-decide { background-color: var(--urgency-decide); }
+  .urgency-dot-watch  { background-color: var(--urgency-watch); }
+
+  /* Primary CTA — the one clear action. Concept .primary: red gradient,
+     15px radius, lift + red shadow on hover. */
+  .btn-primary {
+    background: var(--brand-accent-grad);
+    color: #FFFFFF;
+    border: 0;
+    border-radius: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Secondary CTA — light outline, no red. */
+  .btn-secondary {
+    background-color: transparent;
+    color: var(--foreground);
+    border: 1px solid color-mix(in oklab, var(--ink) 22%, transparent);
+    transition: background-color 0.2s ease;
+  }
+  .btn-secondary:hover {
+    background-color: var(--depth-2);
+  }
+
+  .glass-sheen {
+    position: relative;
+  }
+  .glass-sheen::after { content: none; }
+  /* Large titles: Medium/Semibold with controlled tracking. The previous
+     -0.04em was decorative-tight; minimal luxury wants restraint, and
+     hierarchy must read without relying on colour or extreme tracking. */
+  .display-font {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "SF Pro Text", sans-serif;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  /* Tertiary / meta text — smaller, lower contrast */
+  .text-tertiary { color: var(--tertiary-foreground); }
+
+  /* Active tab indicator — a 2px red bar, not a filled background */
+  .tab-active-bar {
+    position: relative;
+  }
+  .tab-active-bar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--brand-accent);
+    border-radius: 2px;
+  }
+  .surf-1 { background-color: color-mix(in oklab, var(--ink) 3%, transparent); }
+  .surf-2 { background-color: color-mix(in oklab, var(--ink) 5%, transparent); }
+  .surf-3 { background-color: color-mix(in oklab, var(--ink) 8%, transparent); }
+  .surf-4 { background-color: color-mix(in oklab, var(--ink) 12%, transparent); }
+  .surf-hover:hover { background-color: color-mix(in oklab, var(--ink) 10%, transparent); }
+  .hairline { border-color: color-mix(in oklab, var(--ink) 10%, transparent); }
+  .hairline-strong { border-color: color-mix(in oklab, var(--ink) 18%, transparent); }
+  .inset-sheen { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--ink) 18%, transparent); }
+  .ink-grad {
+    background-image: linear-gradient(135deg,
+      color-mix(in oklab, var(--ink) 28%, transparent),
+      color-mix(in oklab, var(--ink) 5%, transparent));
+  }
+  .ink-bar {
+    background-image: linear-gradient(90deg,
+      color-mix(in oklab, var(--ink) 75%, transparent),
+      color-mix(in oklab, var(--ink) 25%, transparent));
+  }
+
+  /* Brand accent — the dark red used sparingly */
+  .brand-accent-text {
+    color: var(--brand-accent);
+  }
+  .brand-accent-bg-soft {
+    background-color: var(--brand-accent-soft);
+  }
+  .brand-accent-border {
+    border-color: var(--brand-accent-border);
+  }
+
+  /* Analysed signal card. Was a red glow + red tint; under the new system
+     that violated "avoid large glowing red borders on many cards at once"
+     (an active user has many analysed signals). Now: neutral elevation with
+     a thin red left bar as the marker. */
+  .signal-analysed {
+    background-color: var(--depth-2);
+    border-color: color-mix(in oklab, var(--ink) 12%, transparent);
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.35),
+      inset 3px 0 0 var(--brand-accent);
+    transition: box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+
+  .signal-analysed:hover {
+    background-color: var(--depth-3);
+    box-shadow:
+      0 6px 20px rgba(0, 0, 0, 0.45),
+      inset 3px 0 0 var(--brand-accent);
+  }
+
+  /* Completed-state card — accepted strategies, acknowledged blind spots,
+     resolved decisions. Same restrained treatment: completion is not
+     urgency, so it gets a neutral surface, not a red one. */
+  .card-completed {
+    background-color: var(--depth-2);
+    border-color: color-mix(in oklab, var(--ink) 12%, transparent);
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.35),
+      inset 3px 0 0 color-mix(in oklab, var(--ink) 30%, transparent);
+    transition: box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+  .card-completed:hover {
+    background-color: var(--depth-3);
+    box-shadow:
+      0 6px 20px rgba(0, 0, 0, 0.45),
+      inset 3px 0 0 color-mix(in oklab, var(--ink) 30%, transparent);
+  }
+
+  /* Status badge — neutral. "Accepted"/"Resolved" are not urgent states;
+     red here would dilute the urgency ladder. */
+  .badge-completed {
+    background-color: var(--depth-2);
+    border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
+    color: var(--muted-foreground);
+  }
+
+  /* Depth ladder utilities */
+  .depth-1 { background-color: var(--depth-1); }
+  .depth-2 { background-color: var(--depth-2); }
+  .depth-3 { background-color: var(--depth-3); }
+
+  /* Category accent — applied as a 1px left border on cards */
+  .cat-accent-market {
+    box-shadow: inset 2px 0 0 var(--cat-market);
+  }
+  .cat-accent-regulatory {
+    box-shadow: inset 2px 0 0 var(--cat-regulatory);
+  }
+  .cat-accent-macro {
+    box-shadow: inset 2px 0 0 var(--cat-macro);
+  }
+  .cat-accent-competitors {
+    box-shadow: inset 2px 0 0 var(--cat-competitors);
+  }
+
+  /* Category badge tints — used on the small category pill */
+  .cat-badge-market {
+    background-color: var(--cat-market-soft);
+    border-color: var(--cat-market);
+    color: color-mix(in oklab, var(--cat-market) 90%, var(--foreground));
+  }
+  .cat-badge-regulatory {
+    background-color: var(--cat-regulatory-soft);
+    border-color: var(--cat-regulatory);
+    color: color-mix(in oklab, var(--cat-regulatory) 90%, var(--foreground));
+  }
+  .cat-badge-macro {
+    background-color: var(--cat-macro-soft);
+    border-color: var(--cat-macro);
+    color: color-mix(in oklab, var(--cat-macro) 90%, var(--foreground));
+  }
+  .cat-badge-competitors {
+    background-color: var(--cat-competitors-soft);
+    border-color: var(--cat-competitors);
+    color: color-mix(in oklab, var(--cat-competitors) 90%, var(--foreground));
+  }
+
+  /* Metric card — premium treatment for numeric/stat blocks */
+  .metric-card {
+    background: var(--metric-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--metric-glow), var(--shadow-glass);
+    border-radius: 1rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .metric-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+      transparent,
+      color-mix(in oklab, var(--ink) 25%, transparent),
+      transparent
+    );
+    pointer-events: none;
+  }
+  .metric-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--metric-glow), 0 16px 48px color-mix(in oklab, var(--ink) 10%, transparent);
+  }
+
+  /* Section container — sits below cards in the depth ladder */
+  .section-container {
+    background-color: var(--depth-1);
+    border: 1px solid var(--glass-border);
+    border-radius: 1.25rem;
+    padding: 1.5rem;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     Concept-ported structural classes (cx- prefix) — a near-verbatim
+     port of design/vantage-dashboard-concept.html's own CSS, scoped
+     under one consistent prefix so nothing collides with a Tailwind
+     utility (`.filter` in particular is a real Tailwind utility).
+     Colours/values are typed in from the concept file directly; if you
+     need to change one, check the concept first — several of these
+     greys are deliberately distinct from --muted-foreground etc., not
+     a token-system oversight. ══════════════════════════════════════ */
+
+  .cx-topbar-brand {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: -0.09em;
+    color: var(--foreground);
+  }
+  .cx-topbar-brand b {
+    color: var(--brand-accent);
+    font-size: 25px;
+    font-style: normal;
+    display: inline-block;
+    transform: skew(-14deg);
+    margin-right: 1px;
+  }
+  .cx-topbar-status {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    font-weight: bold;
+  }
+  .cx-topbar-status i {
+    font-style: normal;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #8bedaf;
+    box-shadow: 0 0 14px #8bedaf;
+    flex-shrink: 0;
+  }
+
+  /* Concept `.side` — the nav rail as a real grid column, not a
+     floating pill. */
+  .cx-nav-rail {
+    border: 1px solid var(--border);
+    background: linear-gradient(165deg, rgba(46, 49, 57, 0.38), rgba(10, 11, 14, 0.65));
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+  }
+  .cx-nav-btn {
+    color: #9da0a7;
+    transition: color 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease;
+  }
+  .cx-nav-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.2);
+  }
+  .cx-nav-btn.cx-active {
+    color: var(--brand-accent);
+    background: linear-gradient(145deg, rgba(255, 59, 48, 0.22), rgba(255, 59, 48, 0.04));
+  }
+
+  /* Concept `.eyebrow` — plain tracked micro-label, NO rule mark. This
+     is distinct from `.rule-label` (which prefixes a red dash) used
+     elsewhere in the app; the concept never draws that dash, so Command
+     and Signals use this instead to stay exact. */
+  .cx-eyebrow {
+    color: #a5a8ae;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+  }
+  .cx-headline h1 {
+    font-size: clamp(38px, 4.2vw, 64px);
+    letter-spacing: -0.075em;
+    line-height: 0.92;
+    margin: 0;
+    font-weight: 500;
+  }
+  .cx-headline-sub {
+    margin: 10px 0 0;
+    color: #a7a9ae;
+    font-size: 15px;
+  }
+  .cx-live-chip {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 10px 13px;
+    color: #babcc1;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+  }
+  .cx-live-chip b {
+    color: var(--brand-accent);
+    font-size: 17px;
+    font-style: normal;
+    line-height: 0;
+    vertical-align: -1px;
+    margin-right: 5px;
+  }
+
+  .cx-tag {
+    border: 1px solid var(--border);
+    color: #b9bbc1;
+    border-radius: 99px;
+    padding: 6px 10px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    font-weight: bold;
+  }
+  .cx-priority h2 {
+    font-size: clamp(31px, 3.6vw, 55px);
+    line-height: 0.98;
+    letter-spacing: -0.067em;
+    font-weight: 500;
+    max-width: 770px;
+    margin: 50px 0;
+  }
+  .cx-decision-line {
+    display: flex;
+    gap: 0;
+    max-width: 500px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    padding-top: 11px;
+  }
+  .cx-decision-line span {
+    flex: 1;
+    color: #8f9299;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    position: relative;
+  }
+  .cx-decision-line span::before {
+    content: "";
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    position: absolute;
+    top: -17px;
+    left: 0;
+    background: #a0a2a7;
+  }
+  .cx-decision-line span:first-child::before {
+    background: var(--brand-accent);
+    box-shadow: 0 0 17px var(--brand-accent);
+  }
+
+  .cx-pulse h3,
+  .cx-context h3,
+  .cx-signals-card h3 {
+    font-size: 22px;
+    letter-spacing: -0.045em;
+    margin: 16px 0 22px;
+    font-weight: 500;
+  }
+  .cx-pulse ul { list-style: none; margin: 0; padding: 0; }
+  .cx-pulse li {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    color: #d6d6d7;
+  }
+  .cx-pulse li:last-child { border-bottom: 0; }
+  .cx-pulse li::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #9b9da2;
+    flex-shrink: 0;
+  }
+  .cx-pulse li:first-child::before {
+    background: var(--brand-accent);
+    box-shadow: 0 0 10px var(--brand-accent);
+  }
+  .cx-pulse li small {
+    margin-left: auto;
+    color: #a3a5aa;
+    font: 10px ui-monospace, monospace;
+  }
+
+  /* Explicit class, not a `.cx-signals-card p` descendant rule — a bare
+     descendant selector here would out-specificity the other `<p>`s that
+     share this card (title, meta line) and silently override their colour,
+     the same trap `.cx-eyebrow`/`.cx-headline-sub` are written to avoid. */
+  .cx-body-copy { color: #a7a9af; max-width: 880px; line-height: 1.55; }
+  .cx-link {
+    border: 0;
+    background: none;
+    color: #c7c9cf;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    font-weight: bold;
+  }
+  .cx-link b { color: var(--brand-accent); font-size: 15px; font-style: normal; }
+  .cx-focus {
+    padding: 0 0 19px;
+    border-bottom: 1px solid var(--border);
+    color: #b5b7bc;
+  }
+  .cx-metric {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 19px;
+    color: #9fa1a7;
+  }
+  .cx-metric strong { color: #fff; font-size: 17px; }
+
+  .cx-filter {
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.025);
+    color: #a8abb1;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    font-weight: bold;
+    transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  }
+  .cx-filter.cx-active {
+    background: rgba(255, 59, 48, 0.13);
+    color: #fff;
+    border-color: rgba(255, 59, 48, 0.55);
+  }
+  .cx-search {
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 11px 14px;
+    border-radius: 14px;
+    color: #fff;
+    outline: 0;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .cx-search:focus {
+    border-color: rgba(136, 188, 255, 0.8);
+    box-shadow: 0 0 0 3px rgba(136, 188, 255, 0.12);
+  }
+
+  .cx-signal {
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: linear-gradient(110deg, rgba(34, 36, 42, 0.64), rgba(18, 19, 23, 0.58));
+    transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .cx-signal:hover,
+  .cx-signal.cx-selected {
+    transform: translateX(5px);
+    border-color: rgba(136, 188, 255, 0.5);
+    background: linear-gradient(110deg, rgba(49, 54, 67, 0.78), rgba(20, 22, 27, 0.67));
+  }
+  .cx-signal.cx-selected::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(var(--focus-blue), var(--brand-accent));
+    box-shadow: 0 0 18px var(--focus-blue);
+  }
+  .cx-signal-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: #989ba2;
+    font: 10px ui-monospace, monospace;
+    text-transform: uppercase;
+  }
+  .cx-signal-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-accent); flex-shrink: 0; }
+  .cx-signal-type {
+    border: 1px solid rgba(136, 188, 255, 0.4);
+    border-radius: 99px;
+    color: var(--focus-blue);
+    padding: 4px 7px;
+    font: bold 9px Arial, sans-serif;
+    letter-spacing: 0.08em;
+  }
+  .cx-signal h3 { font-size: 18px; letter-spacing: -0.035em; margin: 13px 0 7px; font-weight: 500; }
+  .cx-signal p { margin: 0; color: #a8abb2; line-height: 1.48; max-width: 1000px; }
+  .cx-signal footer {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 13px;
+    color: #85888e;
+    font: 10px ui-monospace, monospace;
+  }
+  .cx-signal-source { padding: 4px 7px; border: 1px solid var(--border); border-radius: 99px; }
+
+  /* Concept `.command-bar` — fixed, bottom-center, ask-Vantage input. */
+  .cx-command-bar {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: linear-gradient(110deg, rgba(42, 44, 50, 0.83), rgba(24, 26, 31, 0.82));
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.2), 0 21px 55px rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(28px) saturate(145%);
+    -webkit-backdrop-filter: blur(28px) saturate(145%);
+  }
+  .cx-ask {
+    border: 0;
+    background: transparent;
+    color: #eef0f4;
+    outline: 0;
+  }
+  .cx-ask::placeholder { color: #9799a1; }
+  .cx-bar-btn {
+    border: 0;
+    color: #f4f4f5;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    transition: filter 0.18s ease;
+  }
+  .cx-bar-btn.cx-send {
+    background: linear-gradient(145deg, #ff453a, #d92445);
+  }
+  .cx-bar-btn.cx-send:hover:not(:disabled) { filter: brightness(1.13); }
+}
+
+/* ── Marketing landing tokens (additive — used by src/components/marketing) ── */
+:root {
+  --accent-glow: rgba(196, 48, 43, 0.15);
+  --accent-soft: rgba(196, 48, 43, 0.08);
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --bg-surface: #161616;
+  --bg-elevated: #111111;
+  --stroke-strong: rgba(255, 255, 255, 0.15);
+
+  /* Neon-red accent — marketing landing page only */
+  --neon-red: #ff2d2d;
+  --neon-red-50: rgba(255, 45, 45, 0.05);
+  --neon-red-soft: rgba(255, 45, 45, 0.08);
+  --neon-red-glow: 0 0 40px rgba(255, 45, 45, 0.15), 0 0 80px rgba(255, 45, 45, 0.05);
+  --neon-red-border: rgba(255, 45, 45, 0.25);
+  --neon-red-text-glow: 0 0 20px rgba(255, 45, 45, 0.3);
+}
+
+/* Serif display face for the marketing site. --font-display is set by the
+   (marketing) layout via next/font; elsewhere it falls back to Georgia. */
+.font-display {
+  font-family: var(--font-display, "Cormorant Garamond"), Georgia, serif;
+}
+
+/* ── Lenis smooth scroll (marketing pages) ── */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
+
+/* Hide the window scrollbar on marketing pages only. Scoped to html.lenis
+   (present only while the marketing Lenis root is mounted) rather than .dark,
+   which the dashboard <html> also carries. */
+html.lenis::-webkit-scrollbar {
+  display: none;
+}
+html.lenis {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── SectionAura "life" — compositor-driven breathing glow ──
+   A very subtle scale pulse on the anchored section auras. Runs on the
+   compositor so it never freezes when the JS loop is idle. Disabled under
+   reduced motion. Kept gentle (scale 1.05) so it reads as ambient warmth,
+   never a throb. */
+@keyframes aura-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+.aura-breathe {
+  animation: aura-breathe 5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aura-breathe {
+    animation: none;
+  }
+}

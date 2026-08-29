@@ -1,0 +1,9 @@
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_growth_score INTEGER DEFAULT 0;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_risk_score INTEGER DEFAULT 0;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_execution_score INTEGER DEFAULT 0;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_market_score INTEGER DEFAULT 0;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_strengths TEXT DEFAULT '';
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS company_focus_area TEXT DEFAULT '';
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS external_evaluation TEXT DEFAULT '';
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS investor_ready_score INTEGER DEFAULT 0;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS assessment_type TEXT DEFAULT 'full';
