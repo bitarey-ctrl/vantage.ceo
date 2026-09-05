@@ -2,8 +2,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Send, Loader2, Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, Check, X, Search } from "lucide-react";
-import { usePlan } from "@/components/plan/PlanContext";
-import { PlanGate } from "@/components/plan/PlanGate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -974,11 +972,5 @@ function AdvisorChat() {
 // ─── Page shell ───────────────────────────────────────────────────────────────
 
 export default function AdvisorPage() {
-  const access = usePlan();
-
-  return (
-    <PlanGate feature="ai_chat" access={access} featureLabel="AI Advisor">
-      <AdvisorChat />
-    </PlanGate>
-  );
+  return <AdvisorChat />;
 }
