@@ -103,6 +103,9 @@ export const SAAS_PRICING_QUERY = `("usage-based pricing" OR "per-seat pricing" 
  * Google News OR-expand and drown the quoted name. Common-word competitor
  * names will leak some unrelated results; the category gate discards them.
  */
+export const MIN_COMPETITOR_NAME_LENGTH = 2;
+export const MAX_COMPETITOR_QUERIES = 3;
+
 export function buildCompetitorQuery(name: string): string {
   return `"${name}" (launch OR pricing OR funding OR acquired OR "shuts down") when:7d`;
 }
@@ -124,9 +127,15 @@ export function buildQueryFeeds(competitors: string[]): SourceFeed[] {
     },
   ];
 
-  for (const name of competitors.slice(0, 3)) {
-    const trimmed = name.trim();
-    if (!trimmed) continue;
+  // Filter BEFORE taking the top 3, so corrupted entries cannot crowd out real
+  // ones. A one-character "name" is never a real competitor — it is a string
+  // that was stored character-by-character, and querying "P" returns pure
+  // noise. Guarding here because this is the single choke point for the query.
+  const usable = competitors
+    .map((name) => name.trim())
+    .filter((name) => name.length >= MIN_COMPETITOR_NAME_LENGTH);
+
+  for (const trimmed of usable.slice(0, MAX_COMPETITOR_QUERIES)) {
     feeds.push({
       name: `Competitor: ${trimmed}`,
       url: buildGoogleNewsRssUrl(buildCompetitorQuery(trimmed)),
