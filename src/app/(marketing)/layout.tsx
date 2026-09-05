@@ -18,9 +18,9 @@ export const metadata: Metadata = {
 /*
  * Marketing layout — deliberately minimal.
  *
- * The waitlist landing (WaitlistLanding) is fully self-contained: it brings
+ * The landing page (Landing) is fully self-contained: it brings
  * its own `.landing` background, scroll behaviour, and chrome via
- * waitlist-landing.css. So this layout does NOT wrap children in SmoothScroll
+ * landing.css. So this layout does NOT wrap children in SmoothScroll
  * (Lenis) or LoadingScreen — those belong to the OLD full marketing site and
  * would fight the landing's own scroll + intro. If/when the old marketing
  * stack is restored as the front door, bring those wrappers back with it.

@@ -1,23 +1,22 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-import { WaitlistLanding } from "@/components/marketing/WaitlistLanding";
+import { Landing } from "@/components/marketing/Landing";
 
 /*
  * "/" — the logged-out front door.
  *
  * Server component: runs the auth gate (logged-in → /command), then renders
- * the public front door.
+ * the public landing page.
  *
- * FRONT DOOR = the waitlist landing (early-access phase). The previous
- * full marketing site (Hero / ProblemStats / ScrollTunnel / ProductShowcase /
- * WhyNow / Pricing / SocialProof / FinalCTA / Footer) is intentionally NOT
- * deleted — those components still exist in components/marketing. When the
- * product opens up publicly, swap <WaitlistLanding /> back for that stack
- * (see git history of this file for the exact composition) or move it to a
- * /product route. A pricing page and a "request access" waitlist shouldn't
- * both be the front door at the same time — mixed message — so only one is
- * mounted here.
+ * The early-access waitlist that used to live here has been removed. Every
+ * primary CTA on the landing page now opens the app directly at /signup, which
+ * is where account creation (and therefore email capture) happens.
+ *
+ * The older full marketing stack (Hero / ProblemStats / ScrollTunnel /
+ * ProductShowcase / WhyNow / Pricing / SocialProof / FinalCTA / Footer) still
+ * exists unmounted in components/marketing — see git history for how it was
+ * composed if any of it is ever wanted back.
  */
 export default async function MarketingPage() {
   const supabase = await createClient();
@@ -29,5 +28,5 @@ export default async function MarketingPage() {
     redirect("/command");
   }
 
-  return <WaitlistLanding />;
+  return <Landing />;
 }
