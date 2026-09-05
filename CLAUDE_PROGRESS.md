@@ -581,3 +581,103 @@ A missing key was only half of it. An *invalid* key passes the presence check an
 **Status:** Complete. NOT DEPLOYED — no Vercel project exists for VANTAGE and deployment is being driven manually by the user.
 
 **Watch item:** CISA Advisories returned HTTP 403 on the last harness run after returning 30 items earlier the same day — likely rate limiting from repeated probing. Feed failures are logged and non-fatal. Recheck after first real cron run.
+
+---
+## 2026-08-30 — Waitlist removed; landing page opens directly into the app
+**Files changed:** src/components/marketing/Landing.tsx (new), src/components/marketing/landing.css (new), src/components/marketing/WaitlistLanding.tsx (deleted), src/components/marketing/waitlist-landing.css (deleted), src/app/(marketing)/page.tsx, src/app/(marketing)/layout.tsx
+
+**What was done:** Removed all waitlist friction from the public front door. Every primary CTA now opens the app at /signup.
+
+(AUTH AUDIT FIRST) Before changing anything, confirmed what the CTA would actually open onto. Four gates are off, three of them deliberately: no invite/approval on /signup; no email verification (api/auth/signup uses the service-role admin client with email_confirm: true); no payment (lib/plan.ts getPlanAccess is hardcoded to effectivePlan 'pro', canAccess always returns true); and PlanGate is unreachable dead code that still contains an "Upgrade to Pro — $199/mo" string. Reported this before implementing. User chose to keep /signup as the capture point (name + email + password) rather than add a harder gate, and to keep the waitlist BACKEND intact — /api/waitlist and the 022 table are untouched, along with everything already collected. Only the on-page section was removed.
+
+(RENAME) WaitlistLanding.tsx -> Landing.tsx and waitlist-landing.css -> landing.css. The component no longer contains a waitlist; leaving the old name would mislead. Import updated in (marketing)/page.tsx, stale comment updated in (marketing)/layout.tsx.
+
+(SERVER COMPONENT) With the multi-step form gone there is no client interactivity left, so "use client" was dropped. The landing page now ships zero JavaScript.
+
+(CTA UNIFICATION) All five CTAs render through a single OpenVantage component reading two module constants (APP_HREF = "/signup", CTA = "OPEN VANTAGE"), so the label and target cannot drift. Nav, hero, product-section link, final CTA, footer. Removed: "REQUEST EARLY ACCESS", "REQUEST ACCESS", "GET EARLY ACCESS", the "Early access" nav and footer links, and the "Early teams get a guided setup" note.
+
+(HERO ABOVE THE FOLD) hero min-height 720px -> 0; top padding clamp(70,10vh,132) -> clamp(46,6.2vh,86); bottom 112 -> clamp(62,9vh,104); h1 clamp(63,7.4vw,118) -> clamp(56,6.3vw,96); hero-text margins 35/30 -> 26/26; hero-proof margin-top 42 -> 30; hero-product padding 26/18 -> 12/10. Added a (min-width:981px) and (max-height:860px) query that tightens further on short laptop screens. Measured in Chrome at 1470x779: CTA ends at 528px, mockup at 618px — 161px of headroom.
+
+(MOCKUP ACCURACY) Replaced placeholder copy that did not match shipped behaviour. "Turn partner insight into your next growth move" and "MARKET · 18 MIN AGO" are gone. The mockup now carries a five-category strip (PRICING / COST BASE / COMPETITION / COMPLIANCE / CAPITAL), a COST BASE priority signal, a COMPLIANCE incoming signal, and "SURFACED TODAY: 2 signals" — which replaces the invented "DECISION VELOCITY 3.1 days" metric and matches the real gate output of 0-5/day.
+
+(DE-DUPLICATED) The second full mockup in the product section was replaced with a SignalFlow component: one signal moving through WHAT HAPPENED -> WHY IT MATTERS TO YOU -> WHAT TO CONSIDER, mirroring the three fields the gate actually writes. Section heading changed from "The whole business. In one view." to "One signal. One clear move."
+
+(CSS CLEANUP) Stripped ~5.4KB of now-dead waitlist CSS from landing.css, including the fade-up keyframes and the waitlist rules inside both media queries, preserving the .footer rules that shared a line with them. Verified zero .wait* selectors remain and braces stay balanced. Repointed the shared h2 rule from .waitlist-intro h2 to .final-cta h2, and added .final-cta h2 em to the em treatment so it renders upright and muted like every other section.
+
+**Verification:** npx tsc --noEmit clean across src/. npm run build passes, 58/58 static pages, "/" still present as a dynamic route. Rendered page checked in Chrome at 1470x779: all five CTAs resolve to /signup, zero waitlist/early-access strings in the served HTML, all five category names present, section order confirmed hero -> marquee -> manifesto -> system -> product-section -> quote -> final-cta -> footer.
+
+**Not verified:** the browser window in this environment would not shrink below ~1470px viewport width, so the mobile layout was NOT visually confirmed. The 650px rules were verified as parsed into the CSSOM, and no horizontal overflow exists at desktop width, but someone should eyeball the page on a real phone.
+
+**Status:** Complete. Not deployed — changes are local and uncommitted.
+
+**Pending user actions:**
+1. Review on a real phone (see "Not verified" above).
+2. Commit and push to trigger the Vercel deploy.
+3. Open question left on the table: whether to add a harder gate (invite code or manual approval) before wider traffic arrives, given unrestricted signup spends Anthropic credits per user. Would touch src/app/(auth)/ and src/app/api/auth/signup/route.ts, both protected.
+4. Dead "$199/mo" string still sits in src/components/plan/PlanGate.tsx, unreachable but present while pricing is undecided.
+
+---
+## 2026-08-30 — Invite-code gated signup; PlanGate removed
+**Files changed:** supabase/migrations/025_invite_codes.sql (new), src/lib/invites.ts (new), src/app/api/admin/invites/route.ts (new), src/app/api/auth/verify-invite/route.ts (new), src/app/admin/invites/page.tsx (new), src/app/api/auth/signup/route.ts, src/app/(auth)/signup/page.tsx, src/app/api/waitlist/route.ts, src/app/admin/page.tsx, src/app/(dashboard)/advisor/page.tsx, src/components/plan/PlanGate.tsx (deleted)
+
+**What was done:** Signup now requires a valid, unused invite code. Two findings during planning changed the shape of the work and were reported before building.
+
+(FINDING 1 — OAUTH BACK DOOR) /signup had a "Sign up with Google" button calling supabase.auth.signInWithOAuth, redirecting to /auth/callback. It never touched /api/auth/signup, so gating only the email/password route would have left an unguarded way in. Per decision, the Google button is REMOVED for the invite phase rather than gated with a cookie handshake — zero bypass surface, nothing subtle to get wrong. Restore it when signups open publicly.
+
+(FINDING 2 — PLANGATE WAS NOT DEAD) It was described as dead code but was still imported and wrapping the advisor page. Deleting the file alone would have broken the build. Unwrapped src/app/(dashboard)/advisor/page.tsx (which also made its usePlan import unused — removed), then deleted PlanGate.tsx with its stale "$199/mo" copy. PlanContext/usePlan survives: DashboardNav and the dashboard layout still use it.
+
+(SINGLE-USE, ATOMICALLY) Codes are claimed with a conditional update — `.eq("code", code).is("used_at", null)` compiles to `update ... where code = $1 and used_at is null`, so a second concurrent claim matches zero rows and loses. Never a read-then-write. The claim happens BEFORE account creation and is released on every failure path (listUsers error, 409 email-already-exists, recovery-update failure, createUser failure, and an unexpected throw via hoisted cleanup vars in the outer catch), so a failed signup never silently burns someone's only code. A claimedCode marker is nulled on each handled path so the catch cannot double-release.
+
+(CODE FORMAT) VNTG-XXXX-XXXX. Alphabet 23456789ABCDEFGHJKMNPQRSTVWXYZ — 0/O, 1/I/L and U removed so codes are unambiguous read aloud. 30^8 approx 6.6e11. Generated with crypto.randomInt, not Math.random. normalizeInviteCode accepts any casing, with or without dashes/spaces, with or without the VNTG prefix, and returns null for anything malformed so bad input is rejected before a DB round trip.
+
+(ADMIN) /admin/invites reuses the existing admin auth exactly — sessionStorage "admin_pw" sent as X-Admin-Password, checked against ADMIN_PASSWORD server-side, same as /api/admin/stats. Signing in on either page signs you in on both. One-click generate with an optional label, filter by all/unused/used with counts, table showing code, label, created date, status badge, and the email + date that redeemed it. Copy-link button puts /signup?code=... on the clipboard for unused codes. Built as its own page rather than surgery on the 316-line stats page; linked from /admin.
+
+(SIGNUP GATE) Three states so nobody sees a form that cannot succeed: 'checking' (verifying ?code=), 'gated' (no/invalid/used code), 'open' (valid code). Gated state explains invite-only, offers a code field, and collects contact details. If a code is taken between verification and submit, the API returns inviteRequired and the page drops back to the gate rather than showing an unusable form. Initial state is derived at first render rather than set inside the effect, so there is no cascading-render lint error.
+
+(WAITLIST REUSE) Migration 025 relaxes waitlist_requests.industry/role/challenge to nullable — they were NOT NULL to mirror the old 5-field landing form, which no longer exists; the table had no caller at all. /api/waitlist now requires only name + email, writes null for the rest, and tags source from a whitelist ('landing' | 'signup_gate') so gate requests are distinguishable from the old landing entries. Nothing previously collected is lost.
+
+**Verification:** npx tsc --noEmit clean across src/. npm run build passes, 61/61 pages (up from 58), /signup still prerendered thanks to the Suspense boundary around useSearchParams. 20/20 unit assertions pass on the code helpers: format, no ambiguous characters, 2000/2000 generated codes unique, six normalization input shapes round-trip to canonical, ten malformed inputs rejected. Endpoint smoke tests: admin API returns 401 on a wrong password; signup returns 403 inviteRequired with no code AND with a malformed code; verify-invite degrades to {valid:false} rather than throwing when the table does not yet exist. Gated signup screen visually confirmed in Chrome — correct copy, zero Google mentions in the served HTML.
+
+**NOT verified — migration 025 has not been applied** (per the never-apply-migrations rule). Every DB-dependent path is therefore untested end to end: generating a code, listing codes, redeeming one, the single-use race, and submitting the request-access form (which will 500 until the NOT NULL columns are relaxed). These need a real run once the migration is in.
+
+**Status:** Complete pending the migration. Not deployed — changes are local and uncommitted.
+
+**Pending user actions:**
+1. Run supabase/migrations/025_invite_codes.sql in the Supabase SQL Editor.
+2. Then end-to-end test: generate a code at /admin/invites, open /signup?code=..., create an account, and confirm the code flips to Used with the right email.
+3. Note /admin/invites sits behind BOTH the Supabase session (middleware) and the admin password — same as /admin today, so you must be logged in to reach it.
+4. When signups open publicly: restore the Google button in src/app/(auth)/signup/page.tsx and decide whether the gate comes down.
+
+---
+## 2026-09-05 — Refresh Signals fixed: routed through the gate, fails loudly; corrupted competitor data repaired
+**Files changed:** src/app/api/signals/refresh/route.ts, src/lib/signals/sources.ts, supabase/migrations/026_repair_locustan_ceo_context.sql (new)
+
+**Reported symptom:** Refresh Signals did nothing for days — 0 signals tracked, no error shown.
+
+(DIAGNOSIS) Three distinct causes, only one of which was the reported one.
+
+1. SILENT FAILURE. The button calls POST /api/signals/refresh, which called fetchPerplexitySignals. That returns [] when NEWSAPI_KEY is unset (perplexity.ts:78). The route treated [] as "no signals", returned 200 {signalsAdded: 0}, and signals/page.tsx:615 rendered "No new signals found" — the success path. A missing key was indistinguishable from a quiet news day. The route does NOT need ANTHROPIC_API_KEY: runConsequencePipeline was imported but never called. Locally the key works (NewsAPI status ok, 27 candidates), so the misconfiguration was production-side.
+
+2. THE BUTTON BYPASSED THE GATE — a regression I introduced. When perplexity.ts lost its internal Claude filter (single-gate decision), signal-processor.ts was rewired to call gateSignals, but refresh/route.ts is protected, was not touched, and calls fetchPerplexitySignals directly. So it lost its old filter and never gained the new gate. A read-only simulation showed it would have inserted 27 raw, uncategorised articles — "Show HN: I processed 100k+ LinkedIn posts", "European Healthtech IPO Outlook", "Fintech Marketing Strategy" — with category NULL and all three fields blank. Fixing cause 1 alone would have flooded the feed with exactly the noise the ICP rewrite removed. Related gap: the requireEnv fail-loud work added on 2026-08-29 lives in signal-processor.ts and gate.ts, neither of which was on this code path.
+
+3. EMPTY FEED. signal_triages had 0 rows because migration 023's DELETE cleared every pre-gate link, as designed and as warned. 199 signals remain in the table, unlinked, newest 2026-08-16.
+
+(FIX) refresh/route.ts now delegates to processSignalsForProfile — the same fetch -> gate -> insert path the ingest cron uses, so button and cron cannot drift apart again. Dropped ~80 lines of bespoke fetch/dedup/insert plus the dead runConsequencePipeline import (173 -> 162 lines). Added requireEnv(PIPELINE_ENV) at the top, a console warning when NEWSAPI_KEY is absent (not fatal — the curated RSS sources still work), and a hard 502 when candidatesFetched is 0 across all attempted profiles. That last one is the key distinction: surfacing 0 AFTER fetching candidates is a legitimate quiet day; fetching 0 candidates from 30+ sources never is. The response keeps the signalsAdded key so the existing UI needs no change, and adds candidatesFetched.
+
+(DATA CORRUPTION FOUND) ceo_context.competitors for locustan held 36 entries that were the individual CHARACTERS of "Palantir, NexStrat, Exploding Topics" — a string stored where an array of {name} was expected. Exactly 36 characters, exact match. Because buildQueryFeeds takes the first three names, the pipeline was building Google News queries for "P", "a", and "l" — all three Competition slots spent on noise. This was not merely stale data as described; it was corrupt. No string-spread was found in the current onboarding/profile write paths, so it is most likely legacy; the onboarding step added on 2026-08-28 writes [{name}] correctly.
+
+(GUARD) sources.ts now filters competitor names shorter than 2 characters BEFORE taking the top 3, so junk cannot crowd out real names and a single character can never reach a query. Verified with 6 unit assertions against the exact corrupted value: 36 corrupt entries produce 0 competitor queries; the repaired trio produces 3; and mixed junk ["P","a","Linear","l","Attio",",", " ","Notion"] correctly yields Linear, Attio, Notion.
+
+(MIGRATION 026) Repairs the one row: competitors rebuilt as the three real names, sector 'B2B SaaS, Turkey' -> 'B2B SaaS', geography 'Istanbul, Turkey' -> 'United States, United Kingdom', and arr_band set to 'pre_1m' inferred from the existing $0-$10K MRR. Scoped by profile_id, previous values recorded in the file header, reversible by hand.
+
+**Verification:** npx tsc --noEmit clean across src/. npm run build passes 61/61. 6/6 unit assertions on the competitor guard. NewsAPI key confirmed working locally (status ok). Live DB state confirmed via read-only REST queries. All DB inspection was read-only — nothing was written.
+
+**NOT verified:** the end-to-end button click. Migration 026 has not been applied (migrations are the user's to run), so the pipeline has not been run against a repaired profile. The gate itself was already verified on 2026-08-28 (139 candidates -> 2 surfaced).
+
+**Status:** Complete pending migration 026. Not deployed — local and uncommitted.
+
+**Pending user actions:**
+1. Confirm NEWSAPI_KEY is set in Vercel production env vars — this was the original cause and I cannot read Vercel env from here.
+2. Run supabase/migrations/026_repair_locustan_ceo_context.sql.
+3. Click Refresh Signals and confirm signals arrive WITH a category and the three fields populated. A 502 now means a configuration problem; 0 surfaced with candidates fetched means the gate did its job.
+4. Note: Palantir is a questionable competitor for a $1-20M ARR B2B SaaS tool — it was kept because it was the stated competitor, but worth revisiting.
