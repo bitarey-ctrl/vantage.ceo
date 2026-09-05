@@ -167,6 +167,13 @@ export default function AdminPage() {
           <h1 className="text-xl font-semibold text-[#f5f5f5]">VANTAGE Admin</h1>
           <p className="text-xs text-[#444444] mt-0.5">Internal analytics</p>
         </div>
+        <div className="flex items-center gap-2">
+        <a
+          href="/admin/invites"
+          className="flex items-center gap-2 rounded-lg border border-[#242424] px-4 py-2 text-xs font-semibold text-[#a0a0a0] hover:border-[#1b7ff0]/40 hover:text-[#1b7ff0] transition-colors"
+        >
+          Invite codes
+        </a>
         <button
           onClick={() => fetchStats(storedPw)}
           disabled={loading}
@@ -175,6 +182,7 @@ export default function AdminPage() {
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           Refresh
         </button>
+        </div>
       </div>
 
       {error && (

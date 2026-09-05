@@ -11,7 +11,13 @@ type WaitlistPayload = {
   industry?: string;
   role?: string;
   challenge?: string;
+  source?: string;
 };
+
+// Where a request came from. The landing form is gone; requests now arrive
+// from the invite gate on /signup. Whitelisted so the column cannot be
+// stuffed with arbitrary input.
+const SOURCES = new Set(["landing", "signup_gate"]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,9 +29,12 @@ export async function POST(request: NextRequest) {
     const role = payload.role?.trim() ?? "";
     const challenge = payload.challenge?.trim() ?? "";
 
-    if (!fullName || !email || !industry || !role || !challenge) {
+    // Only name and email are required. industry/role/challenge were
+    // mandatory for the old 5-step landing form; the invite gate collects a
+    // short version, and migration 025 made those columns nullable.
+    if (!fullName || !email) {
       return NextResponse.json(
-        { error: "Please complete every field to request access." },
+        { error: "Please enter your name and email." },
         { status: 400 }
       );
     }
@@ -60,10 +69,10 @@ export async function POST(request: NextRequest) {
     const { error: insertError } = await admin.from("waitlist_requests").insert({
       full_name: fullName,
       email,
-      industry,
-      role,
-      challenge,
-      source: "landing",
+      industry: industry || null,
+      role: role || null,
+      challenge: challenge || null,
+      source: SOURCES.has(payload.source ?? "") ? payload.source : "landing",
     });
 
     if (insertError) {

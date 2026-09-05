@@ -1,39 +1,103 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Lock, Mail, User, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { Lock, Mail, User, AlertCircle, ArrowRight, Loader2, KeyRound, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
-export default function SignupPage() {
+/*
+ * Signup is INVITE-ONLY.
+ *
+ * Three states, so nobody is ever shown a form that cannot succeed:
+ *   'checking' — verifying a code from ?code= on mount
+ *   'gated'    — no code, or an invalid/used one: explain, offer a code
+ *                field, and collect contact details instead
+ *   'open'     — valid unused code: the real signup form
+ *
+ * The code is only VERIFIED here (read-only). It is claimed atomically inside
+ * /api/auth/signup at the moment the account is created, so two people racing
+ * on one code cannot both get in.
+ *
+ * "Sign up with Google" is deliberately absent during the invite phase: OAuth
+ * goes straight to /auth/callback and never touches /api/auth/signup, so
+ * leaving it up would be an unguarded way in. Restore it when signups open.
+ */
+
+const FIELD_CLASS =
+  'w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono';
+const LABEL_CLASS = 'text-[#a0a0a0] text-xs font-mono tracking-widest uppercase';
+
+type GateState = 'checking' | 'gated' | 'open';
+
+function SignupInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Derived at first render rather than set inside the effect: with no ?code=
+  // there is nothing to verify, so we can start in the gated state directly.
+  const codeFromUrl = searchParams.get('code');
+  const [gate, setGate] = useState<GateState>(codeFromUrl ? 'checking' : 'gated');
+  const [inviteCode, setInviteCode] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [checkingCode, setCheckingCode] = useState(false);
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
-  async function handleGoogleLogin() {
-    setGoogleLoading(true);
-    setError('');
+  /** Read-only check. Never consumes the code. */
+  const verifyCode = useCallback(async (candidate: string): Promise<boolean> => {
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
-        },
+      const res = await fetch('/api/auth/verify-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: candidate }),
       });
-      if (error) {
-        setError(error.message);
-        setGoogleLoading(false);
+      const data = (await res.json()) as { valid?: boolean; code?: string };
+      if (data.valid && data.code) {
+        setInviteCode(data.code);
+        return true;
       }
-      // On success: Supabase redirects the browser — no manual push needed
+      return false;
     } catch {
-      setError('Google sign-in failed. Please try again.');
-      setGoogleLoading(false);
+      return false;
+    }
+  }, []);
+
+  // A code in the URL opens the form directly, so an invite link just works.
+  useEffect(() => {
+    if (!codeFromUrl) return;
+    let active = true;
+    void verifyCode(codeFromUrl).then((ok) => {
+      if (!active) return;
+      if (ok) {
+        setGate('open');
+      } else {
+        setCodeInput(codeFromUrl);
+        setCodeError('That invite code is not valid, or it has already been used.');
+        setGate('gated');
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [codeFromUrl, verifyCode]);
+
+  async function handleCodeSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!codeInput.trim() || checkingCode) return;
+    setCheckingCode(true);
+    setCodeError('');
+    const ok = await verifyCode(codeInput);
+    setCheckingCode(false);
+    if (ok) {
+      setGate('open');
+    } else {
+      setCodeError('That invite code is not valid, or it has already been used.');
     }
   }
 
@@ -49,12 +113,10 @@ export default function SignupPage() {
     }
 
     try {
-      // Server-side signup uses the admin client with email_confirm: true,
-      // so the account is immediately usable. No confirmation email needed.
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, fullName }),
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, fullName, inviteCode }),
       });
 
       const data = (await res.json()) as {
@@ -62,45 +124,64 @@ export default function SignupPage() {
         error?: string;
         existing?: boolean;
         recovered?: boolean;
+        inviteRequired?: boolean;
       };
 
       if (!res.ok) {
-        setError(data.error ?? "Could not create account.");
+        // The code was taken between verification and submit — send them back
+        // to the gate rather than leaving a form that can never succeed.
+        if (data.inviteRequired) {
+          setInviteCode('');
+          setCodeInput('');
+          setCodeError(data.error ?? 'That invite code is no longer valid.');
+          setGate('gated');
+          return;
+        }
+        setError(data.error ?? 'Could not create account.');
         return;
       }
 
-      // Account exists and is now ready — sign in client-side so we get
-      // the auth cookies set on this browser session, then redirect.
       const supabase = createClient();
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
 
       if (signInErr) {
-        // Edge case: account created but sign-in failed. Bounce to login.
-        router.push("/login");
+        router.push('/login');
         return;
       }
 
-      router.push("/onboarding");
+      router.push('/onboarding');
       router.refresh();
     } catch {
-      setError("An unexpected error occurred. Please try again.");
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
+  if (gate === 'checking') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <Loader2 size={18} className="animate-spin text-[#1b7ff0]" />
+        <p className="text-[#a0a0a0] text-xs font-mono">Checking your invite…</p>
+      </div>
+    );
+  }
+
+  if (gate === 'gated') {
+    return <InviteGate
+      codeInput={codeInput}
+      setCodeInput={setCodeInput}
+      codeError={codeError}
+      checking={checkingCode}
+      onSubmit={handleCodeSubmit}
+    />;
+  }
+
   return (
     <div>
-      {/* Header */}
       <div className="mb-8 flex flex-col items-center text-center">
-        <img
-          src="/logo.png"
-          alt="VANTAGE"
-          className="h-20 w-20 object-contain mb-5 rounded-2xl"
-        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="VANTAGE" className="h-20 w-20 object-contain mb-5 rounded-2xl" />
         <h1 className="text-[#f5f5f5] text-2xl font-light tracking-tight mb-2">
           Create your command profile
         </h1>
@@ -109,47 +190,21 @@ export default function SignupPage() {
         </p>
       </div>
 
-      {/* Divider */}
-      <div className="h-px bg-[#242424] mb-8" />
+      <div className="h-px bg-[#242424] mb-6" />
 
-      {/* Google OAuth */}
-      <button
-        type="button"
-        onClick={handleGoogleLogin}
-        disabled={googleLoading || loading}
-        className="w-full flex items-center justify-center gap-3 bg-[#1a1a1a] border border-[#282828] hover:border-[#9F0202]/30 hover:bg-[#1a1a1a] text-[#c8c8c8] text-sm font-mono py-3 px-4 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed mb-4"
-      >
-        {googleLoading ? (
-          <Loader2 size={14} className="animate-spin text-[#8a8a8a]" />
-        ) : (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-          </svg>
-        )}
-        <span>{googleLoading ? 'Connecting...' : 'Sign up with Google'}</span>
-      </button>
-
-      {/* Divider between Google and email form */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex-1 h-px bg-[#222222]" />
-        <span className="text-[#343434] text-[10px] font-mono uppercase tracking-widest">or</span>
-        <div className="flex-1 h-px bg-[#222222]" />
+      {/* Confirmation that the invite is good, so the code is visible before submit */}
+      <div className="flex items-center gap-2 bg-[#0c1a0c] border border-[#1d3a1d] px-3 py-2.5 mb-6">
+        <Check size={14} className="text-[#4ba34b] shrink-0" />
+        <p className="text-[#7cc47c] text-xs font-mono">
+          Invite accepted — <span className="text-[#a8dca8]">{inviteCode}</span>
+        </p>
       </div>
 
       <form onSubmit={handleSignup} className="flex flex-col gap-4">
-        {/* Full Name */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#a0a0a0] text-xs font-mono tracking-widest uppercase">
-            Full Name
-          </label>
+          <label className={LABEL_CLASS}>Full Name</label>
           <div className="relative">
-            <User
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]"
-              size={14}
-            />
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
             <input
               type="text"
               value={fullName}
@@ -157,21 +212,15 @@ export default function SignupPage() {
               required
               autoComplete="name"
               placeholder="Alex Chen"
-              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono"
+              className={FIELD_CLASS}
             />
           </div>
         </div>
 
-        {/* Email */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#a0a0a0] text-xs font-mono tracking-widest uppercase">
-            Email
-          </label>
+          <label className={LABEL_CLASS}>Email</label>
           <div className="relative">
-            <Mail
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]"
-              size={14}
-            />
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
             <input
               type="email"
               value={email}
@@ -179,21 +228,15 @@ export default function SignupPage() {
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono"
+              className={FIELD_CLASS}
             />
           </div>
         </div>
 
-        {/* Password */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#a0a0a0] text-xs font-mono tracking-widest uppercase">
-            Password
-          </label>
+          <label className={LABEL_CLASS}>Password</label>
           <div className="relative">
-            <Lock
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]"
-              size={14}
-            />
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
             <input
               type="password"
               value={password}
@@ -201,7 +244,7 @@ export default function SignupPage() {
               required
               autoComplete="new-password"
               placeholder="Minimum 8 characters"
-              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono"
+              className={FIELD_CLASS}
             />
           </div>
           <p className="text-[#404040] text-xs font-mono">
@@ -209,7 +252,6 @@ export default function SignupPage() {
           </p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="flex items-start gap-2 bg-[#1a0a0a] border border-[#3a1010] px-3 py-2.5">
             <AlertCircle size={14} className="text-[#e05252] mt-0.5 shrink-0" />
@@ -217,7 +259,6 @@ export default function SignupPage() {
           </div>
         )}
 
-        {/* Submit */}
         <button
           type="submit"
           disabled={loading}
@@ -237,18 +278,237 @@ export default function SignupPage() {
         </button>
       </form>
 
-      {/* Footer link */}
       <div className="mt-8 pt-6 border-t border-[#242424]">
         <p className="text-[#a0a0a0] text-xs font-mono text-center">
           Already have access?{' '}
-          <Link
-            href="/login"
-            className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150"
-          >
+          <Link href="/login" className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150">
             Sign in
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+/* ── Invite-only screen ─────────────────────────────────────────────────────
+ * Shown when there is no code or the code failed. Two ways forward: enter a
+ * code, or leave contact details. Never a dead end.
+ */
+function InviteGate({
+  codeInput,
+  setCodeInput,
+  codeError,
+  checking,
+  onSubmit,
+}: {
+  codeInput: string;
+  setCodeInput: (v: string) => void;
+  codeError: string;
+  checking: boolean;
+  onSubmit: (e: React.FormEvent) => void;
+}) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [context, setContext] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [requestError, setRequestError] = useState('');
+
+  async function handleRequest(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    setRequestError('');
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: name,
+          email,
+          challenge: context,
+          source: 'signup_gate',
+        }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        setRequestError(data.error ?? 'Could not send your request. Please try again.');
+        return;
+      }
+      setSent(true);
+    } catch {
+      setRequestError('Could not send your request. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-8 flex flex-col items-center text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="VANTAGE" className="h-20 w-20 object-contain mb-5 rounded-2xl" />
+        <h1 className="text-[#f5f5f5] text-2xl font-light tracking-tight mb-2">
+          Vantage is invite-only right now
+        </h1>
+        <p className="text-[#a0a0a0] text-sm font-mono leading-relaxed">
+          We&apos;re onboarding a small number of founders at a time.
+        </p>
+      </div>
+
+      <div className="h-px bg-[#242424] mb-8" />
+
+      {/* Have a code */}
+      <form onSubmit={onSubmit} className="flex flex-col gap-1.5 mb-8">
+        <label className={LABEL_CLASS}>Have an invite code?</label>
+        <div className="relative">
+          <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
+          <input
+            type="text"
+            value={codeInput}
+            onChange={(e) => setCodeInput(e.target.value)}
+            placeholder="VNTG-XXXX-XXXX"
+            autoComplete="off"
+            spellCheck={false}
+            className={`${FIELD_CLASS} uppercase`}
+          />
+        </div>
+        {codeError && (
+          <div className="flex items-start gap-2 bg-[#1a0a0a] border border-[#3a1010] px-3 py-2.5 mt-1.5">
+            <AlertCircle size={14} className="text-[#e05252] mt-0.5 shrink-0" />
+            <p className="text-[#e05252] text-xs font-mono leading-relaxed">{codeError}</p>
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={checking || !codeInput.trim()}
+          className="mt-2 flex items-center justify-center gap-2 bg-[#1b7ff0] hover:bg-[#1a6fd0] text-white text-sm font-mono tracking-widest uppercase py-3 px-6 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {checking ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              <span>Checking...</span>
+            </>
+          ) : (
+            <>
+              <span>Continue</span>
+              <ArrowRight size={14} />
+            </>
+          )}
+        </button>
+      </form>
+
+      <div className="flex items-center gap-3 mb-6">
+        <div className="flex-1 h-px bg-[#222222]" />
+        <span className="text-[#343434] text-[10px] font-mono uppercase tracking-widest">or</span>
+        <div className="flex-1 h-px bg-[#222222]" />
+      </div>
+
+      {/* Request access */}
+      {sent ? (
+        <div className="flex items-start gap-2 bg-[#0c1a0c] border border-[#1d3a1d] px-4 py-4">
+          <Check size={14} className="text-[#4ba34b] mt-0.5 shrink-0" />
+          <div>
+            <p className="text-[#7cc47c] text-sm font-mono mb-1">Request received.</p>
+            <p className="text-[#5a8a5a] text-xs font-mono leading-relaxed">
+              We&apos;ll be in touch when a place opens up.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleRequest} className="flex flex-col gap-4">
+          <p className="text-[#a0a0a0] text-xs font-mono">Request access</p>
+
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL_CLASS}>Full Name</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                autoComplete="name"
+                placeholder="Alex Chen"
+                className={FIELD_CLASS}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL_CLASS}>Work Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]" size={14} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="you@company.com"
+                className={FIELD_CLASS}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL_CLASS}>What are you trying to solve? (optional)</label>
+            <textarea
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              rows={3}
+              maxLength={1000}
+              placeholder="One honest sentence is enough."
+              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm px-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono resize-none"
+            />
+          </div>
+
+          {requestError && (
+            <div className="flex items-start gap-2 bg-[#1a0a0a] border border-[#3a1010] px-3 py-2.5">
+              <AlertCircle size={14} className="text-[#e05252] mt-0.5 shrink-0" />
+              <p className="text-[#e05252] text-xs font-mono leading-relaxed">{requestError}</p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={sending}
+            className="mt-2 flex items-center justify-center gap-2 bg-[#1a1a1a] border border-[#282828] hover:border-[#1b7ff0]/40 text-[#c8c8c8] text-sm font-mono tracking-widest uppercase py-3 px-6 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sending ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                <span>Sending...</span>
+              </>
+            ) : (
+              <span>Request Access</span>
+            )}
+          </button>
+        </form>
+      )}
+
+      <div className="mt-8 pt-6 border-t border-[#242424]">
+        <p className="text-[#a0a0a0] text-xs font-mono text-center">
+          Already have access?{' '}
+          <Link href="/login" className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary so the route can still prerender.
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <Loader2 size={18} className="animate-spin text-[#1b7ff0]" />
+        </div>
+      }
+    >
+      <SignupInner />
+    </Suspense>
   );
 }
