@@ -79,7 +79,7 @@ export async function processSignalsForProfile(
   // 2. Drop anything already seen in the last 7 days
   const recentTitles = await getRecentSignalTitles(supabase, 24 * 7);
   const freshCandidates = allCandidates.filter(
-    (c) => !recentTitles.has(normalizeTitle(c.title))
+    (c) => c.title?.trim() && !recentTitles.has(normalizeTitle(c.title))
   );
 
   if (freshCandidates.length === 0) {
@@ -113,14 +113,25 @@ export async function processSignalsForProfile(
         what_happened: s.what_happened,
         why_it_matters: s.why_it_matters,
         what_to_consider: s.what_to_consider,
-        raw_data: { source_name: s.source_name },
+        // NOTE: no raw_data column exists on `signals` (verified against the
+        // live schema). Writing one silently failed every insert, so feed
+        // provenance is not persisted. Add a migration if it is wanted.
       }))
     )
     .select("id");
 
   if (signalError || !insertedSignals) {
-    console.error("[Pipeline] Failed to insert signals:", signalError);
-    return result(allCandidates.length, 0);
+    // Throw rather than returning 0. Returning 0 made a failed insert look
+    // identical to "the gate discarded everything" — the caller reported
+    // success while nothing was written. Serialise the message explicitly:
+    // logging the raw Supabase error object prints "{}".
+    const detail = signalError
+      ? `${signalError.message} (code ${signalError.code ?? "none"})`
+      : "insert returned no rows";
+    throw new Error(
+      `[Pipeline] Failed to insert ${survivors.length} gated signal(s) for ` +
+        `${profile.company_name}: ${detail}`
+    );
   }
 
   // 5. Link each surfaced signal to this profile
@@ -157,6 +168,9 @@ async function getRecentSignalTitles(
   return new Set(data.map((s: { title: string }) => normalizeTitle(s.title)));
 }
 
-function normalizeTitle(title: string): string {
+// Null-safe: a candidate with no title cannot be deduped or gated, and a raw
+// .toLowerCase() on null took down the whole refresh run.
+function normalizeTitle(title: string | null | undefined): string {
+  if (!title) return "";
   return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim().slice(0, 60);
 }

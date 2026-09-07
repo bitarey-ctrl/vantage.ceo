@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, Mail, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { GoogleButton } from '@/components/auth/GoogleButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  async function handleGoogleLogin() {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback?next=/command` },
+      });
+      if (error) {
+        setError(error.message);
+        setGoogleLoading(false);
+      }
+      // On success Supabase redirects the browser — no manual push needed.
+    } catch {
+      setError('Google sign-in failed. Please try again.');
+      setGoogleLoading(false);
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -59,13 +81,18 @@ export default function LoginPage() {
       {/* Divider */}
       <div className="h-px bg-[#242424] mb-8" />
 
-      {/*
-       * "Continue with Google" is deliberately absent during the invite-only
-       * phase. signInWithOAuth CREATES an account on first sign-in and never
-       * touches /api/auth/signup, so leaving it here let anyone bypass the
-       * invite-code gate entirely from the login page. Restore it — here and
-       * on /signup — when signups open publicly.
-       */}
+      <GoogleButton
+        label="Continue with Google"
+        loading={googleLoading}
+        disabled={loading}
+        onClick={handleGoogleLogin}
+      />
+
+      <div className="flex items-center gap-3 mb-6">
+        <div className="flex-1 h-px bg-[#222222]" />
+        <span className="text-[#343434] text-[10px] font-mono uppercase tracking-widest">or</span>
+        <div className="flex-1 h-px bg-[#222222]" />
+      </div>
 
       <form onSubmit={handleLogin} className="flex flex-col gap-4">
         {/* Email */}
@@ -151,7 +178,7 @@ export default function LoginPage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || googleLoading}
           className="mt-2 flex items-center justify-center gap-2 bg-[#1b7ff0] hover:bg-[#1a6fd0] text-white text-sm font-mono tracking-widest uppercase py-3 px-6 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? (
@@ -181,10 +208,19 @@ export default function LoginPage() {
       {/* Footer link */}
       <div className="mt-8 pt-6 border-t border-[#242424]">
         <p className="text-[#a0a0a0] text-xs font-mono text-center">
-          No access credentials?{' '}
+          Don&apos;t have an account?{' '}
           <Link
             href="/signup"
             className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150"
+          >
+            Sign up
+          </Link>
+        </p>
+        <p className="text-[#666666] text-xs font-mono text-center mt-3">
+          Just want to get in touch?{' '}
+          <Link
+            href="/request-access"
+            className="text-[#a0a0a0] hover:text-[#1b7ff0] transition-colors duration-150"
           >
             Request access
           </Link>

@@ -704,3 +704,31 @@ Note: daily-briefing and missed-signals are on the protected cron path. They wer
 1. Supabase -> Authentication -> URL Configuration: set Site URL to https://www.vantage.ceo and add https://www.vantage.ceo/** to Redirect URLs. This is the actual cause.
 2. Vercel: set NEXT_PUBLIC_APP_URL (and optionally NEXT_PUBLIC_SITE_URL) to https://www.vantage.ceo. After this deploy, a wrong value throws instead of silently producing localhost links.
 3. Consider disabling the Google provider in Supabase while invite-only — the buttons are gone from both pages, but the provider is still enabled at the API level.
+
+---
+## 2026-09-07 — Invite gate removed; Google OAuth restored; password reset fixed; pipeline unblocked
+**Files changed:** src/app/(auth)/signup/page.tsx, src/app/(auth)/login/page.tsx, src/app/api/auth/signup/route.ts, src/app/api/auth/forgot-password/route.ts, src/components/auth/GoogleButton.tsx (new), src/components/auth/RequestAccessForm.tsx (new), src/app/(auth)/request-access/page.tsx (new), src/lib/signals/perplexity.ts, src/lib/signals/signal-processor.ts, src/app/api/signals/refresh/route.ts
+
+**Context:** Reversing the invite gate. At zero traffic it was solving a theoretical problem while adding friction to the only thing that matters — getting CEOs to try the product.
+
+(GATE REMOVED, TOOLING KEPT) The invite code is now OPTIONAL rather than required. No code -> normal signup. A valid ?code= is still claimed and stamped with the email, so links minted in /admin/invites keep working and keep recording who redeemed what; a stale or invalid code no longer blocks anyone. invite_codes, migration 025, /admin/invites, /api/admin/invites, /api/auth/verify-invite and src/lib/invites.ts are all untouched. The three-state gate UI on /signup is gone.
+
+(GOOGLE OAUTH RESTORED) Back on both /signup (-> /onboarding) and /login (-> /command). Both pages previously carried a byte-identical copy of the button including the four-path Google logo, which is exactly how it ended up removed from /signup but left live on /login during the invite phase. Extracted to src/components/auth/GoogleButton.tsx so they cannot drift again; the OAuth call stays per-page since the redirect targets differ.
+
+(PASSWORD RESET — ROOT CAUSE) /api/auth/forgot-password called admin.auth.admin.generateLink(), which GENERATES a recovery link and returns it — it does NOT send an email. That API is for delivering the mail yourself. The route logged the link to the server console and returned ok, and the page said "a recovery link has been sent" unconditionally, so the only copy of every recovery link was sitting in the Vercel runtime logs. Nobody could ever reset a password. Replaced with supabase.auth.resetPasswordForEmail(), which sends Supabase's built-in recovery email. Still returns a generic ok so account existence is not leaked, but real send failures now log loudly. Resend was evaluated and rejected: src/lib/email/resend.ts exposes only briefing-specific senders, it is a protected file, and RESEND_API_KEY/RESEND_FROM_EMAIL are not set even locally.
+
+(REQUEST ACCESS) The form from the retired invite gate was extracted to src/components/auth/RequestAccessForm.tsx and mounted at /request-access, writing to waitlist_requests with source 'login_link'. The /login footer previously read "No access credentials? Request access" -> /signup, which is wrong now that signup is open; split into "Don't have an account? Sign up" -> /signup and a secondary "Just want to get in touch? Request access" -> /request-access.
+
+(TWO PIPELINE BUGS FOUND WHILE TESTING THE NEW KEY)
+1. NULL TITLE CRASH. NewsAPI returns title: null (and a literal "[Removed]") for pulled articles. normalizeTitle called .toLowerCase() on it, throwing TypeError and killing the entire refresh run for every profile — 0 candidates, every time. perplexity.ts now skips those articles and normalizeTitle is null-safe.
+2. NON-EXISTENT raw_data COLUMN. signal-processor.ts inserted raw_data: { source_name }, but no raw_data column exists on signals (verified against the live schema; PGRST204). Every insert failed. Worse, the failure returned 0 rather than throwing, so a broken insert looked identical to "the gate discarded everything" — the run reported success: true, signalsAdded: 0. Removed the column from the insert, made the failure throw with a serialised message (logging the raw Supabase error printed "{}"), and the refresh route now returns 500 when a profile threw and nothing was added. Feed provenance is not persisted as a result; a migration could add the column if wanted.
+
+**Verification:** New ANTHROPIC_API_KEY confirmed working with a direct Messages API call (claude-sonnet-4-5-20250929, replied OK). Full refresh path run locally end to end: 143 candidates -> 7 surfaced -> 7 inserted -> 7 signal_triages rows. Read the stored rows back: all seven carry a category and all three fields, spanning Cost Base (3), Pricing (3) and Compliance (1). The old key's failure is visible in the dev log as "Your credit balance is too low", confirming the user's diagnosis. npx tsc --noEmit clean; npm run build passes 62/62 (/request-access added). A probe row used to isolate the insert failure was deleted; 0 remain.
+
+**Status:** Complete. The feed is now populated for the first time.
+
+**Pending user actions:**
+1. Supabase -> Authentication -> URL Configuration: Site URL = https://www.vantage.ceo and Redirect URLs including https://www.vantage.ceo/**. BOTH Google OAuth and password reset depend on this — if the callback is not allow-listed, Supabase discards redirectTo and falls back to Site URL, which is the localhost behaviour reported earlier.
+2. Google Cloud Console: authorized redirect URI must include https://odahuetnflsqkligzwpm.supabase.co/auth/v1/callback.
+3. Supabase's built-in recovery email is rate-limited (~2-4/hour on free tier) and can land in spam. Fine at zero traffic; Resend is the upgrade path.
+4. Signup is now unrestricted on your Anthropic credits — worth a spend alert in the Anthropic console.

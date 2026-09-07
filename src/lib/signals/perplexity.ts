@@ -102,13 +102,19 @@ export async function fetchPerplexitySignals(
     for (const bucket of results) {
       const a = bucket[i];
       if (!a) continue;
-      const key = a.url || a.title;
+      // NewsAPI returns null titles (and a literal "[Removed]") for articles
+      // that have been pulled. They cannot be deduped or gated, and a null
+      // title crashes normalizeTitle downstream.
+      const title = a.title?.trim();
+      if (!title || title === "[Removed]") continue;
+
+      const key = a.url || title;
       if (!key || seen.has(key)) continue;
       if (!a.url || !a.url.startsWith("http")) continue;
       seen.add(key);
       merged.push({
-        title: a.title,
-        content: a.description ?? a.content ?? a.title,
+        title,
+        content: a.description ?? a.content ?? title,
         url: a.url,
         published_at: a.publishedAt,
         feed_name: a.source?.name ?? "NewsAPI",

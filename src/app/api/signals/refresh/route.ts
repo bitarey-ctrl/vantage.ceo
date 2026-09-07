@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
     let totalCandidates = 0;
     let profilesProcessed = 0;
     let profilesAttempted = 0;
+    const failures: string[] = [];
 
     for (const profile of profiles as Profile[]) {
       if (Date.now() - startTime >= BUDGET_MS) {
@@ -126,7 +127,9 @@ export async function POST(request: NextRequest) {
 
         profilesProcessed++;
       } catch (err) {
-        console.error(`[refresh] Error for profile ${profile.id}:`, err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[refresh] Error for profile ${profile.id}:`, msg);
+        failures.push(msg);
       }
     }
 
@@ -148,11 +151,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A profile that threw must not be reported as a clean run. Without this,
+    // a failed database insert looked exactly like "the gate discarded
+    // everything" and the button said "No new signals found".
+    if (failures.length > 0 && totalSignalsAdded === 0) {
+      return NextResponse.json(
+        { error: failures[0], failures: failures.length },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       signalsAdded: totalSignalsAdded,
       candidatesFetched: totalCandidates,
       profilesProcessed,
+      ...(failures.length > 0 ? { partialFailures: failures.length } : {}),
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

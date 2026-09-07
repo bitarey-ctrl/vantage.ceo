@@ -29,9 +29,13 @@ interface AdminUser {
  * If the email exists AND is already confirmed, return an error directing
  * the user to sign in (don't silently overwrite a real account).
  *
- * INVITE-ONLY: signup requires a valid, unused invite code. The code is
- * claimed atomically BEFORE the account is created, and released again if
- * creation fails — so a failed signup never silently burns someone's code.
+ * Signup is OPEN — an invite code is not required.
+ *
+ * A code is still honoured if one is supplied, so links minted in
+ * /admin/invites keep working and still record who redeemed them. An absent
+ * or invalid code simply does not block the signup. When a code IS claimed it
+ * is claimed atomically before the account is created and released again if
+ * creation fails, so a failed signup never silently burns one.
  */
 export async function POST(request: NextRequest) {
   // Hoisted so the outer catch can put a claimed code back if anything
@@ -58,30 +62,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Optional: only present when someone arrived via an /admin/invites link.
     const inviteCode = normalizeInviteCode(body.inviteCode);
-    if (!inviteCode) {
-      return NextResponse.json(
-        { error: "An invite code is required to create an account.", inviteRequired: true },
-        { status: 403 }
-      );
-    }
 
     const admin = await createAdminClient();
     adminClient = admin;
 
-    // Atomic claim. If this returns false the code is unknown, already used,
-    // or another request won the race — in every case, no account is created.
-    const claimed = await claimInviteCode(admin, inviteCode, email);
-    if (!claimed) {
-      return NextResponse.json(
-        {
-          error: "That invite code is not valid, or it has already been used.",
-          inviteRequired: true,
-        },
-        { status: 403 }
-      );
+    if (inviteCode) {
+      // Atomic claim. Failing here is not fatal any more — signup is open, so
+      // a stale or already-redeemed link should still let the person in.
+      const claimed = await claimInviteCode(admin, inviteCode, email);
+      if (claimed) {
+        claimedCode = inviteCode;
+      } else {
+        console.log(`[signup] Invite code ${inviteCode} was not claimable — continuing without it.`);
+      }
     }
-    claimedCode = inviteCode;
 
     // Check if the email already exists (via paginated listUsers + filter).
     const { data: list, error: listErr } = await admin.auth.admin.listUsers({
@@ -89,8 +85,10 @@ export async function POST(request: NextRequest) {
     });
     if (listErr) {
       console.error("[signup] listUsers failed:", listErr);
-      await releaseInviteCode(admin, inviteCode);
-      claimedCode = null;
+      if (claimedCode) {
+        await releaseInviteCode(admin, claimedCode);
+        claimedCode = null;
+      }
       return NextResponse.json(
         { error: "Server error. Please try again." },
         { status: 500 }
@@ -105,8 +103,10 @@ export async function POST(request: NextRequest) {
       // Already confirmed → block. Direct them to log in.
       if (existing.email_confirmed_at) {
         // No account was created, so the code must go back into circulation.
-        await releaseInviteCode(admin, inviteCode);
-        claimedCode = null;
+        if (claimedCode) {
+          await releaseInviteCode(admin, claimedCode);
+          claimedCode = null;
+        }
         return NextResponse.json(
           {
             error:
@@ -135,8 +135,10 @@ export async function POST(request: NextRequest) {
 
       if (updateErr) {
         console.error("[signup] update existing unconfirmed failed:", updateErr);
-        await releaseInviteCode(admin, inviteCode);
-        claimedCode = null;
+        if (claimedCode) {
+          await releaseInviteCode(admin, claimedCode);
+          claimedCode = null;
+        }
         return NextResponse.json(
           { error: "Could not complete signup. Please try again." },
           { status: 500 }
@@ -161,8 +163,10 @@ export async function POST(request: NextRequest) {
 
     if (createErr) {
       console.error("[signup] createUser failed:", createErr);
-      await releaseInviteCode(admin, inviteCode);
-      claimedCode = null;
+      if (claimedCode) {
+        await releaseInviteCode(admin, claimedCode);
+        claimedCode = null;
+      }
       return NextResponse.json(
         { error: createErr.message || "Could not create account." },
         { status: 400 }
