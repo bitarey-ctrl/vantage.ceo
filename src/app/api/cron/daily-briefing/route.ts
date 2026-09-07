@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAppUrl } from "@/lib/env";
 import { sendDailyBriefingEmail } from "@/lib/email/resend";
 import type { BriefingSignal } from "@/lib/email/templates/daily-briefing";
 import type { SignalUrgency } from "@/types/database";
@@ -87,7 +88,7 @@ async function handle(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const appUrl = requireAppUrl("Daily briefing email");
   const supabase = await createAdminClient();
   const now = new Date();
   const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();

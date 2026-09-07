@@ -681,3 +681,26 @@ A missing key was only half of it. An *invalid* key passes the presence check an
 2. Run supabase/migrations/026_repair_locustan_ceo_context.sql.
 3. Click Refresh Signals and confirm signals arrive WITH a category and the three fields populated. A 502 now means a configuration problem; 0 surfaced with candidates fetched means the gate did its job.
 4. Note: Palantir is a questionable competitor for a $1-20M ARR B2B SaaS tool — it was kept because it was the stated competitor, but worth revisiting.
+
+---
+## 2026-09-07 — Close the Google OAuth bypass on /login; localhost URL fallbacks now throw
+**Files changed:** src/app/(auth)/login/page.tsx, src/lib/env.ts, src/app/api/auth/forgot-password/route.ts, src/app/api/cron/daily-briefing/route.ts, src/app/api/cron/missed-signals/route.ts
+
+**Reported symptom:** vantage.ceo/signals redirecting to localhost; suspected a hardcoded callback URL.
+
+(DIAGNOSIS — NOT A CODE BUG) Audited every place a redirect URL is built. middleware.ts uses request.nextUrl.clone(), auth/callback/route.ts uses requestUrl.origin, login/page.tsx and admin/invites/page.tsx use window.location.origin, supabase/client.ts reads env only, next.config.ts redirects() returns []. Verified live: GET https://www.vantage.ceo/signals returns 307 -> https://www.vantage.ceo/login, correct origin, one hop. The localhost therefore appears later in the OAuth round trip, which points at Supabase Authentication -> URL Configuration (Site URL defaulting to http://localhost:3000, and/or the production callback missing from the Redirect URLs allow-list — when redirectTo is not allow-listed, Supabase discards it and falls back to Site URL). Those two settings are not readable through the MCP, so they remain the user's to check. Contributing factor: .env.local carries NEXT_PUBLIC_APP_URL=http://localhost:3000 and no NEXT_PUBLIC_SITE_URL, so a wholesale copy into Vercel would carry localhost into production.
+
+(SECURITY — INVITE GATE BYPASS FOUND AND CLOSED) While auditing, found /login still rendered "Continue with Google" and it was live in production; Supabase confirms google: true. signInWithOAuth CREATES an account on first sign-in and never touches /api/auth/signup, so anyone could reach /login, sign in with Google, and get a working account with no invite code. This was my miss: on 2026-08-30 I removed the Google button from /signup for exactly this reason and did not check /login. Removed the handler, its state, the button and the divider, and left a comment explaining why it must not be restored before signups open publicly.
+
+(FAIL LOUD ON BASE URL) Added requireAppUrl(context) to src/lib/env.ts and replaced all three `process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"` fallbacks. It throws when neither NEXT_PUBLIC_APP_URL nor NEXT_PUBLIC_SITE_URL is set, and throws when the value resolves to localhost/127.0.0.1 while NODE_ENV is production — the exact misconfiguration behind this report. forgot-password still prefers the per-request origin header (correct across preview deployments) and only falls through to requireAppUrl. Same principle as the NEWSAPI_KEY fix: a misconfigured environment should fail visibly rather than emit links that look fine and are unreachable for everyone but the developer.
+
+Note: daily-briefing and missed-signals are on the protected cron path. They were changed because the user approved item 4 as described — "the three localhost fallbacks" — which named all three call sites.
+
+**Verification:** npx tsc --noEmit clean across src/. npm run build passes 61/61. 10/10 unit assertions on requireAppUrl covering both env vars, trailing-slash stripping, both throw paths, localhost permitted outside production, and no false positive on a real domain containing "localhost" as a substring. grep confirms no localhost:3000 fallback remains in src/ (only the explanatory comment in env.ts).
+
+**Status:** Complete.
+
+**Pending user actions — the redirect itself is NOT fixed by this commit:**
+1. Supabase -> Authentication -> URL Configuration: set Site URL to https://www.vantage.ceo and add https://www.vantage.ceo/** to Redirect URLs. This is the actual cause.
+2. Vercel: set NEXT_PUBLIC_APP_URL (and optionally NEXT_PUBLIC_SITE_URL) to https://www.vantage.ceo. After this deploy, a wrong value throws instead of silently producing localhost links.
+3. Consider disabling the Google provider in Supabase while invite-only — the buttons are gone from both pages, but the provider is still enabled at the API level.

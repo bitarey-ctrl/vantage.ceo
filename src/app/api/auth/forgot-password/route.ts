@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAppUrl } from "@/lib/env";
 
 interface ForgotBody {
   email?: string;
@@ -24,10 +25,10 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = await createAdminClient();
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      "http://localhost:3000";
+    // Prefer the actual request origin — it is correct per-request and works
+    // across preview deployments. Fall back to the configured base URL, which
+    // throws rather than silently pointing password-reset links at localhost.
+    const origin = request.headers.get("origin") || requireAppUrl("Password reset");
 
     const { data, error } = await admin.auth.admin.generateLink({
       type: "recovery",

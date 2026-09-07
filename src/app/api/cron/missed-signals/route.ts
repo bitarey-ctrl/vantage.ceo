@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAppUrl } from "@/lib/env";
 import { sendMissedSignalsEmail } from "@/lib/email/resend";
 import type { MissedSignal } from "@/lib/email/templates/missed-signals";
 import type { SignalUrgency } from "@/types/database";
@@ -38,7 +39,7 @@ async function handle(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const appUrl = requireAppUrl("Missed-signals email");
   const supabase = await createAdminClient();
   const now = Date.now();
   const sevenDaysAgo = new Date(now - 7 * 86_400_000).toISOString();
