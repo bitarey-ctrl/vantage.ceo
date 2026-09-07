@@ -781,3 +781,32 @@ Migration 028 records the deprecation in the schema (COMMENT ON TABLE/COLUMN) an
 **Pending user actions:**
 1. Run supabase/migrations/028_deprecate_triage_scoring.sql (documentation + default drop; nothing breaks if it is delayed).
 2. Still outstanding from earlier: Supabase Site URL / Redirect URLs, and the Google Cloud authorized redirect URI — both Google OAuth and password reset depend on them.
+
+---
+## 2026-09-07 (4) — New landing page ported from the standalone Vantage design
+**Files changed:** src/components/marketing/Landing.tsx (replaced), src/components/marketing/landing.css (deleted), src/app/(marketing)/vantage-landing.css (new), src/components/vantage/* (10 new), src/components/ui/dialog.tsx (new), src/lib/site-config.ts (new), public/vantage-logo.png (new), src/app/(marketing)/page.tsx, src/app/(marketing)/layout.tsx (comment only)
+
+(SOURCE) The design was not at /tmp/vantage-design as stated — that path did not exist. Found ~/Downloads/Vantage-complete-design.zip (905KB, same day), verified its contents matched the described structure, and extracted it there.
+
+(THREE FINDINGS THAT CHANGED THE TASK, reported before building)
+1. gsap and @gsap/react were ALREADY in package.json (^3.15.0 / ^2.1.2). The install step was a no-op.
+2. The design's dialog imports @base-ui/react/dialog — NOT Radix — and styles itself with tw-animate-css. Neither is installed; porting verbatim meant two new dependencies for one placeholder modal. Built a minimal equivalent on @radix-ui/react-dialog, which the project already depends on and already uses.
+3. Four of the ten components/vantage files are dead in this design — command-center.tsx, system-figures.tsx, system-figures.css, system-cards.css — plus hooks/use-mobile.ts. Ported all ten per instruction; the four stay unimported. use-mobile.ts was not ported (nothing references it and the project has no equivalent need).
+
+Also: the project's ROOT layout already loads Inter as --font-inter, exactly the variable the design expects, so no font change to (marketing)/layout.tsx was needed after all.
+
+(CSS SCOPING — the main risk) 14 custom properties collided, including --background, --foreground, --accent, --muted and the Tailwind --color-* tokens. In the App Router a CSS import is global wherever it lives, so the design's :root, body, *, a, button, h1-h4 and ::selection rules would have repainted the dashboard — body{background} alone would have done it.
+
+The decisive detail: page.tsx uses ZERO Tailwind utility classes (all 44 of its classes are design classes), so the @theme inline block — the most dangerous piece — was dropped entirely rather than reconciled. @import "tailwindcss", @import "tw-animate-css" and @custom-variant dark were dropped too.
+
+Everything else was mechanically scoped under .vlp by a transform script rather than hand-edited across 52KB: :root/body/html merge onto .vlp, * becomes .vlp *, bare element and ::selection rules get prefixed, @media recurses, @keyframes pass through (zero name collisions). The script asserts brace balance and that no unscoped :root/body/html/*/heading rule and no @theme/@import survives; it ran over globals.css and all four components/vantage CSS files. scroll-padding-top was moved to html:has(.vlp) because scroll padding must sit on the real scroll container, not the wrapper.
+
+(SAME-TAB INTERNAL LINKS) The design's Action component opened every URL with target="_blank". site-config now exports isExternalUrl(); /signup opens in the same tab, external destinations (bookingUrl once set) still open in a new tab.
+
+**Verification — the dashboard is provably unchanged.** Captured /signals and /command BEFORE any edit, then again after: both are PIXEL-IDENTICAL by md5 (signals 96189 bytes, md5 6adbcef1...; command 99644 bytes, md5 0ad37120...). A computed-style diff over body background/color/font/size, h3 weight, button border, box-sizing and nine custom properties reported zero differences. Critically --accent is still #ffffff1a and --surface/--raised/--line remain undefined at :root, where the design would have set #ff321f and real values had it leaked. On the landing page itself the same properties resolve to the design values inside .vlp (#ff321f / #08090a / #0f1011), confirming the scope boundary works in both directions. All three "Open the app" links resolve to /signup with no target attribute. npx tsc --noEmit clean; npm run build 62/62. package.json and package-lock.json are byte-unchanged — no dependencies added.
+
+**Scope:** git status confirms nothing under (dashboard), api/, lib/signals/, lib/ai/, (auth)/ or middleware was touched.
+
+**Status:** Complete.
+
+**Note:** bookingUrl is still empty, so "Book a meeting" opens the placeholder dialog by design. The dialog is a fresh Radix build and was only verified to compile and render — the open/close interaction should be clicked through on production, where a logged-out session can actually reach the landing page.

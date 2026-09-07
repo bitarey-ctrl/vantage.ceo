@@ -1,147 +1,88 @@
 /*
  * Landing — the public front door.
  *
- * Ported from the standalone landing project the founder built, then reworked
- * when the early-access waitlist was retired: every primary CTA now opens the
- * app directly at /signup. All styling lives in `landing.css`, scoped under
- * `.landing` so it can never collide with the app's design system. Do not swap
- * these plain CSS classes for the app's token classes — this surface is
- * deliberately independent from the dashboard.
+ * Ported from the standalone Vantage design. All styling is scoped under the
+ * `.vlp` class on the root element below; see vantage-landing.css for why.
  *
- * With the multi-step waitlist form gone there is no client interactivity left,
- * so this is a server component and ships no JavaScript.
- *
- * The waitlist BACKEND is intentionally still in place (/api/waitlist and the
- * waitlist table from migration 022) along with everything already collected.
- * Only the on-page section was removed.
+ * Deviations from the source design, all deliberate:
+ *  - `@/components/ui/dialog` is a minimal Radix build, not the design's
+ *    @base-ui/react version, so no new dependencies were added.
+ *  - Internal links open in the same tab (see Action).
+ *  - The design's `@theme inline` and Tailwind/tw-animate imports are dropped;
+ *    this page uses no Tailwind utility classes.
  */
-
-import "./landing.css";
-
-/** Single source of truth for the primary CTA, so it can never drift. */
-const APP_HREF = "/signup";
-const CTA = "OPEN VANTAGE";
-
-function Mark() {
-  return <><span className="brand-v">V</span>ANTAGE<span className="brand-reg">®</span></>;
-}
-
-/** Primary call to action. Every instance on the page renders through this. */
-function OpenVantage({ variant = "button" }: { variant?: "button" | "nav" | "link" }) {
-  const className = variant === "nav" ? "nav-cta" : variant === "link" ? "text-link" : "button-primary";
-  return <a href={APP_HREF} className={className}>{CTA} <b>↗</b></a>;
-}
-
-/*
- * The hero mockup. Copy here mirrors what the product actually produces: the
- * five gate categories, and a signal carrying the real three-field output
- * (what happened / why it matters / what to consider).
- */
-function CommandCenter() {
-  return <div className="product-screen" aria-label="Vantage command center preview">
-    <div className="screen-top"><div className="screen-brand"><Mark /></div><span className="screen-live"><i /> LIVE CONTEXT</span><span className="screen-avatar">N</span></div>
-    <div className="screen-body">
-      <aside className="screen-side"><span className="side-on">⌘</span><span>ϟ</span><span>⊞</span><span>◌</span><span>◫</span><i /><span>⚙</span></aside>
-      <div className="screen-main">
-        <div className="screen-heading"><div><p>COMMAND CENTER</p><h3>Here’s what<br />matters now.</h3></div><span className="live-pill"><i /> MONITORING</span></div>
-        <div className="screen-cats" aria-label="Signal categories"><span>PRICING</span><span className="cat-on">COST BASE</span><span>COMPETITION</span><span>COMPLIANCE</span><span>CAPITAL</span></div>
-        <div className="decision-preview"><p>PRIORITY SIGNAL · COST BASE</p><h4>Your model provider cut API pricing by half.</h4><div className="decision-bottom"><span>◉ WHY IT MATTERS</span><span>○ WHAT TO CONSIDER</span><button>REVIEW <b>↗</b></button></div></div>
-        <div className="screen-lower"><div className="signal-preview"><p>INCOMING SIGNAL</p><b>New EU AI Act guidance lands for software vendors.</b><span>COMPLIANCE · 18 MIN AGO</span></div><div className="metric-preview"><p>SURFACED TODAY</p><strong>2<span>signals</span></strong><i /></div></div>
-      </div>
-    </div>
-    <div className="screen-ask"><b>＋</b><span>Ask Vantage about a decision…</span><i>◖◗</i><strong>↗</strong></div>
+'use client';
+import { useRef, useState, type ReactNode } from 'react';
+import { ArrowRight, ArrowUpRight, Menu, X, Radio, Network, Check } from 'lucide-react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { HeroCommandCenter } from '@/components/vantage/hero-command-center';
+import { BrandLogo } from '@/components/vantage/brand-logo';
+import { DetectVisual, MapVisual, ActVisual } from '@/components/vantage/workflow-visuals';
+import { Figure } from '@/components/vantage/figures';
+import { siteConfig, isExternalUrl } from '@/lib/site-config';
+import '@/components/vantage/brand-atmosphere.css';
+import '@/app/(marketing)/vantage-landing.css';
+if(typeof window!=='undefined') gsap.registerPlugin(useGSAP,ScrollTrigger);
+export function Landing(){
+  const root=useRef<HTMLDivElement>(null);
+  const [dialog,setDialog]=useState<'meeting'|'app'|null>(null);
+  const [menu,setMenu]=useState(false);
+  useGSAP(()=>{
+    const mm=gsap.matchMedia();
+    mm.add('(prefers-reduced-motion: no-preference)',()=>{
+      gsap.timeline({defaults:{ease:'power3.out'}})
+        .from('.hero-copy > *',{y:22,opacity:0,duration:1.1,stagger:.12})
+        .from('.hero-product',{y:36,opacity:0,duration:1.4},.18);
+      gsap.utils.toArray<HTMLElement>('.reveal:not(.figure-card)').forEach(el=>gsap.from(el,{y:28,opacity:0,duration:1,ease:'power3.out',scrollTrigger:{trigger:el,start:'top 91%',once:true}}));
+      gsap.from('.figure-card',{y:36,opacity:0,duration:1.05,stagger:.13,ease:'power3.out',scrollTrigger:{trigger:'.figure-grid',start:'top 88%',once:true}});
+      gsap.utils.toArray<HTMLElement>('.feature-section').forEach(el=>gsap.fromTo(el,{'--rule-progress':0},{'--rule-progress':1,duration:1.2,ease:'power2.inOut',scrollTrigger:{trigger:el,start:'top 86%',once:true}}));
+    });
+    mm.add('(min-width: 761px) and (prefers-reduced-motion: no-preference)',()=>{
+      gsap.utils.toArray<HTMLElement>('.hero-product .hc-window, .workflow-depth').forEach(screen=>{
+        gsap.fromTo(screen,{y:12},{y:-12,ease:'none',scrollTrigger:{trigger:screen.closest('.hero-product, .workflow-stage'),start:'top bottom',end:'bottom top',scrub:1.4}});
+      });
+    });
+    return ()=>mm.revert();
+  },{scope:root});
+  function Action({kind='meeting',secondary=false,small=false}:{kind?:'meeting'|'app',secondary?:boolean,small?:boolean}){
+    const url=kind==='meeting'?siteConfig.bookingUrl:siteConfig.appUrl;
+    const label=kind==='meeting'?'Book a meeting':'Open the app';
+    const className=`button ${secondary?'secondary':''} ${small?'small':''}`;
+    if(!url) return <button className={className} onClick={()=>setDialog(kind)}>{label}{!small&&<ArrowUpRight size={14}/>}</button>;
+    // Internal routes (e.g. /signup) stay in the same tab — target="_blank" on
+    // our own app is wrong. External destinations still open in a new tab.
+    const external=isExternalUrl(url);
+    return <a className={className} href={url} {...(external?{target:'_blank',rel:'noopener noreferrer'}:{})}>{label}<ArrowUpRight size={14}/></a>;
+  }
+  return <div ref={root} id="top" className="vlp">
+    <a className="skip" href="#main">Skip to content</a>
+    <header className="site-header"><div className="container header-inner"><a href="#top" className="wordmark"><BrandLogo/>Vantage</a><nav aria-label="Main navigation"><a href="#product">Product</a><a href="#detect">Detect</a><a href="#map">Map</a><a href="#act">Act</a><a href="#principle">Our principle</a></nav><div className="nav-actions"><Action kind="app" secondary small/><Action small/></div><button className="mobile-toggle" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} onClick={()=>setMenu(!menu)}>{menu?<X size={20}/>:<Menu size={20}/>}</button></div>{menu&&<nav className="mobile-menu" aria-label="Mobile navigation">{['product','detect','map','act','principle'].map(id=><a href={'#'+id} key={id} onClick={()=>setMenu(false)}>{id==='principle'?'Our principle':id}</a>)}<Action kind="app" secondary/></nav>}</header>
+    <main id="main">
+      <section className="hero"><div className="container hero-copy"><h1>Command the signal.<br/>Eliminate the noise.</h1><div className="hero-subrow"><p>Your business moves faster than its decisions.<br/> Turn scattered signals into priorities your team can act on.</p><div className="hero-actions"><Action/><Action kind="app" secondary/></div></div></div><div className="hero-product"><HeroCommandCenter/></div><div className="hero-foot container"><span>Less time interpreting. More time moving.</span><a href="#product">From signal to action <ArrowRight size={14}/></a></div></section>
+      <section className="principles container" id="product"><h2 className="intro-heading reveal"><strong>The cost of noise is hesitation.</strong> Signals scatter. Context gets lost. Decisions wait. Vantage brings the change, the stakes, and the next move into one command center.</h2><div className="figure-grid">{[['Detect','Find the change.','Bring the signal into focus before the opportunity moves on.'],['Map','Know the stakes.','See which decisions the signal touches—and why it matters now.'],['Act','Make the move.','Give the priority an owner. Give the next move a time frame.']].map(([title,label,description],i)=><a className="figure-card reveal" href={"#"+title.toLowerCase()} key={title}><div className="card-index"><span className="fig-label"><span className="system-icon" aria-hidden="true">{i===0?<Radio size={15}/>:i===1?<Network size={15}/>:<Check size={15}/>}</span>0{i+1} / {title.toUpperCase()}</span><span className="card-status" aria-hidden="true"><i/></span></div><div className="system-visual"><Figure index={i}/><span className="system-cross cross-top" aria-hidden="true"/><span className="system-cross cross-bottom" aria-hidden="true"/></div><div className="card-copy"><h3>{label}</h3><p>{description}</p></div><div className="card-tail"><span>FIG 0.{i+1}</span><ArrowRight size={15}/></div></a>)}</div></section>
+      <section className="feature-section" id="detect">
+        <SectionHeading index="01 / DETECT" title={<>The change that matters.<br/>Before it gets buried.</>}>The customer insight in a call. The shift in the market. The change inside the business. Bring them into view before another day becomes another missed decision.</SectionHeading>
+        <div className="workflow-stage reveal"><DetectVisual/></div>
+        <div className="feature-footer container"><p><strong>Keep the evidence close.</strong> Source category and timing travel with the signal.</p><p><strong>Protect your attention.</strong> Start with the change that deserves a decision.</p></div>
+      </section>
+      <section className="feature-section" id="map">
+        <SectionHeading index="02 / MAP" title={<>Know what changed.<br/>See what it changes.</>}>Information becomes useful when the stakes are clear. Connect the signal to the priorities, risks, and opportunities it affects—so the team can weigh the same decision.</SectionHeading>
+        <div className="workflow-stage reveal"><MapVisual/></div>
+        <div className="feature-footer container"><p><strong>See the consequence.</strong> Understand what is at stake before you commit.</p><p><strong>End the context chase.</strong> Give the team a shared starting point for the call.</p></div>
+      </section>
+      <section className="feature-section" id="act">
+        <SectionHeading index="03 / ACT" title={<>A clear priority.<br/>A move someone owns.</>}>A decision is only useful when it moves the business. Make the next step explicit, put a name against it, and keep momentum in view.</SectionHeading>
+        <div className="workflow-stage reveal"><ActVisual/></div>
+        <div className="feature-footer container"><p><strong>Make ownership visible.</strong> One priority. An accountable owner. A time frame.</p><p><strong>Watch the distance to action.</strong> Keep decision velocity beside the work that moves it.</p></div>
+      </section>
+      <section className="principle-section" id="principle"><div className="container principle-layout"><div className="trust-note"><span className="eyebrow">FOR THE DECISIONS YOU CARRY</span><h3>Bring the decision that cannot wait.</h3><p>Walk through Vantage with the product team. Start with what changed, what is at stake, and where you need to move.</p></div><blockquote>“Clarity is knowing what deserves your attention—and taking responsibility for what happens next.”<cite>Vantage · Our point of view</cite></blockquote></div></section>
+      <section className="closing"><div className="container closing-inner"><div><h2>Make the call.<br/>Own what comes next.</h2><p>The signal is the start. Your next move is the point.</p></div><div className="closing-actions"><Action/><Action kind="app" secondary/></div></div></section>
+    </main>
+    <footer className="site-footer container"><a href="#top" className="wordmark"><BrandLogo/>Vantage</a><span>Command the signal. Move with intent.</span><a href="#top">Back to top ↑</a></footer>
+    <Dialog open={dialog!==null} onOpenChange={open=>{if(!open)setDialog(null)}}><DialogContent className="conversion-dialog"><DialogTitle>{dialog==='meeting'?'Book a meeting':'Open the app'}</DialogTitle><DialogDescription>{dialog==='meeting'?'Your meeting calendar will open here.':'Your Vantage workspace will open here.'}</DialogDescription><p>{dialog==='meeting'?'Preview only. A Calendly or Google Calendar booking link is still needed.':'Preview only. The product URL is still needed.'}</p><button className="button secondary" onClick={()=>setDialog(null)}>Back to Vantage</button></DialogContent></Dialog>
   </div>;
 }
-
-/*
- * The in-context view further down the page. Deliberately NOT a second copy of
- * the full mockup — it follows one signal through the three fields the product
- * actually writes, which is the thing the hero screenshot can only hint at.
- */
-function SignalFlow() {
-  return <div className="signal-flow" aria-label="How one signal becomes a decision">
-    <article className="flow-step">
-      <p className="flow-kicker"><span className="flow-tag">COST BASE</span> WHAT HAPPENED</p>
-      <h4>Your model provider cut API pricing by half.</h4>
-      <small>PROVIDER CHANGELOG · 18 MIN AGO</small>
-    </article>
-    <i className="flow-link" aria-hidden="true" />
-    <article className="flow-step">
-      <p className="flow-kicker">WHY IT MATTERS TO YOU</p>
-      <h4>Anything you shelved because inference was too expensive is worth re-pricing — and the cut is permanent, not promotional.</h4>
-    </article>
-    <i className="flow-link" aria-hidden="true" />
-    <article className="flow-step flow-act">
-      <p className="flow-kicker">WHAT TO CONSIDER</p>
-      <h4>Re-run your cost model on the features you cut for margin.</h4>
-      <small>OWNER · THIS WEEK</small>
-    </article>
-  </div>;
-}
-
-export function Landing() {
-  return <main className="landing">
-    <div className="grain" />
-
-    <nav className="nav">
-      <a href="#top" className="brand"><Mark /></a>
-      <div className="nav-links"><a href="#product">Product</a><a href="#system">How it works</a></div>
-      <OpenVantage variant="nav" />
-    </nav>
-
-    <section className="hero" id="top">
-      <div className="hero-copy">
-        <p className="eyebrow"><i /> THE OPERATING SYSTEM FOR DECISIVE TEAMS</p>
-        <h1>See what<br />matters.<br /><em>Move with intent.</em></h1>
-        <p className="hero-text">Vantage turns every meaningful signal around your business into a shared, actionable decision—before momentum is lost.</p>
-        <div className="hero-actions"><OpenVantage /><a href="#product" className="text-link">EXPLORE THE SYSTEM <b>↓</b></a></div>
-        <div className="hero-proof"><div className="proof-orbit"><b>V</b><b>R</b><b>G</b></div><p><strong>Designed for leaders in motion</strong><br />From first signal to next decision.</p></div>
-      </div>
-      <div className="hero-product"><div className="hero-halo" /><CommandCenter /></div>
-    </section>
-
-    <div className="marquee"><div><span>SEE THE SIGNAL</span><i>✦</i><span>MAP THE IMPACT</span><i>✦</i><span>MAKE THE MOVE</span><i>✦</i><span>SEE THE SIGNAL</span><i>✦</i><span>MAP THE IMPACT</span><i>✦</i><span>MAKE THE MOVE</span><i>✦</i></div></div>
-
-    <section className="manifesto">
-      <p className="eyebrow"><i /> WHY VANTAGE</p>
-      <div><h2>Your business is<br />already telling you<br /><em>what to do next.</em></h2><p>It is in the sales call you almost forgot, the market change you did not connect, and the metric buried in a different tool. Vantage makes those signals visible—then gives your team a decision worth making.</p></div>
-    </section>
-
-    <section className="system" id="system">
-      <div className="section-top"><div><p className="eyebrow"><i /> ONE SYSTEM, THREE MOVES</p><h2>From noise to<br /><em>operating clarity.</em></h2></div><p>Vantage turns the business environment into a practical, shared rhythm your team can act on.</p></div>
-      <div className="system-grid">
-        <article className="system-card card-detect"><span>01</span><p className="card-kicker">DETECT</p><h3>Know what changed.</h3><p>Pricing, cost base, competition, compliance, capital—watched continuously, and filtered hard.</p><div className="scan-visual"><i /><i /><i /><b /></div></article>
-        <article className="system-card card-map"><span>02</span><p className="card-kicker">MAP</p><h3>See what it means.</h3><p>Vantage connects each signal to the decisions, risks, and opportunities it affects.</p><div className="map-visual"><i /><i /><i /><b>IMPACT</b></div></article>
-        <article className="system-card card-act"><span>03</span><p className="card-kicker">ACT</p><h3>Move with alignment.</h3><p>Turn a clear priority into an accountable next move—without another status meeting.</p><div className="act-visual"><span>PRIORITY DECISION</span><b>Review pricing architecture <i>↗</i></b><small>OWNER · THIS WEEK</small></div></article>
-      </div>
-    </section>
-
-    <section className="product-section" id="product">
-      <div className="product-label">
-        <p className="eyebrow"><i /> THE VANTAGE COMMAND CENTER</p>
-        <h2>One signal.<br /><em>One clear move.</em></h2>
-        <p>Most days surface a handful of signals. Each one arrives already answered: what happened, why it matters to you, and what to do about it.</p>
-        <OpenVantage variant="link" />
-      </div>
-      <SignalFlow />
-    </section>
-
-    <section className="quote">
-      <span>“</span>
-      <blockquote>The best leaders do not have more information.<br />They have a faster way to understand it.</blockquote>
-      <p>VANTAGE / OPERATING PRINCIPLE 01</p>
-    </section>
-
-    <section className="final-cta">
-      <p className="eyebrow"><i /> READY WHEN YOU ARE</p>
-      <h2>Start with<br /><em>today’s signals.</em></h2>
-      <OpenVantage />
-    </section>
-
-    <footer className="footer">
-      <a href="#top" className="brand"><Mark /></a>
-      <p>© 2026 VANTAGE. BUILT FOR MOMENTUM.</p>
-      <div><a href="#product">Product</a><a href={APP_HREF}>Open Vantage</a></div>
-    </footer>
-  </main>;
-}
+function SectionHeading({index,title,children}:{index:string,title:ReactNode,children:ReactNode}){return <div className="section-heading container reveal"><div><span className="eyebrow">{index}</span><h2>{title}</h2></div><p>{children}</p></div>}
