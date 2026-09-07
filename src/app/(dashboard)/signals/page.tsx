@@ -13,6 +13,7 @@ import {
   CheckCircle,
   MessageSquare,
 } from "lucide-react";
+import { toPlainText } from "@/lib/text";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -263,7 +264,7 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
         body: JSON.stringify({
           signalId: signal.id,
           consequenceId: analysis.consequenceId,
-          signalTitle: signal.title,
+          signalTitle: toPlainText(signal.title),
           soWhat: analysis.soWhat,
           actionRecommendation: analysis.immediateAction,
         }),
@@ -327,9 +328,9 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
                 )}
               </div>
 
-              <h3>{signal.title}</h3>
+              <h3>{toPlainText(signal.title)}</h3>
 
-              <p className="line-clamp-2">{signal.content}</p>
+              <p className="line-clamp-2">{toPlainText(signal.content)}</p>
 
               <footer className="flex-wrap">
                 {signal.url ? (
@@ -373,7 +374,7 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
               <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
                 Full Signal
               </p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">{signal.content}</p>
+              <p className="text-[13px] text-muted-foreground leading-relaxed">{toPlainText(signal.content)}</p>
             </div>
 
             {/* Analysis section */}
@@ -493,7 +494,7 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
                 <div className="px-5 pb-3">
                   <button
                     onClick={() => {
-                      const msg = `I'm looking at a signal: '${signal.title}'. Here's what VANTAGE mapped for my company: ${analysis.soWhat}. The immediate action recommended is: ${analysis.immediateAction}. I want to think through whether to act on this — what's your take? What am I missing, and what would you prioritise?`;
+                      const msg = `I'm looking at a signal: '${toPlainText(signal.title)}'. Here's what VANTAGE mapped for my company: ${analysis.soWhat}. The immediate action recommended is: ${analysis.immediateAction}. I want to think through whether to act on this — what's your take? What am I missing, and what would you prioritise?`;
                       sessionStorage.setItem("advisor_prefill", JSON.stringify({ message: msg, source: "signal" }));
                       router.push("/advisor");
                     }}
@@ -524,7 +525,7 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
                             {s.status}
                           </span>
                           <span className="text-[12px] text-foreground leading-snug truncate flex-1">
-                            {s.title}
+                            {toPlainText(s.title)}
                           </span>
                           <span className="text-muted-foreground flex-shrink-0">→</span>
                         </button>
@@ -632,7 +633,7 @@ export default function SignalsPage() {
         return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const hay = `${s.title} ${s.content}`.toLowerCase();
+        const hay = `${toPlainText(s.title)} ${toPlainText(s.content)}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;

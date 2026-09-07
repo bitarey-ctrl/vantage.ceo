@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, ChevronDown, ChevronUp, Calendar, BarChart2, Layers, CheckSquare } from 'lucide-react';
+import { toPlainText } from "@/lib/text";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ function BriefCard({ brief, defaultOpen }: { brief: Brief; defaultOpen?: boolean
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#555555]">
-                            {s.title}
+                            {toPlainText(s.title)}
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {s.actionRequired && (

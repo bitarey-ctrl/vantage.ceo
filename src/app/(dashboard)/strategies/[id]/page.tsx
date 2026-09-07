@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Check, MessageSquare, Zap, X, Loader2 } from "lucide-react";
 import type { Strategy, StrategyStatus } from "@/types/database";
+import { toPlainText } from "@/lib/text";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -380,7 +381,7 @@ export default function StrategyDetailPage() {
                   className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
                 >
                   <Zap size={12} />
-                  Derived from signal: {strategy.signal.title}
+                  Derived from signal: {toPlainText(strategy.signal.title)}
                 </Link>
               ) : (
                 <span>Manually created strategy</span>

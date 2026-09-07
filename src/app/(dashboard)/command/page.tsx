@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toPlainText } from '@/lib/text';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -305,7 +306,7 @@ export default function CommandPage() {
                   <div>
                     {data.signalsWithConsequence.map((s) => (
                       <div key={s.id} className="border-b py-4" style={{ borderColor: 'var(--border)' }}>
-                        <p style={{ color: '#fff', fontWeight: 600, marginBottom: 4 }}>{s.title}</p>
+                        <p style={{ color: '#fff', fontWeight: 600, marginBottom: 4 }}>{toPlainText(s.title)}</p>
                         <p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-tertiary">
                           {s.category} · {timeAgo(s.createdAt)} · {confidenceLabel(s.confidenceScore)}
                         </p>

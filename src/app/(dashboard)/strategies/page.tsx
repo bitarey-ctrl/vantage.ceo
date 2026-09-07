@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Zap, LayoutGrid } from "lucide-react";
 import type { Strategy, StrategyStatus } from "@/types/database";
+import { toPlainText } from "@/lib/text";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,10 +73,10 @@ function StrategyRowItem({ strategy }: { strategy: StrategyRow }) {
               <Link
                 href={`/signals?focus=${strategy.signal.id}`}
                 className="inline-flex items-center gap-1 hover:text-foreground transition-colors truncate max-w-[18rem]"
-                title={strategy.signal.title}
+                title={toPlainText(strategy.signal.title)}
               >
                 <Zap size={11} className="flex-shrink-0" />
-                <span className="truncate">From: {strategy.signal.title}</span>
+                <span className="truncate">From: {toPlainText(strategy.signal.title)}</span>
               </Link>
             ) : (
               <span className="inline-flex items-center gap-1">Manual</span>

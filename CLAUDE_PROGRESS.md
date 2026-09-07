@@ -732,3 +732,26 @@ Note: daily-briefing and missed-signals are on the protected cron path. They wer
 2. Google Cloud Console: authorized redirect URI must include https://odahuetnflsqkligzwpm.supabase.co/auth/v1/callback.
 3. Supabase's built-in recovery email is rate-limited (~2-4/hour on free tier) and can land in spam. Fine at zero traffic; Resend is the upgrade path.
 4. Signup is now unrestricted on your Anthropic credits — worth a spend alert in the Anthropic console.
+
+---
+## 2026-09-07 (2) — Strip HTML at the display layer; open the recovery routes in middleware
+**Files changed:** src/lib/text.ts (new), src/middleware.ts, src/app/(dashboard)/signals/page.tsx, src/app/(dashboard)/briefing/page.tsx, src/app/(dashboard)/command/page.tsx, src/app/(dashboard)/strategies/page.tsx, src/app/(dashboard)/strategies/[id]/page.tsx
+
+(MIDDLEWARE) publicRoutes was ["/login", "/signup", "/api/"], so /forgot-password, /reset-password and /request-access all 307'd to /login for logged-out users — verified live before the fix. That made password recovery structurally impossible: someone who has forgotten their password is by definition logged out, so the page was unreachable for exactly the people who need it, and a valid recovery link bounced off /reset-password before a new password could be set. This was the second half of the reset bug; swapping generateLink for resetPasswordForEmail earlier only fixed delivery. All three routes added. /signals still correctly 307s to /login.
+
+(HTML RENDERING) Signal titles and content were displaying raw markup — `<a href=...>`, `<font>`, `&#8217;`. Confirmed against stored rows: of the 40 most recent, 6 had markup in `content` and 1 in `title`. The gate-written fields (what_happened, why_it_matters, what_to_consider) were clean, being Claude output.
+
+ROOT CAUSE, for the record: rss-ingestion.ts:124 does `decodeEntities(stripHtml(raw))` — strip THEN decode. Google News double-encodes, so a link arrives as `&lt;a href=...&gt;`; tag-stripping finds no literal tags and leaves it, then decoding turns it INTO a tag. The cleaner was manufacturing the markup it was meant to remove. Left in place per the instruction to fix at the display layer only; one line to correct if wanted, and worth doing since dirty content also reaches the gate prompt and any future email surface.
+
+(FIX) New src/lib/text.ts exports toPlainText(): decode -> strip -> decode again -> collapse whitespace. Applied at 12 render sites across 5 files, including the signals search haystack so search matches what the user sees, and the advisor hand-off string so pasted context is clean. Stored data untouched.
+
+A defect the unit tests caught before shipping: the initial generic `<[^>]*>` tag regex also ate ordinary prose — "revenue &lt; $1M and margin &gt; 20%" collapsed to "revenue 20%". In a product about pricing and cost base that is real data loss. The rule now only treats `<...>` as a tag when followed by a letter, `/`, `!` or `?`, so comparison operators survive.
+
+**Verification:** 19/19 unit assertions on toPlainText, including both real dirty values pulled from the database, the double-encoding case, and four comparison-operator cases. npx tsc --noEmit clean; npm run build 62/62. Locally: /forgot-password, /reset-password and /request-access all return 200 logged out while /signals still 307s. Rendered /signals in Chrome against the real dirty rows — zero occurrences of `<a href=`, `<font`, `&#NNN;` or `&amp;`-family entities on the page; the California title renders "Here's What SB 122 Does" with a real apostrophe.
+
+**Status:** Complete.
+
+**Pending user actions (unchanged, still blocking auth):**
+1. Supabase -> Authentication -> URL Configuration: Site URL = https://www.vantage.ceo, Redirect URLs including https://www.vantage.ceo/**. Both Google OAuth and password reset depend on it.
+2. Google Cloud Console: authorized redirect URI https://odahuetnflsqkligzwpm.supabase.co/auth/v1/callback.
+3. Optional: fix the rss-ingestion.ts ordering bug so newly stored rows are clean at rest.

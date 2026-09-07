@@ -33,7 +33,20 @@ export async function middleware(request: NextRequest) {
 
   // Public routes that don't need auth. "/" is the marketing landing page —
   // its layout redirects authenticated users to /command itself.
-  const publicRoutes = ["/login", "/signup", "/api/"];
+  //
+  // The password-recovery pages MUST be here: someone who has forgotten their
+  // password is by definition logged out, so gating /forgot-password behind
+  // auth made it unreachable for the only people who need it — and bounced
+  // valid recovery links off /reset-password before a new password could be
+  // set. /request-access is a public contact page.
+  const publicRoutes = [
+    "/login",
+    "/signup",
+    "/api/",
+    "/forgot-password",
+    "/reset-password",
+    "/request-access",
+  ];
   const isPublicRoute =
     pathname === "/" || publicRoutes.some((r) => pathname.startsWith(r));
 
