@@ -755,3 +755,29 @@ A defect the unit tests caught before shipping: the initial generic `<[^>]*>` ta
 1. Supabase -> Authentication -> URL Configuration: Site URL = https://www.vantage.ceo, Redirect URLs including https://www.vantage.ceo/**. Both Google OAuth and password reset depend on it.
 2. Google Cloud Console: authorized redirect URI https://odahuetnflsqkligzwpm.supabase.co/auth/v1/callback.
 3. Optional: fix the rss-ingestion.ts ordering bug so newly stored rows are clean at rest.
+
+---
+## 2026-09-07 (3) — Render the gate's three fields; fix ingest cleaning at source; deprecate triage scoring
+**Files changed:** src/app/(dashboard)/signals/page.tsx, src/lib/signals/rss-ingestion.ts, src/app/api/signals/[id]/analyse/route.ts, src/lib/signals/signal-processor.ts, src/lib/ai/consequence-mapper.ts, supabase/migrations/028_deprecate_triage_scoring.sql (new)
+
+(1 — RENDER THE THREE FIELDS) The gate has been writing what_happened / why_it_matters / what_to_consider since migration 023, /api/signals/raw has been selecting them, and the page's RawSignal type has been declaring them — but no JSX ever referenced them. The analysis was paid for on every ingest, stored, shipped to the browser, and dropped; the card showed the raw feed headline and blurb instead. Cards now lead with why_it_matters as the primary text (h3), what_happened drops to a secondary muted line, and what_to_consider gets its own labelled block below a hairline. The expanded panel shows what_happened above the original feed text, relabelled "Source text". Pre-gate rows have none of these fields, so the old title+content rendering is kept as a fallback. The ANALYSE IMPACT button is untouched — segment-level analysis is the default tier, company-specific stays the upgrade.
+
+(2 — INGEST CLEANING) rss-ingestion.ts cleanText was `decodeEntities(stripHtml(raw))` with its own local copies of both helpers. Strip-then-decode is what stored markup in the first place: Google News double-encodes, so a link arrives as `&lt;a href=...&gt;`, tag-stripping finds no literal tags, and decoding then turns it INTO a tag.
+
+A literal one-line swap would have traded one bug for a worse one. The local stripHtml used `<[^>]+>`, which also matches ordinary prose — once entities are decoded first, "revenue &lt; $1M and margin &gt; 20%" becomes "revenue < $1M and margin > 20%" and the greedy pattern eats "< $1M and margin >", storing "revenue 20%" permanently. That is silent data loss on exactly the pricing and cost-base prose this product exists to surface, and unlike a display bug it would not be recoverable. So cleanText now delegates to the shared toPlainText() (decode -> strip tag-shaped only -> decode -> collapse), deleting both local helpers. One tested implementation shared with the display layer, so the two cannot drift.
+
+(3 — TRIAGE SCORING DEPRECATED) signal_triages is a pure join table; every row carries relevance_score = 100 and relevance_reason = 'Passed the five-category gate.' — confirmed identical across all live rows. The gate does not score, it discards.
+
+Found one piece of user-facing UI showing it, and it was actively wrong: api/signals/[id]/analyse returned a 422 reading "This signal looks like background noise ... (relevance 100/100) ... Reason: Passed the five-category gate." That branch fires when the consequence-mapping CALL FAILS, not on any relevance judgement — so an AI outage was reported to the user as their signal being noise, at a self-contradictory 100/100. Replaced with an honest transient-failure message. This is a protected file; changed under instruction 3 ("if there's UI showing relevance: 100 anywhere, remove it"), since that string was the only instance.
+
+Migration 028 records the deprecation in the schema (COMMENT ON TABLE/COLUMN) and drops the DEFAULT 70, which implied a middling score for rows that were never scored. The columns are NOT dropped: api/signals/[id]/analyse and api/cron/missed-signals still read and write them and both are protected. The two write sites now carry comments saying the values are placeholders, not measurements.
+
+**Verification:** npx tsc --noEmit clean; npm run build 62/62. toPlainText suite re-run after rss-ingestion took the dependency — 4/4 including the double-encoded-tag case and the comparison-operator case. Rendered /signals in Chrome: 9 cards, all 9 showing a What to consider block, h3 confirmed to be the why_it_matters text rather than the headline, expanded panel showing What happened + Source text, ANALYSE IMPACT button still present, and zero raw markup or entities anywhere on the page.
+
+**Status:** Complete.
+
+**Note:** the fixed command bar at the bottom of /signals overlaps card content now that cards are taller. Pre-existing fixed-position behaviour, not introduced here, but more noticeable — worth a look if it bothers you in use.
+
+**Pending user actions:**
+1. Run supabase/migrations/028_deprecate_triage_scoring.sql (documentation + default drop; nothing breaks if it is delayed).
+2. Still outstanding from earlier: Supabase Site URL / Redirect URLs, and the Google Cloud authorized redirect URI — both Google OAuth and password reset depend on them.

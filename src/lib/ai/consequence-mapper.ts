@@ -29,6 +29,9 @@ interface ConsequenceResult {
  * consume `triageResult` from runConsequencePipeline below.
  */
 async function triageSignal(): Promise<TriageResult> {
+  // These are placeholders, not a judgement. The shape is preserved only
+  // because api/signals/[id]/analyse consumes triageResult and writes it to
+  // the deprecated signal_triages scoring columns (see migration 028).
   return {
     relevant: true,
     relevance_score: 100,

@@ -134,7 +134,14 @@ export async function processSignalsForProfile(
     );
   }
 
-  // 5. Link each surfaced signal to this profile
+  // 5. Link each surfaced signal to this profile.
+  //
+  // signal_triages is a pure join table now. relevant/relevance_score/
+  // relevance_reason are vestiges of the pre-023 scoring rubric and are
+  // deprecated in migration 028 — every row carries the same constants
+  // because the gate does not score, it discards. They are still written
+  // only because the columns are NOT NULL and two protected routes read
+  // them. Do not treat these values as a measurement.
   const { error: triageError } = await supabase.from("signal_triages").upsert(
     insertedSignals.map((s) => ({
       signal_id: s.id,

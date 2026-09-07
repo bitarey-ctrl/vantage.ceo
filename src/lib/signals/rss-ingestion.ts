@@ -1,5 +1,6 @@
 import type { CeoContext } from "@/types/database";
 import { CURATED_FEEDS, buildQueryFeeds, type SourceFeed } from "./sources";
+import { toPlainText } from "@/lib/text";
 
 interface RssSignal {
   title: string;
@@ -100,28 +101,29 @@ async function fetchRssFeed(
   return parseRssFeed(text, feedName, maxItems);
 }
 
-// Strip HTML tags and collapse whitespace → clean text for the gate prompt.
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-}
-
-// Decode the common XML/HTML entities that survive tag-stripping.
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// Tags AND entities — applied to both RSS <description> and Atom <summary>/<content>.
+// Clean text for storage and for the gate prompt.
+//
+// This used to be `decodeEntities(stripHtml(raw))` — strip THEN decode — with
+// its own local copies of both helpers. That order is what stored markup in
+// the first place: Google News double-encodes, so a link arrives as
+// `&lt;a href=...&gt;`, tag-stripping finds no literal tags and leaves it, and
+// decoding then turns it INTO a tag. The cleaner was manufacturing the markup
+// it existed to remove.
+//
+// Simply swapping the order would have traded one bug for a worse one. The old
+// local stripHtml used `<[^>]+>`, which also matches ordinary prose: once
+// entities are decoded first, "revenue &lt; $1M and margin &gt; 20%" becomes
+// "revenue < $1M and margin > 20%" and the greedy pattern eats
+// "< $1M and margin >", storing "revenue 20%" permanently. That is real data
+// loss on exactly the pricing and cost-base prose this product exists to
+// surface.
+//
+// So this now delegates to the shared toPlainText(), which decodes, strips
+// only tag-shaped `<...>`, decodes again for entities that were nested inside
+// removed markup, and collapses whitespace. One implementation, covered by
+// unit tests, shared with the display layer so the two cannot drift.
 function cleanText(raw: string): string {
-  return decodeEntities(stripHtml(raw));
+  return toPlainText(raw);
 }
 
 // Tolerate malformed/missing dates instead of throwing on .toISOString().

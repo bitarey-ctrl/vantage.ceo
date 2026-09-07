@@ -143,9 +143,15 @@ export async function POST(
     });
 
     if (!consequenceResult) {
+      // This branch means the consequence-mapping call itself failed — it is
+      // NOT a relevance judgement. Everything reaching this route already
+      // passed the five-category gate at ingestion, so the old copy here
+      // ("background noise ... relevance 100/100") described a state that
+      // cannot exist and blamed the user's signal for an AI failure.
       return NextResponse.json(
         {
-          error: `This signal looks like background noise for your profile — pure entertainment, weather, or unrelated news (relevance ${triageResult.relevance_score}/100). If you disagree, click Dismiss and try a different signal. Reason: ${triageResult.relevance_reason}`
+          error:
+            "We couldn't complete the analysis for this signal. This is usually temporary — try again in a moment.",
         },
         { status: 422 }
       );

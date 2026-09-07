@@ -328,9 +328,38 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
                 )}
               </div>
 
-              <h3>{toPlainText(signal.title)}</h3>
+              {/* The gate already wrote what-happened / why-it-matters /
+                  what-to-consider at ingestion. Lead with WHY IT MATTERS —
+                  that is the product. The headline is provenance, so it drops
+                  to a secondary line. Falls back to the raw feed text for
+                  pre-gate rows, which have none of the three fields. */}
+              {signal.why_it_matters ? (
+                <>
+                  <h3>{signal.why_it_matters}</h3>
 
-              <p className="line-clamp-2">{toPlainText(signal.content)}</p>
+                  <p className="cx-signal-headline mt-2 text-[12px] text-muted-foreground">
+                    {signal.what_happened
+                      ? signal.what_happened
+                      : toPlainText(signal.title)}
+                  </p>
+
+                  {signal.what_to_consider && (
+                    <div className="hairline mt-3 border-t pt-3">
+                      <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                        What to consider
+                      </p>
+                      <p className="text-[12.5px] leading-relaxed text-foreground/85">
+                        {signal.what_to_consider}
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3>{toPlainText(signal.title)}</h3>
+                  <p className="line-clamp-2">{toPlainText(signal.content)}</p>
+                </>
+              )}
 
               <footer className="flex-wrap">
                 {signal.url ? (
@@ -371,8 +400,18 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
           <div className="border-t hairline surf-1">
             {/* Full content */}
             <div className="px-5 pt-4 pb-4">
+              {signal.what_happened && (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
+                    What happened
+                  </p>
+                  <p className="text-[13px] text-foreground/90 leading-relaxed mb-4">
+                    {signal.what_happened}
+                  </p>
+                </>
+              )}
               <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
-                Full Signal
+                {signal.what_happened ? "Source text" : "Full Signal"}
               </p>
               <p className="text-[13px] text-muted-foreground leading-relaxed">{toPlainText(signal.content)}</p>
             </div>
