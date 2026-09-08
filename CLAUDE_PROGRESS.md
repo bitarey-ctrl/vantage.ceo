@@ -933,3 +933,25 @@ Shell only, per the agreed phasing. Every page still renders its own current con
 **Verification:** npx tsc --noEmit clean; npm run build clean. Baselines for /command and /signals captured before any edit. After: shell/sidebar/workbench all present, all 7 nav hrefs correct, breadcrumb tracks the route, 0 locked items (correct — plan restrictions are removed so effectivePlan is 'pro'), 4 signal cards intact, CommandBar still mounted (cx-command-bar), hamburger display:none on desktop. Exercised real routing through the new sidebar: /signals -> /strategies (breadcrumb updated) -> /signals, shell survived, cards intact. git status confirms no api/, lib/signals/, lib/ai/, (auth)/ or middleware file was touched.
 
 **Status:** Phase 1 complete. Phases remaining: Signals, then Command, Decisions, Strategies, Advisor, Profile/Settings — one at a time.
+
+---
+## 2026-09-08 (6) — Dashboard reskin across all seven pages (shared-primitive bridge)
+**Files changed:** src/components/redesign/app-bridge.css (new), src/components/redesign/index.css
+
+(APPROACH — option B, chosen for speed and zero regression risk) Rather than rewriting seven page components to emit vx- classes, a bridge stylesheet maps the app's EXISTING container classes onto the design's values. The diff is two CSS files. No JSX, no handler, no fetch, no state was touched, so functionality cannot regress by construction.
+
+Inventoried what the pages actually use before writing anything: hairline (57 uses), surf-2 (35), glass (33), surf-hover (24), surf-3 (18), hairline-strong (18), surf-1 (8), display-font (8), cx-eyebrow (7), section-container (4), glass-sheen (3), plus assorted cx-* singles. Those are the mapping targets.
+
+Values lifted from the design's workspace.css: panel #111416 / border #ffffff13 / radius 8px, raised #181a1d, strong border #ffffff1b, muted #959ca7, dim #737d8a. Mapped: glass/metric-card/cx-signal to flat vx panels (no backdrop-filter, no shadow), glass-sheen overlay suppressed, surf-1..4 to the design's surface ladder, hairline/hairline-strong to its border tokens, cx-eyebrow to vx-eyebrow type, cx-filter to vx-tabs chrome, badges to vx-tag geometry with category hue preserved so Pricing/Cost Base/Compliance stay distinguishable, and radii tightened from the app's 19-25px pills to the design's 4-8px. The floating CommandBar keeps its pill radius deliberately — squaring off a floating control reads as a bug.
+
+SCOPING: every rule sits under `.vx-app`, the dashboard shell. The landing (.vlp) and the auth pages are outside it and unaffected. `.vx-app .glass` is (0,2,0) so it beats the base `.glass` (0,1,0) without !important, and the bridge is imported last so it also wins on order.
+
+TRADE-OFF, recorded: this changes surfaces, borders, radii and type — not layout. Pages whose structure genuinely differs from the prototype (the Decisions split detail view) keep their current arrangement. That was the accepted cost of option B.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Swept all seven routes by clicking the real sidebar links, exercising Next routing: /command, /signals, /strategies, /decisions, /advisor, /profile, /settings — every one landed on the right path, breadcrumb correct, shell intact, no error boundary, and bridge-targeted panels present on each (5/4/12/1/3/6/2). git status confirms the entire change is two CSS files.
+
+**PRE-EXISTING BUG FOUND, not caused by this work:** /settings renders "Unable to load your settings". Traced it rather than assuming: the page calls getNotificationPreferences(), and the notification_preferences table does not exist — PGRST205, "Could not find the table 'public.notification_preferences' in the schema cache". Migration 015 was never applied. settings/page.tsx has not been modified since the initial commit and this reskin is CSS-only, so it cannot be the cause.
+
+**Status:** Complete. One commit, one deployment, as asked.
+
+**Pending user action:** run supabase/migrations/015_notification_preferences.sql to fix /settings.

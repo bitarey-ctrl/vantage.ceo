@@ -1,0 +1,133 @@
+/*
+ * Design bridge — adopts the vx visual language across every dashboard page
+ * WITHOUT touching page JSX.
+ *
+ * Why this exists: the seven dashboard pages are built on the app's own
+ * container classes (glass, surf-1..4, hairline, cx-*). Rewriting all of them
+ * to emit vx- classes is a large mechanical change whose failure mode is a
+ * broken handler nobody notices. This maps the existing classes onto the
+ * design's values instead, so every page adopts the language in one step and
+ * no event handler, fetch, or piece of state is touched.
+ *
+ * Trade-off, deliberate: this changes surfaces, borders, radii and type — not
+ * layout. Pages whose structure genuinely differs from the prototype (the
+ * Decisions split detail view, for example) keep their current arrangement.
+ *
+ * SCOPING: every rule is under `.vx-app`, the dashboard shell wrapper. The
+ * landing page (.vlp) and the auth pages are outside it and are unaffected.
+ * `.vx-app .glass` is (0,2,0) so it wins over the base `.glass` (0,1,0)
+ * without needing !important.
+ *
+ * Values are lifted from the design package's workspace.css:
+ *   panel   #111416   border #ffffff13   radius 8px
+ *   raised  #181a1d   strong border #ffffff1b
+ *   muted   #959ca7   dim #737d8a        red #ff321f
+ */
+
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
+
+/* The design uses flat, tight panels — not large translucent glass slabs. */
+.vx-app .glass,
+.vx-app .metric-card,
+.vx-app .cx-signal,
+.vx-app .cx-signals-card {
+  background: #111416;
+  border: 1px solid #ffffff13;
+  border-radius: 8px;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* The sheen overlay belongs to the old glass treatment. */
+.vx-app .glass-sheen::before,
+.vx-app .glass-sheen::after {
+  display: none;
+}
+
+.vx-app .surf-1 { background: transparent; }
+.vx-app .surf-2 { background: #111214; }
+.vx-app .surf-3 { background: #181a1d; }
+.vx-app .surf-4 { background: #1d2023; }
+
+.vx-app .surf-hover:hover { background: #ffffff08; }
+
+/* ── Borders ────────────────────────────────────────────────────────────── */
+
+.vx-app .hairline        { border-color: #ffffff12; }
+.vx-app .hairline-strong { border-color: #ffffff1b; }
+
+/* ── Radii — the single biggest visual tell. The app used 19-25px pills and
+      slabs; the design is 4-8px throughout. ───────────────────────────────── */
+
+.vx-app [class*="rounded-["] { border-radius: 8px; }
+.vx-app .rounded-full,
+.vx-app [class*="rounded-full"] { border-radius: 999px; }
+
+/* ── Type ───────────────────────────────────────────────────────────────── */
+
+/* vx-eyebrow */
+.vx-app .cx-eyebrow,
+.vx-app .cx-signal-meta {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: #737d8a;
+}
+
+/* vx-reading h2 — tighter and less oversized than the old display treatment. */
+.vx-app .cx-headline h1,
+.vx-app .display-font {
+  letter-spacing: -0.8px;
+  line-height: 1.22;
+}
+
+.vx-app .cx-headline-sub { color: #959ca7; }
+
+/* ── Tabs / filter pills → vx-tabs ──────────────────────────────────────── */
+
+.vx-app .cx-filter {
+  border-radius: 6px;
+  background: #181a1d;
+  border: 1px solid #ffffff12;
+  color: #8792a1;
+  font-size: 12px;
+}
+.vx-app .cx-filter.cx-active {
+  background: #ffffff0d;
+  border-color: #ffffff26;
+  color: #e8eaee;
+}
+
+/* ── Tags / badges → vx-tag. Category hue is preserved; only the chrome
+      changes, so Pricing / Cost Base / Compliance stay distinguishable. ──── */
+
+.vx-app .cx-tag,
+.vx-app [class^="cat-badge-"],
+.vx-app [class*=" cat-badge-"],
+.vx-app .badge-completed {
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 3px 7px;
+  border-width: 1px;
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────────── */
+
+.vx-app input,
+.vx-app textarea,
+.vx-app select {
+  border-radius: 6px;
+}
+.vx-app .cx-search { border-radius: 6px; background: #181a1d; }
+
+/* ── Buttons → vx-btn. Only chrome; the accent CTA keeps the brand red. ─── */
+
+.vx-app button:not(.vx-menu-toggle):not([class*="cx-nav"]):not([class*="cx-command"]) {
+  border-radius: 6px;
+}
+
+/* ── The fixed command bar keeps its pill shape — it is a floating control,
+      not a panel, and squaring it off reads as a bug. ────────────────────── */
+
+.vx-app .cx-command-bar { border-radius: 23px; }
+.vx-app .cx-command-bar input { border-radius: 999px; }

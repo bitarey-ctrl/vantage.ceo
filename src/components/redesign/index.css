@@ -19,3 +19,5 @@
 @import "./layered-shell.css";
 /* App-specific additions (hamburger, Pro lock) — see the file header. */
 @import "./app-additions.css";
+/* Maps the app's existing classes onto the design language — see header. */
+@import "./app-bridge.css";
