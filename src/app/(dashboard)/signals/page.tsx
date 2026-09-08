@@ -1,23 +1,45 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
-  BarChart2,
+  SlidersHorizontal,
+  Search,
+  ChevronRight,
+  ArrowRight,
+  ArrowUpRight,
+  Link2,
+  Plus,
   Loader2,
-  ExternalLink,
-  CheckCircle,
-  MessageSquare,
+  X,
 } from "lucide-react";
 import { toPlainText } from "@/lib/text";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/*
+ * Signals — rebuilt to the prototype's structure (components/redesign/
+ * workspace.tsx, the vx-calm-page block), wired to real Supabase data.
+ *
+ * Two views, as in the prototype: a calm inbox list, and a reading document
+ * for one signal. Every existing API call is preserved:
+ *   GET   /api/signals/raw              the feed
+ *   GET   /api/signals/analysis-map     which signals already have analysis
+ *   POST  /api/signals/refresh          refresh button
+ *   POST  /api/signals/:id/review       mark reviewed on first open
+ *   GET   /api/signals/:id/consequence  load an existing analysis
+ *   POST  /api/signals/:id/analyse      run company-specific analysis
+ *   PATCH /api/signals/:id/respond      accept / dismiss
+ *   GET   /api/strategies?signalId=     linked strategies
+ *   POST  /api/strategies/generate      turn a signal into a strategy
+ *
+ * OMITTED from the prototype because the gate produces no such data: a
+ * per-signal confidence score and an "if you wait" line. Both DO exist on a
+ * consequence, so they appear in the analysis block once Analyse has actually
+ * run — real data earned by a real call, not a number invented for every card.
+ */
 
 type Urgency = "act_this_week" | "decide_this_month" | "watch";
+type Category = "pricing" | "cost_base" | "competition" | "compliance" | "capital";
 
 interface RawSignal {
   id: string;
@@ -44,41 +66,13 @@ interface ConsequenceAnalysis {
   confidence_score?: number;
 }
 
-type StrategyStatus = "considering" | "deciding" | "decided" | "archived";
-
 interface LinkedStrategy {
   id: string;
   title: string;
-  status: StrategyStatus;
+  status: "considering" | "deciding" | "decided" | "archived";
 }
 
-const STRATEGY_STATUS_STYLE: Record<StrategyStatus, string> = {
-  considering: "surf-2 text-muted-foreground hairline",
-  deciding: "surf-3 text-foreground hairline-strong",
-  decided: "badge-completed",
-  archived: "surf-1 text-muted-foreground hairline",
-};
-
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function Skeleton({ className }: { className?: string }) {
-  return <div className={`animate-pulse rounded surf-2 ${className ?? ""}`} />;
-}
-
-// ─── Category helpers ─────────────────────────────────────────────────────────
-
-// The five gate categories. Set server-side by the relevance gate — the UI
-// no longer guesses from keywords.
-type Category = "pricing" | "cost_base" | "competition" | "compliance" | "capital";
-
-const CATEGORIES: readonly Category[] = [
-  "pricing",
-  "cost_base",
-  "competition",
-  "compliance",
-  "capital",
-] as const;
-
+const CATEGORIES: readonly Category[] = ["pricing", "cost_base", "competition", "compliance", "capital"];
 const CATEGORY_LABEL: Record<Category, string> = {
   pricing: "Pricing",
   cost_base: "Cost Base",
@@ -86,65 +80,12 @@ const CATEGORY_LABEL: Record<Category, string> = {
   compliance: "Compliance",
   capital: "Capital",
 };
-
-// Reuses the four existing cat-badge-* tokens — no new colors. Cost Base and
-// Capital share the macro token, which is the closest existing fit.
-function categoryBadgeClass(cat: Category): string {
-  switch (cat) {
-    case "pricing": return "cat-badge-market";
-    case "compliance": return "cat-badge-regulatory";
-    case "cost_base": return "cat-badge-macro";
-    case "capital": return "cat-badge-macro";
-    case "competition": return "cat-badge-competitors";
-  }
-}
-
-// ─── Urgency helpers ──────────────────────────────────────────────────────────
-
-const URGENCY_TIERS = ["act_this_week", "decide_this_month", "watch"] as const;
-const URGENCY_ORDER: Record<Urgency, number> = {
-  act_this_week: 0,
-  decide_this_month: 1,
-  watch: 2,
-};
+const URGENCIES: readonly Urgency[] = ["act_this_week", "decide_this_month", "watch"];
 const URGENCY_LABEL: Record<Urgency, string> = {
   act_this_week: "Act this week",
   decide_this_month: "Decide this month",
   watch: "Watch",
 };
-// Red = act now, amber = decide soon, neutral = watch. Uses the shared
-// urgency ladder tokens so all surfaces stay consistent.
-const URGENCY_DOT: Record<Urgency, string> = {
-  act_this_week: "urgency-dot-act",
-  decide_this_month: "urgency-dot-decide",
-  watch: "urgency-dot-watch",
-};
-
-function normalizeUrgency(u: Urgency | null | undefined): Urgency {
-  return u && URGENCY_TIERS.includes(u) ? u : "watch";
-}
-
-function isCategory(value: unknown): value is Category {
-  return CATEGORIES.includes(value as Category);
-}
-
-// Pre-gate rows have no category. They are filtered out upstream, but default
-// to "capital" rather than crashing if one slips through.
-function signalCategory(s: RawSignal): Category {
-  return isCategory(s.category) ? s.category : "capital";
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-// ─── Signal Card ──────────────────────────────────────────────────────────────
 
 const ANALYSE_MSGS = [
   "Mapping consequences for your company...",
@@ -153,104 +94,369 @@ const ANALYSE_MSGS = [
   "Building your action recommendation...",
 ];
 
-function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }: {
-  signal: RawSignal;
-  initialAnalysis?: ConsequenceAnalysis | null;
-  onAnalysisComplete?: () => void;
-  onExpanded?: (expanded: boolean) => void;
-}) {
+function isCategory(v: unknown): v is Category {
+  return CATEGORIES.includes(v as Category);
+}
+function signalCategory(s: RawSignal): Category {
+  return isCategory(s.category) ? s.category : "capital";
+}
+function normalizeUrgency(u: Urgency | null | undefined): Urgency {
+  return u && URGENCIES.includes(u) ? u : "watch";
+}
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return m + "m";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h";
+  return Math.floor(h / 24) + "d";
+}
+function sourceLabel(s: RawSignal): string {
+  if (!s.url) return s.source ?? "Source";
+  try {
+    return new URL(s.url).hostname.replace(/^www\./, "");
+  } catch {
+    return s.source ?? "Source";
+  }
+}
+
+export default function SignalsPage() {
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
-  const [analysing, setAnalysing] = useState(false);
-  const [analyseMsgIdx, setAnalyseMsgIdx] = useState(0);
-  const analyseIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [generating, setGenerating] = useState(false);
+
+  const [signals, setSignals] = useState<RawSignal[]>([]);
+  const [analysisMap, setAnalysisMap] = useState<Record<string, ConsequenceAnalysis>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"All" | Category>("All");
+  const [urgency, setUrgency] = useState<"All" | Urgency>("All");
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [checkedAt, setCheckedAt] = useState("Not checked this session");
+  const [notice, setNotice] = useState("");
+
+  const fetchSignals = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const [sigRes, mapRes] = await Promise.all([
+        fetch("/api/signals/raw"),
+        fetch("/api/signals/analysis-map"),
+      ]);
+      if (!sigRes.ok) throw new Error("failed");
+      const list = (await sigRes.json()) as RawSignal[];
+      setSignals(Array.isArray(list) ? list : []);
+      if (mapRes.ok) {
+        const map = await mapRes.json();
+        setAnalysisMap(map && typeof map === "object" ? map : {});
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSignals();
+  }, [fetchSignals]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setCheckedAt("Checking sources...");
+    setNotice("");
+    try {
+      const res = await fetch("/api/signals/refresh", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { signalsAdded?: number; error?: string };
+      if (!res.ok) {
+        setCheckedAt("Check failed");
+        setNotice(body.error ?? "Refresh failed.");
+        return;
+      }
+      const added = body.signalsAdded ?? 0;
+      setCheckedAt(added > 0 ? "Checked just now · " + added + " new" : "Checked just now · nothing new");
+      await fetchSignals();
+    } catch {
+      setCheckedAt("Check failed");
+      setNotice("Refresh failed. Check your connection.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const filtered = useMemo(
+    () =>
+      signals.filter((s) => {
+        if (category !== "All" && signalCategory(s) !== category) return false;
+        if (urgency !== "All" && normalizeUrgency(s.urgency) !== urgency) return false;
+        if (query.trim()) {
+          const hay = (toPlainText(s.title) + " " + (s.why_it_matters ?? "") + " " + (s.what_happened ?? "")).toLowerCase();
+          if (!hay.includes(query.toLowerCase().trim())) return false;
+        }
+        return true;
+      }),
+    [signals, category, urgency, query]
+  );
+
+  const open = signals.find((s) => s.id === openId) ?? null;
+  const clearFilters = () => {
+    setQuery("");
+    setCategory("All");
+    setUrgency("All");
+  };
+  const filtersActive = query !== "" || category !== "All" || urgency !== "All";
+
+  const noticeBar = notice ? (
+    <div role="status" className="vx-notice">
+      {notice}
+      <button aria-label="Dismiss notice" onClick={() => setNotice("")}>
+        <X size={14} />
+      </button>
+    </div>
+  ) : null;
+
+  if (open) {
+    return (
+      <div className="vx-calm-page">
+        {noticeBar}
+        <SignalDocument
+          key={open.id}
+          signal={open}
+          initialAnalysis={analysisMap[open.id]}
+          onBack={() => setOpenId(null)}
+          onNotice={setNotice}
+          onAnalysed={fetchSignals}
+          router={router}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="vx-calm-page">
+      {noticeBar}
+
+      <div className="vx-page-heading">
+        <div>
+          <h1>Signals</h1>
+          <p>Changes that could affect your next decision.</p>
+        </div>
+        <div className="vx-signals-actions">
+          <button className="vx-btn vx-primary" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw size={15} className={refreshing ? "vx-refreshing" : ""} />
+            {refreshing ? "Refreshing..." : "Refresh signals"}
+          </button>
+          <button className="vx-btn" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>
+            <SlidersHorizontal size={15} />
+            Filter
+            {filtersActive && <span className="vx-dot vx-red" />}
+          </button>
+        </div>
+      </div>
+
+      <div className="vx-feed-status">
+        <span role="status" aria-live="polite">{checkedAt}</span>
+        <span>{signals.length} tracked · curated sources</span>
+      </div>
+
+      {filtersOpen && (
+        <div className="vx-filterbar">
+          <label className="vx-search">
+            <Search size={16} />
+            <input
+              aria-label="Search signals"
+              placeholder="Search signals..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <label className="vx-select">
+            <select
+              aria-label="Signal category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value as "All" | Category)}
+            >
+              <option value="All">All</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="vx-select">
+            <select
+              aria-label="Signal urgency"
+              value={urgency}
+              onChange={(e) => setUrgency(e.target.value as "All" | Urgency)}
+            >
+              <option value="All">All</option>
+              {URGENCIES.map((u) => (
+                <option key={u} value={u}>{URGENCY_LABEL[u]}</option>
+              ))}
+            </select>
+          </label>
+          <button className="vx-text-btn" onClick={clearFilters}>Clear filters</button>
+        </div>
+      )}
+
+      <div className="vx-calm-inbox">
+        {loading ? (
+          <div className="vx-empty"><h2>Loading signals...</h2></div>
+        ) : error ? (
+          <div className="vx-empty">
+            <h2>Couldn&apos;t load your signals</h2>
+            <button className="vx-btn" onClick={fetchSignals}>Try again</button>
+          </div>
+        ) : filtered.length ? (
+          filtered.map((s) => {
+            const cat = signalCategory(s);
+            const urg = normalizeUrgency(s.urgency);
+            const analysed = Boolean(analysisMap[s.id]);
+            return (
+              <button
+                key={s.id}
+                className="vx-calm-row vx-news-row"
+                onClick={() => { setOpenId(s.id); window.scrollTo({ top: 0 }); }}
+              >
+                <span className={"vx-dot " + (urg === "act_this_week" ? "vx-red" : "")} />
+                <span>
+                  <div className="vx-news-meta">
+                    <span>{CATEGORY_LABEL[cat]}</span>
+                    <span className={urg === "act_this_week" ? "vx-red" : ""}>
+                      {analysed ? "Analysed" : URGENCY_LABEL[urg]}
+                    </span>
+                  </div>
+                  <h2>{s.why_it_matters ? s.why_it_matters : toPlainText(s.title)}</h2>
+                  <p className="vx-news-summary">
+                    {s.what_happened ? s.what_happened : toPlainText(s.content)}
+                  </p>
+                  <small className="vx-news-source">
+                    {sourceLabel(s)} <span>· {timeAgo(s.created_at)} ago</span>
+                  </small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            );
+          })
+        ) : (
+          <div className="vx-empty">
+            <h2>{signals.length ? "No matching signals" : "No signals yet"}</h2>
+            {signals.length ? (
+              <button className="vx-btn" onClick={clearFilters}>Clear filters</button>
+            ) : (
+              <button className="vx-btn" onClick={handleRefresh} disabled={refreshing}>
+                Refresh signals
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!loading && !error && filtered.length > 0 && (
+        <p className="vx-quiet-note">
+          {filtered.length} signal{filtered.length === 1 ? "" : "s"} · Select one to see why it matters.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── Reading view for one signal ─────────────────────────────────────────── */
+
+function SignalDocument({
+  signal,
+  initialAnalysis,
+  onBack,
+  onNotice,
+  onAnalysed,
+  router,
+}: {
+  signal: RawSignal;
+  initialAnalysis?: ConsequenceAnalysis;
+  onBack: () => void;
+  onNotice: (s: string) => void;
+  onAnalysed: () => void;
+  router: ReturnType<typeof useRouter>;
+}) {
   const [analysis, setAnalysis] = useState<ConsequenceAnalysis | null>(initialAnalysis ?? null);
+  const [analysing, setAnalysing] = useState(false);
+  const [msgIdx, setMsgIdx] = useState(0);
   const [analysisError, setAnalysisError] = useState("");
+  const [generating, setGenerating] = useState(false);
   const [strategyError, setStrategyError] = useState("");
-  const [linkedStrategies, setLinkedStrategies] = useState<LinkedStrategy[]>([]);
-
-  const category = signalCategory(signal);
-  const urgency = normalizeUrgency(signal.urgency);
-
-  const loadExistingAnalysis = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/signals/${signal.id}/consequence`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.consequenceId) setAnalysis(data);
-      }
-    } catch {}
-  }, [signal.id]);
-
-  const loadLinkedStrategies = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/strategies?signalId=${signal.id}`);
-      if (res.ok) {
-        const data = (await res.json()) as LinkedStrategy[];
-        setLinkedStrategies(Array.isArray(data) ? data : []);
-      }
-    } catch {}
-  }, [signal.id]);
-
-  useEffect(() => {
-    if (expanded && !analysis) loadExistingAnalysis();
-  }, [expanded, analysis, loadExistingAnalysis]);
-
-  // Mark the signal reviewed the first time its detail view is opened, so it
-  // stops counting as a "missed" urgent signal for the nudge email.
+  const [linked, setLinked] = useState<LinkedStrategy[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reviewedRef = useRef(false);
+
+  const cat = signalCategory(signal);
+  const urg = normalizeUrgency(signal.urgency);
+
+  // Mark reviewed on first open so it stops counting as a missed urgent signal.
   useEffect(() => {
-    if (!expanded || reviewedRef.current) return;
+    if (reviewedRef.current) return;
     reviewedRef.current = true;
-    fetch(`/api/signals/${signal.id}/review`, { method: "POST" }).catch(() => {});
-  }, [expanded, signal.id]);
+    fetch("/api/signals/" + signal.id + "/review", { method: "POST" }).catch(() => {});
+  }, [signal.id]);
 
   useEffect(() => {
-    if (expanded) loadLinkedStrategies();
-  }, [expanded, loadLinkedStrategies]);
+    if (analysis) return;
+    fetch("/api/signals/" + signal.id + "/consequence")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.consequenceId) setAnalysis(d); })
+      .catch(() => {});
+  }, [signal.id, analysis]);
+
+  useEffect(() => {
+    fetch("/api/strategies?signalId=" + signal.id)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setLinked(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, [signal.id]);
+
+  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []);
 
   const handleAnalyse = async () => {
     setAnalysing(true);
     setAnalysisError("");
-    setAnalyseMsgIdx(0);
-    analyseIntervalRef.current = setInterval(() => {
-      setAnalyseMsgIdx((prev) => (prev + 1) % ANALYSE_MSGS.length);
-    }, 3000);
+    setMsgIdx(0);
+    intervalRef.current = setInterval(() => setMsgIdx((p) => (p + 1) % ANALYSE_MSGS.length), 3000);
     try {
-      const res = await fetch(`/api/signals/${signal.id}/analyse`, {
+      const res = await fetch("/api/signals/" + signal.id + "/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signalId: signal.id }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? "Analysis failed");
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Analysis failed");
       }
-      const data = await res.json() as ConsequenceAnalysis;
-      setAnalysis(data);
-      if (onAnalysisComplete) onAnalysisComplete();
+      setAnalysis((await res.json()) as ConsequenceAnalysis);
+      onAnalysed();
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed. Try again.");
     } finally {
-      if (analyseIntervalRef.current) {
-        clearInterval(analyseIntervalRef.current);
-        analyseIntervalRef.current = null;
-      }
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       setAnalysing(false);
     }
   };
 
-  const handleAcceptDismiss = async (action: "accepted" | "rejected") => {
+  const handleRespond = async (status: "accepted" | "rejected") => {
     if (!analysis) return;
     try {
-      await fetch(`/api/signals/${analysis.consequenceId}/respond`, {
+      await fetch("/api/signals/" + analysis.consequenceId + "/respond", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: action }),
+        body: JSON.stringify({ status }),
       });
-      setAnalysis((prev) => prev ? { ...prev, status: action } : prev);
-    } catch {}
+      setAnalysis((p) => (p ? { ...p, status } : p));
+      onNotice(status === "accepted" ? "Signal accepted." : "Signal dismissed.");
+      if (status === "rejected") onBack();
+    } catch {
+      onNotice("Couldn't save that. Try again.");
+    }
   };
 
   const handleGenerateStrategy = async () => {
@@ -270,627 +476,127 @@ function SignalCard({ signal, initialAnalysis, onAnalysisComplete, onExpanded }:
         }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? "Strategy generation failed");
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Strategy generation failed");
       }
-      const data = await res.json() as { success: boolean; strategy?: { id: string; title: string } };
-      if (data.strategy?.id) {
-        router.push(`/strategies/${data.strategy.id}`);
-      } else {
-        await loadLinkedStrategies();
-        setGenerating(false);
-      }
+      const data = (await res.json()) as { strategy?: { id: string } };
+      if (data.strategy?.id) router.push("/strategies/" + data.strategy.id);
     } catch (err) {
-      setStrategyError(err instanceof Error ? err.message : "Failed to generate strategy");
+      setStrategyError(err instanceof Error ? err.message : "Couldn't create a strategy.");
+    } finally {
       setGenerating(false);
     }
   };
 
+  const askAdvisor = () => {
+    const msg =
+      "I'm looking at a signal: '" + toPlainText(signal.title) + "'. Why it matters: " +
+      (signal.why_it_matters ?? "") + " What am I missing, and what would you prioritise?";
+    router.push("/advisor?q=" + encodeURIComponent(msg));
+  };
+
   return (
-    <div
-      className={`cx-signal ${expanded ? "cx-selected" : ""} ${analysis ? "signal-analysed" : ""}`}
-    >
-      <div className="relative z-10">
-        {/* Collapsed header — concept `.signal`'s own meta/h3/p/footer
-            structure, with the app's real per-category badge system
-            (cat-badge-*, already tokenized per-category) kept in place of
-            the concept's single ad-hoc blue `.type` example, and the real
-            urgency dot (act/decide/watch) kept in place of the concept's
-            category-coloured dot — both carry actual meaning here that the
-            concept's static demo data didn't need to. */}
-        <div
-          className="cursor-pointer p-5 transition-colors"
-          onClick={() => {
-            const next = !expanded;
-            setExpanded(next);
-            onExpanded?.(next);
-          }}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="cx-signal-meta mb-2.5">
-                <span
-                  className={`inline-flex h-[7px] w-[7px] flex-shrink-0 rounded-full ${URGENCY_DOT[urgency]}`}
-                  title={URGENCY_LABEL[urgency]}
-                  aria-label={`Urgency: ${URGENCY_LABEL[urgency]}`}
-                />
-                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${categoryBadgeClass(category)}`}>
-                  {CATEGORY_LABEL[category]}
-                </span>
-                <span>{timeAgo(signal.created_at)}</span>
-                {analysis && (
-                  <span
-                    className="brand-accent-border brand-accent-bg-soft brand-accent-text rounded-full border px-2 py-0.5 text-[9px] font-bold"
-                    style={{ marginLeft: 'auto' }}
-                  >
-                    {analysis.status === "accepted" ? "Accepted" : analysis.status === "rejected" ? "Dismissed" : "Analysed"}
-                  </span>
-                )}
-              </div>
+    <>
+      <button className="vx-back" onClick={onBack}>← All signals</button>
 
-              {/* The gate already wrote what-happened / why-it-matters /
-                  what-to-consider at ingestion. Lead with WHY IT MATTERS —
-                  that is the product. The headline is provenance, so it drops
-                  to a secondary line. Falls back to the raw feed text for
-                  pre-gate rows, which have none of the three fields. */}
-              {signal.why_it_matters ? (
-                <>
-                  <h3>{signal.why_it_matters}</h3>
-
-                  <p className="cx-signal-headline mt-2 text-[12px] text-muted-foreground">
-                    {signal.what_happened
-                      ? signal.what_happened
-                      : toPlainText(signal.title)}
-                  </p>
-
-                  {signal.what_to_consider && (
-                    <div className="hairline mt-3 border-t pt-3">
-                      <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                        What to consider
-                      </p>
-                      <p className="text-[12.5px] leading-relaxed text-foreground/85">
-                        {signal.what_to_consider}
-                      </p>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <h3>{toPlainText(signal.title)}</h3>
-                  <p className="line-clamp-2">{toPlainText(signal.content)}</p>
-                </>
-              )}
-
-              <footer className="flex-wrap">
-                {signal.url ? (
-                  <a
-                    href={signal.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="cx-signal-source inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-                  >
-                    <ExternalLink size={9} />
-                    {(() => {
-                      try { return new URL(signal.url).hostname.replace(/^www\./, ""); }
-                      catch { return "source"; }
-                    })()}
-                  </a>
-                ) : (
-                  <span className="cx-signal-source">No source — discard</span>
-                )}
-                {signal.published_at && (
-                  <span>
-                    {new Date(signal.published_at).toLocaleDateString("en-US", {
-                      month: "short", day: "numeric", year: "numeric"
-                    })}
-                  </span>
-                )}
-              </footer>
-            </div>
-
-            <div className="mt-1 flex-shrink-0 text-muted-foreground">
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </div>
-          </div>
+      <article className="vx-calm-document">
+        <div className="vx-reading-meta">
+          <span className={"vx-tag " + (urg === "act_this_week" ? "vx-tag-red" : "")}>
+            {analysis ? (analysis.status === "accepted" ? "Accepted" : "Analysed") : URGENCY_LABEL[urg]}
+          </span>
+          <span>{CATEGORY_LABEL[cat]}</span>
         </div>
 
-        {/* Expanded section */}
-        {expanded && (
-          <div className="border-t hairline surf-1">
-            {/* Full content */}
-            <div className="px-5 pt-4 pb-4">
-              {signal.what_happened && (
-                <>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
-                    What happened
-                  </p>
-                  <p className="text-[13px] text-foreground/90 leading-relaxed mb-4">
-                    {signal.what_happened}
-                  </p>
-                </>
-              )}
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
-                {signal.what_happened ? "Source text" : "Full Signal"}
-              </p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">{toPlainText(signal.content)}</p>
-            </div>
+        <h1>{toPlainText(signal.title)}</h1>
 
-            {/* Analysis section */}
-            {!analysis ? (
-              <div className="px-5 pb-5">
-                {analysisError && (
-                  <p className="hairline surf-2 text-xs text-foreground mb-3 border rounded-xl px-3 py-2">
-                    {analysisError}
-                  </p>
-                )}
-                <button
-                  onClick={handleAnalyse}
-                  disabled={analysing}
-                  className="btn-primary w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {analysing ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin" />
-                      Analysing with AI...
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle size={13} />
-                      Analyse Impact for My Company
-                    </>
-                  )}
-                </button>
-                <p className={`text-center mt-2 transition-colors text-muted-foreground ${analysing ? "text-[11px]" : "text-[10px]"}`}>
-                  {analysing ? ANALYSE_MSGS[analyseMsgIdx] : "VANTAGE will map consequences specific to your company and market position"}
-                </p>
-              </div>
+        {signal.what_happened && <p className="vx-calm-intro">{signal.what_happened}</p>}
+
+        <div className="vx-article-source">
+          <Link2 size={14} />
+          {signal.url ? (
+            <a href={signal.url} target="_blank" rel="noopener noreferrer">{sourceLabel(signal)}</a>
+          ) : (
+            sourceLabel(signal)
+          )}
+          <span>· {timeAgo(signal.created_at)} ago</span>
+        </div>
+
+        {signal.why_it_matters && (
+          <>
+            <h2>Why it matters</h2>
+            <p>{signal.why_it_matters}</p>
+          </>
+        )}
+
+        {signal.what_to_consider && (
+          <div className="vx-calm-next">
+            <h2>Suggested next step</h2>
+            <p>{signal.what_to_consider}</p>
+            {analysis ? (
+              <button className="vx-btn vx-primary" onClick={handleGenerateStrategy} disabled={generating}>
+                {generating ? <Loader2 size={15} className="vx-refreshing" /> : <ArrowRight size={15} />}
+                {generating ? "Creating..." : "Explore strategy"}
+              </button>
             ) : (
-              <div className="border-t hairline">
-                {/* SO WHAT */}
-                <div className="px-5 pt-4 pb-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-1.5">
-                    So What? — For Your Company
-                  </p>
-                  <p className="text-[13px] text-foreground/80 leading-relaxed">{analysis.soWhat}</p>
-                </div>
-
-                {/* Confidence indicator */}
-                {analysis.confidence_score != null && (
-                  <div className="px-5 pb-3 flex items-center gap-2">
-                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                      Confidence
-                    </span>
-                    <span className={`hairline rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                      analysis.confidence_score >= 70 ? "surf-3 text-foreground" :
-                      analysis.confidence_score >= 40 ? "surf-2 text-muted-foreground" :
-                      "surf-1 text-muted-foreground"
-                    }`}>
-                      {analysis.confidence_score >= 70 ? "High" :
-                       analysis.confidence_score >= 40 ? "Medium" : "Low"} · {analysis.confidence_score}/100
-                    </span>
-                    {analysis.confidence_score < 40 && (
-                      <span className="text-[10px] text-muted-foreground italic">
-                        Indirect link — treat as monitor-only
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* IF YOU ACT / IF YOU DON'T */}
-                <div className="px-5 pb-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="hairline surf-2 rounded-xl border p-3">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-1.5">
-                      If You Act
-                    </p>
-                    <p className="text-[12px] text-muted-foreground leading-relaxed">{analysis.ifYouAct}</p>
-                  </div>
-                  <div className="hairline-strong surf-3 rounded-xl border p-3">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-foreground mb-1.5">
-                      If You Don&apos;t
-                    </p>
-                    <p className="text-[12px] text-muted-foreground leading-relaxed">{analysis.ifYouDont}</p>
-                  </div>
-                </div>
-
-                {/* IMMEDIATE ACTION */}
-                <div className="px-5 pb-4">
-                  <div className="hairline-strong surf-3 rounded-xl border p-3">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-foreground mb-1.5">
-                      Immediate Action
-                    </p>
-                    <p className="text-[12px] text-foreground/80 leading-relaxed">{analysis.immediateAction}</p>
-                  </div>
-                </div>
-
-                {/* Accept / Dismiss */}
-                {analysis.status === "pending" && (
-                  <div className="px-5 pb-4 flex items-center gap-2">
-                    <button
-                      onClick={() => handleAcceptDismiss("accepted")}
-                      className="hairline-strong surf-3 inset-sheen surf-hover flex items-center gap-1.5 px-4 py-1.5 rounded-xl border text-[11px] font-bold text-foreground hover:text-foreground transition-colors uppercase tracking-wider"
-                    >
-                      <CheckCircle size={11} />
-                      Accept
-                    </button>
-                    <button
-                      onClick={() => handleAcceptDismiss("rejected")}
-                      className="hairline surf-hover flex items-center gap-1.5 px-4 py-1.5 rounded-xl border text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wider"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-
-                {/* Strategy error */}
-                {strategyError && (
-                  <div className="hairline surf-2 mx-5 mb-3 px-4 py-2.5 rounded-xl border text-[11px] font-bold text-foreground">
-                    {strategyError}
-                  </div>
-                )}
-
-                {/* Discuss with Advisor */}
-                <div className="px-5 pb-3">
-                  <button
-                    onClick={() => {
-                      const msg = `I'm looking at a signal: '${toPlainText(signal.title)}'. Here's what VANTAGE mapped for my company: ${analysis.soWhat}. The immediate action recommended is: ${analysis.immediateAction}. I want to think through whether to act on this — what's your take? What am I missing, and what would you prioritise?`;
-                      sessionStorage.setItem("advisor_prefill", JSON.stringify({ message: msg, source: "signal" }));
-                      router.push("/advisor");
-                    }}
-                    className="hairline surf-hover w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-bold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-                  >
-                    <MessageSquare size={13} />
-                    Discuss with Advisor →
-                  </button>
-                </div>
-
-                {/* Linked strategies */}
-                {linkedStrategies.length > 0 && (
-                  <div className="px-5 pb-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground mb-2">
-                      Linked Strategies
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {linkedStrategies.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => router.push(`/strategies/${s.id}`)}
-                          className="hairline surf-1 surf-hover flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors"
-                        >
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border flex-shrink-0 ${STRATEGY_STATUS_STYLE[s.status]}`}
-                          >
-                            {s.status}
-                          </span>
-                          <span className="text-[12px] text-foreground leading-snug truncate flex-1">
-                            {toPlainText(s.title)}
-                          </span>
-                          <span className="text-muted-foreground flex-shrink-0">→</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Generate strategy from this signal */}
-                <div className="px-5 pb-5">
-                  <button
-                    onClick={handleGenerateStrategy}
-                    disabled={generating}
-                    className="hairline-strong surf-3 inset-sheen surf-hover w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-bold text-foreground uppercase tracking-wider transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                    type="button"
-                  >
-                    {generating ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" />
-                        Generating Strategy...
-                      </>
-                    ) : (
-                      "↗ Generate Strategy from This Signal →"
-                    )}
-                  </button>
-                </div>
-              </div>
+              <button className="vx-btn vx-primary" onClick={handleAnalyse} disabled={analysing}>
+                {analysing ? <Loader2 size={15} className="vx-refreshing" /> : <ArrowRight size={15} />}
+                {analysing ? "Analysing..." : "Analyse impact for my company"}
+              </button>
             )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function SignalsPage() {
-  const [signals, setSignals] = useState<RawSignal[]>([]);
-  const [analysisMap, setAnalysisMap] = useState<Record<string, ConsequenceAnalysis>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [sessionExpired, setSessionExpired] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshMsg, setRefreshMsg] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | Category>("all");
-  const [urgencyFilter, setUrgencyFilter] = useState<"all" | Urgency>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [expandedSignalId, setExpandedSignalId] = useState<string | null>(null);
-
-  const fetchSignals = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    setSessionExpired(false);
-    try {
-      const [signalsRes, mapRes] = await Promise.all([
-        fetch("/api/signals/raw"),
-        fetch("/api/signals/analysis-map"),
-      ]);
-      if (signalsRes.status === 401) { setSessionExpired(true); return; }
-      if (!signalsRes.ok) throw new Error("failed");
-      const data = await signalsRes.json() as RawSignal[];
-      setSignals(data ?? []);
-
-      if (mapRes.ok) {
-        const map = await mapRes.json() as Record<string, ConsequenceAnalysis>;
-        setAnalysisMap(map);
-      }
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchSignals(); }, [fetchSignals]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    setRefreshMsg("");
-    try {
-      const res = await fetch("/api/signals/refresh", { method: "POST" });
-      const body = await res.json().catch(() => ({})) as { signalsAdded?: number; error?: string };
-      if (!res.ok) {
-        setRefreshMsg(body.error ?? "Refresh failed");
-      } else {
-        const added = body.signalsAdded ?? 0;
-        setRefreshMsg(added > 0 ? `${added} new signals fetched` : "No new signals found");
-        await fetchSignals();
-      }
-    } catch {
-      setRefreshMsg("Refresh failed. Check your connection.");
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  // Filter by category + urgency + search, then sort by urgency tier
-  // (act-this-week first), and recency within each tier.
-  const filteredSignals = signals
-    .filter((s) => {
-      const category = signalCategory(s);
-      if (activeFilter !== "all" && category !== activeFilter) return false;
-      if (urgencyFilter !== "all" && normalizeUrgency(s.urgency) !== urgencyFilter)
-        return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const hay = `${toPlainText(s.title)} ${toPlainText(s.content)}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const ua = URGENCY_ORDER[normalizeUrgency(a.urgency)];
-      const ub = URGENCY_ORDER[normalizeUrgency(b.urgency)];
-      if (ua !== ub) return ua - ub;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-
-  // Counts per category for the tab labels
-  const counts: Record<"all" | Category, number> = {
-    all: signals.length,
-    pricing: 0,
-    cost_base: 0,
-    competition: 0,
-    compliance: 0,
-    capital: 0,
-  };
-  for (const s of signals) {
-    counts[signalCategory(s)]++;
-  }
-
-  // Counts per urgency tier for the chip labels
-  const urgencyCounts: Record<"all" | Urgency, number> = {
-    all: signals.length,
-    act_this_week: 0,
-    decide_this_month: 0,
-    watch: 0,
-  };
-  for (const s of signals) {
-    urgencyCounts[normalizeUrgency(s.urgency)]++;
-  }
-
-  return (
-    <div className="px-8 py-10 text-foreground">
-      <div className="mx-auto max-w-[1400px]">
-        {/* ── Headline — concept `.headline`: hard three-line h1, live-chip
-            showing a real count instead of the concept's static "48". ── */}
-        <header className="cx-headline flex flex-wrap items-end justify-between gap-4" style={{ margin: '11px 0 27px' }}>
-          <div>
-            <p className="cx-eyebrow">Signal Intelligence</p>
-            <h1>What changed<br />outside your<br />business.</h1>
-            <p className="cx-headline-sub">
-              Filter the noise. Keep the movement that changes your next decision.
-            </p>
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-3">
-            {refreshMsg && (
-              <p className="text-xs text-muted-foreground">{refreshMsg}</p>
-            )}
-            <span className="cx-live-chip">
-              <b>•</b> {signals.length} SIGNALS TRACKED
-            </span>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              aria-label="Refresh signals"
-              title="Refresh signals"
-              className="hairline surf-2 surf-hover flex h-9 w-9 items-center justify-center rounded-xl border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-            >
-              <RefreshCw size={14} className={refreshing ? "animate-spin brand-accent-text" : ""} />
-            </button>
-          </div>
-        </header>
-
-        {/* ── Toolbar — concept `.signal-toolbar`: filters left, search
-            right. Urgency is a real second filter dimension the concept
-            doesn't have (its filters are category-only); kept as a second
-            row using the same `.cx-filter` treatment rather than dropped. ── */}
-        {!loading && !error && !sessionExpired && signals.length > 0 && (
-          <div className="mb-6 flex flex-col gap-3">
-            <div className="flex flex-col items-stretch justify-between gap-[18px] min-[561px]:flex-row min-[561px]:items-center">
-              <div className="scroll-x-pane flex flex-nowrap gap-2">
-                {(["all", ...CATEGORIES] as const).map((filter) => {
-                  const label = filter === "all" ? "All" : CATEGORY_LABEL[filter];
-                  const count = counts[filter];
-                  const isActive = activeFilter === filter;
-                  return (
-                    <button
-                      key={filter}
-                      onClick={() => setActiveFilter(filter)}
-                      className={`cx-filter flex-shrink-0 whitespace-nowrap ${isActive ? "cx-active" : ""}`}
-                      type="button"
-                    >
-                      {label} · {count}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search signals…"
-                className="cx-search w-full min-[561px]:w-[245px]"
-              />
-            </div>
-
-            {/* Urgency chips — same `.cx-filter` shape, a second row so they
-                read as a distinct filter dimension from category. */}
-            <div className="scroll-x-pane flex flex-nowrap gap-2">
-              {(["all", "act_this_week", "decide_this_month", "watch"] as const).map((tier) => {
-                const label = tier === "all" ? "All" : URGENCY_LABEL[tier];
-                const count = urgencyCounts[tier];
-                const isActive = urgencyFilter === tier;
-                return (
-                  <button
-                    key={tier}
-                    onClick={() => setUrgencyFilter(tier)}
-                    className={`cx-filter flex-shrink-0 inline-flex items-center gap-1.5 ${isActive ? "cx-active" : ""}`}
-                    type="button"
-                  >
-                    {tier !== "all" && (
-                      <span className={`inline-flex h-[6px] w-[6px] rounded-full ${URGENCY_DOT[tier]}`} />
-                    )}
-                    {label} · {count}
-                  </button>
-                );
-              })}
-            </div>
+            {analysing && <p className="vx-quiet-note">{ANALYSE_MSGS[msgIdx]}</p>}
+            {analysisError && <p className="vx-quiet-note vx-red">{analysisError}</p>}
+            {strategyError && <p className="vx-quiet-note vx-red">{strategyError}</p>}
           </div>
         )}
 
-        {sessionExpired ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="relative z-10">
-              <p className="text-sm font-semibold text-foreground mb-1">Session expired</p>
-              <p className="text-[13px] text-muted-foreground mb-4">
-                Your session expired. Please sign out and sign back in.
-              </p>
-              <a
-                href="/login"
-                className="hairline-strong surf-3 inset-sheen surf-hover inline-block px-5 py-2 rounded-xl border text-[11px] font-bold text-foreground uppercase tracking-wider transition-colors"
-              >
-                Sign In
-              </a>
+        {/* Company-specific analysis. Rendered only once Analyse has actually
+            run — confidence and the "if you don't" line are real consequence
+            fields, not values invented for every card. */}
+        {analysis && (
+          <details className="vx-disclosure" open>
+            <summary>Company-specific analysis<Plus size={15} /></summary>
+            <div>
+              <h3>So what</h3>
+              <p>{analysis.soWhat}</p>
+              <h3>If you act</h3>
+              <p>{analysis.ifYouAct}</p>
+              <h3>If you don&apos;t</h3>
+              <p>{analysis.ifYouDont}</p>
+              <h3>Immediate action</h3>
+              <p>{analysis.immediateAction}</p>
+              {typeof analysis.confidence_score === "number" && (
+                <p className="vx-quiet-note">Analysis confidence: {analysis.confidence_score}/100</p>
+              )}
             </div>
-          </div>
-        ) : loading ? (
-          <div className="flex flex-col gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="glass rounded-2xl p-5 animate-pulse">
-                <div className="flex items-center gap-3 mb-3">
-                  <Skeleton className="h-5 w-24 rounded-full" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-                <Skeleton className="h-5 w-3/4 mb-2" />
-                <Skeleton className="h-4 w-full mb-1" />
-                <Skeleton className="h-4 w-4/5" />
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="relative z-10">
-              <p className="text-sm text-muted-foreground mb-3">Unable to load signals</p>
-              <button onClick={fetchSignals} className="text-[11px] font-bold uppercase tracking-wider text-foreground hover:underline">
-                Retry
+          </details>
+        )}
+
+        {linked.length > 0 && (
+          <div className="vx-calm-next">
+            <h2>Linked strategies</h2>
+            {linked.map((s) => (
+              <button key={s.id} className="vx-linked-source" onClick={() => router.push("/strategies/" + s.id)}>
+                <span className="vx-dot" />
+                {s.status}
+                <ArrowUpRight size={14} />
+                <strong>{s.title}</strong>
               </button>
-            </div>
-          </div>
-        ) : signals.length === 0 ? (
-          <div className="glass rounded-2xl p-12 text-center">
-            <div className="relative z-10">
-              <div className="flex justify-center mb-4">
-                <div className="surf-2 w-12 h-12 rounded-full flex items-center justify-center">
-                  <BarChart2 size={20} className="text-muted-foreground" />
-                </div>
-              </div>
-              <p className="text-sm font-semibold text-foreground mb-1">No signals yet</p>
-              <p className="text-[12px] text-muted-foreground mb-5">
-                Click Refresh Signals to fetch the latest business intelligence.
-              </p>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="hairline surf-hover inline-flex items-center gap-2 px-5 py-2 rounded-xl border text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-              >
-                <RefreshCw
-                size={11}
-                className={refreshing ? "animate-spin brand-accent-text" : ""}
-              />
-                Refresh Signals
-              </button>
-            </div>
-          </div>
-        ) : filteredSignals.length === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="relative z-10">
-              <p className="text-sm text-muted-foreground mb-1">No signals match your filter</p>
-              <p className="text-[12px] text-muted-foreground mb-3">Try a different category or clear your search.</p>
-              <button
-                onClick={() => { setActiveFilter("all"); setUrgencyFilter("all"); setSearchQuery(""); }}
-                className="text-[11px] font-bold uppercase tracking-wider text-foreground hover:underline"
-              >
-                Clear filters
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Single stacked column — no grid, so an expanded card simply grows
-             in place instead of needing a col-span override to avoid reflow. */
-          <div className="flex flex-col gap-4">
-            {filteredSignals.map((signal) => (
-              <div key={signal.id}>
-                <SignalCard
-                  signal={signal}
-                  initialAnalysis={analysisMap[signal.id] ?? null}
-                  onAnalysisComplete={fetchSignals}
-                  onExpanded={(exp) => setExpandedSignalId(exp ? signal.id : null)}
-                />
-              </div>
             ))}
           </div>
         )}
-      </div>
-    </div>
+
+        <footer className="vx-actions">
+          <button className="vx-text-btn" onClick={askAdvisor}>
+            Ask Advisor<ArrowUpRight size={14} />
+          </button>
+          {analysis && analysis.status !== "accepted" && (
+            <button className="vx-text-btn" onClick={() => handleRespond("accepted")}>Accept signal</button>
+          )}
+          {analysis && (
+            <button className="vx-text-btn" onClick={() => handleRespond("rejected")}>Dismiss</button>
+          )}
+        </footer>
+      </article>
+    </>
   );
 }
