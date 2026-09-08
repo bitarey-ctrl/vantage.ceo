@@ -895,3 +895,21 @@ OpenAI GPT-6 Astra was the borderline case: its headline carries a concrete chan
 **Status:** Complete.
 
 **Known, not actioned:** two duplicate Anthropic cache rows in the feed (identical why_it_matters, different source articles). Cross-run dedup would need a similarity check at insert time against recent signals, not just exact-title matching.
+
+---
+## 2026-09-08 (4) — TASK 1: interactive AppPreview in the landing hero
+**Files changed:** src/components/vantage/app-preview.tsx (new), src/components/vantage/app-preview.css (new), src/components/vantage/preview-data.ts (new), src/components/vantage/hero-command-center.tsx (replaced), src/components/vantage/hero-command-center.css (deleted)
+
+(SOURCE) Neither /tmp path existed again — both packages were still zips in ~/Downloads (Vantage-landing-updated.zip, Vantage-application-updated.zip). Extracted to the described paths.
+
+(SCOPE OF THE CHANGE) The updated landing's app/page.tsx is BYTE-IDENTICAL to the version already ported, so this is purely additive. hero-command-center.tsx was replaced by the design: 10,495 bytes of bespoke markup down to a 3-line wrapper rendering <AppPreview initialView="Command"/>. That left hero-command-center.css (13.6KB) with no references — deleted.
+
+(SAMPLE DATA, DELIBERATELY) app-preview is a marketing demo driven by fixed sample data, not live signals — it has to render identically for logged-out visitors who have no signals at all. The design shipped that data at components/redesign/data.ts; it was relocated to components/vantage/preview-data.ts and given a header saying so, specifically so it cannot be confused with the real dashboard data once Task 2 adds a components/redesign/ folder holding Supabase-wired code. The component itself carries a "do not wire this to Supabase" note. The rendered preview also self-labels "Interactive preview · Example data".
+
+(CSS) app-preview.css went through the same .vlp scoping transform as the rest of the landing. It is clean at source (0 :root, 0 bare element rules, 0 collisions with app globals) but references landing classes (.hero, .hero-product, .hc-window, .brand-logo), so it needs the prefix to match.
+
+(VERIFICATION OF THE WHOLE LANDING CSS, not just the new file) Stripped comments as a parser would and asserted every top-level selector across all five landing CSS files is scoped: 660 rules, exactly one unscoped selector — html:has(.vlp), which is deliberate for scroll-padding. Also found that the transform mangles comment TEXT when a comment sits in a selector prelude and contains a comma: it inserts ".vlp" inside the comment. Cosmetic only — comments are stripped before selector matching, so all 660 rules resolve correctly. Left as-is rather than re-running the transform over already-shipped CSS for zero functional gain.
+
+**Verification:** npx tsc --noEmit clean; npm run build 62/62. Landing renders with the AppPreview mounted (32 vp- elements). Scope boundary intact: --accent resolves to #ff321f inside .vlp and #ffffff1a at :root. git status confirms nothing under (dashboard), api/, lib/signals/, lib/ai/, (auth)/ or middleware was touched.
+
+**Status:** Task 1 complete. Task 2 (dashboard reskin) not started — phased, shell first.
