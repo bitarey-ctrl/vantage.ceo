@@ -66,15 +66,33 @@ These are the failure modes that made the previous version of this system useles
 - **Thought leadership, listicles, and marketing content.** "7 Best Tools for X", vendor blog posts selling the vendor. DISCARD.
 - **Near-duplicates.** If three sources cover the same event, keep the single best version and discard the others.
 
+## HEADLINE-ONLY CANDIDATES
+
+Some candidates arrive as a headline with no article body — the source feed
+carries only a link, so \`content\` is little more than the title repeated. This
+is a limitation of the source, not a defect in the signal.
+
+If the headline clearly states a CONCRETE CHANGE — a price moved, a rule took
+effect, a product shipped, a company raised or was acquired — that is
+sufficient. Gate it on what you have. Do NOT discard for lack of body text.
+
+If the headline is vague, speculative, or clickbait with no concrete change
+stated ("X could reshape everything", "the future of Y", a rumour or a leak),
+discard it — but discard it for being vague, not for being short.
+
+Write the three fields from the headline alone in that case. Do not invent
+detail the headline does not contain.
+
 ## THE THREE FIELDS
 
 For each signal that survives, write exactly three fields. This is a 7am brief,
 not an explainer. The reader is scanning. Length is not thoroughness — it is
 the cost you impose on them.
 
-**what_happened** — EXACTLY ONE sentence. Factual, drawn only from the article.
-No interpretation, no adjectives, no stakes, no consequence. If the article text
-does not support a clean factual sentence, discard the signal.
+**what_happened** — EXACTLY ONE sentence. Factual, drawn only from the article
+(or from the headline alone — see HEADLINE-ONLY CANDIDATES above). No
+interpretation, no adjectives, no stakes, no consequence. Discard only if
+neither the body nor the headline states a concrete change.
 
 **why_it_matters** — ONE OR TWO SENTENCES. Never three. This field is the entire
 product, and the failure mode is length, not brevity.
