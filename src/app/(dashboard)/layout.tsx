@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { Menu } from "lucide-react";
+// Visual shell styles. Fully namespaced under .vx-app — see index.css.
+import "@/components/redesign/index.css";
 import { DashboardNav } from "@/components/layout/DashboardNav";
 import { CommandBar } from "@/components/layout/CommandBar";
 import { PlanProvider } from "@/components/plan/PlanContext";
@@ -31,6 +34,18 @@ export default function DashboardLayout({
   // bottom canvas padding reserved to clear a bar that isn't there. Advisor
   // manages its own full-height layout instead (see its `100dvh` calc).
   const isAdvisor = pathname?.startsWith("/advisor") ?? false;
+
+  // Mobile sidebar. Closed on every route change so navigating from the
+  // open drawer does not leave it hanging over the new page.
+  const [menu, setMenu] = useState(false);
+  useEffect(() => { setMenu(false); }, [pathname]);
+
+  // Topbar breadcrumb: the current section, derived from the route rather
+  // than tracked in state, so it stays correct on deep links and refreshes.
+  const areaLabel = (() => {
+    const seg = (pathname ?? "/command").split("/")[1] || "command";
+    return seg.charAt(0).toUpperCase() + seg.slice(1);
+  })();
 
   useEffect(() => {
     const init = async () => {
@@ -83,42 +98,66 @@ export default function DashboardLayout({
 
   return (
     <PlanProvider value={planAccess}>
-      {/* data-app-shell scopes the design-system overrides in globals.css
-         (transparent page wrappers + minimum readable type) to the dashboard,
-         leaving marketing/auth/onboarding on their own styling.
-         grid-ground = concept `.canvas`'s background (two ambient radials +
-         dot texture) — it already carries that whole treatment, so this
-         wrapper only adds the concept's own canvas padding on top of it.
-         126px bottom clears the fixed CommandBar. */}
-      <div
-        className="grid-ground min-h-screen text-foreground"
-        data-app-shell
-        style={{ padding: isAdvisor ? '26px 28px' : '26px 28px 126px' }}
-      >
-        {/* ── Topbar ───────────────────────────────────────────────── */}
-        <div className="mx-auto mb-8 flex max-w-[1460px] items-center justify-between">
-          <Link href="/command" className="cx-topbar-brand" aria-label="VANTAGE home">
-            <b>V</b>ANTAGE
-          </Link>
-          {/* "Wire the status text to something real" — the company name is
-             the one piece of real, already-fetched state available at the
-             shell level; falls back to the product name pre-onboarding. */}
-          <div className="cx-topbar-status">
-            <i />
-            {(companyName || 'VANTAGE').toUpperCase()} · ONLINE
-          </div>
-        </div>
+      {/* ── vx-app shell, ported from the design package ────────────────
+          Structure only. Routing stays on Next.js <Link>/routes — the
+          prototype held the active area in React state, which would have
+          broken deep links, per-route auth and the Pro gate.
 
-        {/* ── App grid — concept `.app`: 82px rail column + content ──── */}
-        <div className="mx-auto grid max-w-[1460px] grid-cols-1 gap-[25px] min-[901px]:grid-cols-[82px_1fr]">
-          <DashboardNav companyName={companyName} />
-          <main className="min-w-0 overflow-x-hidden text-foreground">
+          data-app-shell is kept: globals.css scopes dashboard-only design
+          system overrides to it, and dropping it would restyle every page.
+
+          The prototype's vx-bottom-nav is deliberately NOT ported: it would
+          sit on top of the existing CommandBar on mobile, and removing a
+          working feature is not a reskin. */}
+      <div
+        className="vx-app grid-ground min-h-screen text-foreground"
+        data-app-shell
+        onKeyDown={(e) => { if (e.key === 'Escape') setMenu(false); }}
+      >
+        {menu && (
+          <button
+            className="vx-nav-backdrop"
+            aria-label="Close navigation menu"
+            onClick={() => setMenu(false)}
+          />
+        )}
+        <a className="vx-skip" href="#vx-content">Skip to workspace</a>
+
+        <DashboardNav
+          companyName={companyName}
+          open={menu}
+          onClose={() => setMenu(false)}
+        />
+
+        <div className="vx-workbench">
+          <header className="vx-topbar">
+            <button
+              className="vx-menu-toggle"
+              aria-label="Open navigation"
+              aria-expanded={menu}
+              onClick={() => setMenu(true)}
+            >
+              <Menu size={18} />
+            </button>
+            <div className="vx-breadcrumb">
+              <strong>{areaLabel}</strong>
+            </div>
+            <div className="cx-topbar-status">
+              <i />
+              {(companyName || 'VANTAGE').toUpperCase()} · ONLINE
+            </div>
+          </header>
+
+          <main
+            id="vx-content"
+            className="vx-content min-w-0 overflow-x-hidden text-foreground"
+            style={{ paddingBottom: isAdvisor ? undefined : 126 }}
+          >
             {children}
           </main>
         </div>
 
         <CommandBar />
-        <FeedbackWidget />
       </div>
     </PlanProvider>
   );

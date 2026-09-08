@@ -1,0 +1,21 @@
+/*
+ * Dashboard visual shell — ported unmodified from the design package.
+ *
+ * NO SCOPING TRANSFORM WAS NEEDED, unlike the landing page. Audited before
+ * porting: 0 `:root` blocks, 0 bare element rules, 166 of 167 class names
+ * prefixed `vx-`, and all six custom properties (--vx-bg, --vx-text,
+ * --vx-muted, --vx-panel, --vx-border, --vx-red) declared on `.vx-app`
+ * itself. Zero collisions with the app's own custom properties or classes.
+ *
+ * Because everything is namespaced, these files are safe to load globally and
+ * only take effect inside the `.vx-app` shell.
+ *
+ * Import order matters — workspace.css defines the base, the rest layer on it.
+ */
+@import "./workspace.css";
+@import "./materials.css";
+@import "./themes.css";
+@import "./navigation-polish.css";
+@import "./layered-shell.css";
+/* App-specific additions (hamburger, Pro lock) — see the file header. */
+@import "./app-additions.css";

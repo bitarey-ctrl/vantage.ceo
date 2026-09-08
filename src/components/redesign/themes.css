@@ -1,0 +1,18 @@
+/* Navigation behavior and complete light surface palette. */
+.vx-brand-row{display:flex;align-items:center;gap:4px}.vx-brand-row .vx-brand{flex:1;min-width:0;padding-inline:6px;font-size:21px}.vx-brand .vx-brand-name{font-size:inherit;color:inherit;margin:0;letter-spacing:-.6px}
+.vx-collapse-toggle,.vx-desktop-toggle,.vx-theme-toggle{display:flex;align-items:center;justify-content:center;width:32px;height:34px;border-radius:5px;background:none;color:#9999a5;flex-shrink:0}.vx-collapse-toggle:hover,.vx-desktop-toggle:hover,.vx-theme-toggle:hover{background:#ffffff08;color:#fff}
+.vx-sidebar .vx-account-nav{margin-top:auto;padding-top:24px}.vx-sidebar-bottom{margin-top:16px;padding-top:16px}.vx-sidebar .vx-nav-text{font-size:14px}.vx-theme-toggle{margin-left:auto}.vx-topbar>.vx-avatar{margin-left:0}
+@media(min-width:681px){
+ .vx-collapsed .vx-sidebar{width:68px;padding-inline:8px;transition:width .2s}
+ .vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-nav-text,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-brand-name,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-collapse-toggle,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-sidebar-bottom{display:none}
+ .vx-collapsed .vx-sidebar:not(.vx-sidebar-open) nav button{justify-content:center;padding-inline:10px}
+ .vx-collapsed .vx-sidebar .vx-brand{justify-content:center;padding:0;gap:0}
+ .vx-collapsed .vx-sidebar-open{position:fixed;width:236px;left:0;z-index:80;padding-inline:14px}.vx-collapsed:has(.vx-sidebar-open) .vx-workbench{margin-left:80px}
+ .vx-collapsed .vx-sidebar-open .vx-brand{justify-content:flex-start;gap:7px}.vx-collapsed .vx-sidebar-open .vx-nav-text{display:inline}
+ .vx-nav-backdrop{display:block;position:fixed;inset:0;z-index:75;background:#0005;border:0;cursor:default!important}
+}
+@media(min-width:681px) and (max-width:900px){
+ .vx-sidebar:not(.vx-sidebar-open) .vx-nav-text,.vx-sidebar:not(.vx-sidebar-open) .vx-brand-name,.vx-sidebar:not(.vx-sidebar-open) .vx-collapse-toggle{display:none}
+ .vx-sidebar-open{width:236px!important;position:fixed;left:0;z-index:80}.vx-sidebar-open .vx-nav-text{display:inline}.vx-sidebar-open nav button{justify-content:flex-start;gap:12px}.vx-sidebar-open .vx-brand{font-size:21px;justify-content:flex-start;gap:7px}.vx-sidebar .vx-account-nav{display:grid}.vx-sidebar .vx-brand-row{justify-content:center}
+}
+@media(max-width:680px){.vx-desktop-toggle,.vx-collapse-toggle{display:none}.vx-sidebar .vx-brand-row{display:none}.vx-sidebar .vx-account-nav{margin-top:4px;padding-top:0}.vx-sidebar .vx-account-nav button{display:flex!important}.vx-sidebar .vx-nav-text{display:inline}.vx-theme-toggle{width:40px;height:40px}.vx-bottom-nav button{font-size:9px}}

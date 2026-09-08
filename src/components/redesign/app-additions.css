@@ -1,0 +1,42 @@
+/*
+ * Additions to the ported design — NOT from the design package.
+ *
+ * Three things the real app needs that the prototype has no concept of:
+ *
+ *  1. .vx-menu-toggle — the prototype opened its mobile sidebar from a
+ *     vx-bottom-nav bar. That was deliberately not ported: it would sit on
+ *     top of the existing CommandBar. A hamburger in the topbar replaces it,
+ *     hidden on desktop where the sidebar is always visible.
+ *
+ *  2/3. .vx-nav-locked / .vx-nav-lock — the Pro-plan gate on Decisions and
+ *     Advisor. The prototype has no plans and no locking.
+ *
+ * Kept in a separate file so the ported design files stay byte-identical to
+ * the package and can be re-synced without losing these.
+ */
+
+/* Mobile-only sidebar trigger. */
+.vx-app .vx-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-right: 10px;
+  border: 1px solid var(--vx-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--vx-muted);
+  transition: color .15s, border-color .15s;
+}
+.vx-app .vx-menu-toggle:hover { color: var(--vx-text); border-color: var(--vx-text); }
+@media (min-width: 961px) { .vx-app .vx-menu-toggle { display: none; } }
+
+/* Pro-gated nav item: same geometry as a real nav button, visibly inert. */
+.vx-app .vx-sidebar nav .vx-nav-locked {
+  position: relative;
+  opacity: .45;
+  cursor: not-allowed;
+}
+.vx-app .vx-sidebar nav .vx-nav-locked:hover { background: transparent; color: inherit; }
+.vx-app .vx-nav-lock { margin-left: auto; flex-shrink: 0; }

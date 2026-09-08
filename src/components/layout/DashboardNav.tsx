@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -15,11 +15,21 @@ import {
   Lock,
   Sun,
   Moon,
+  X,
 } from 'lucide-react';
 import { applyTheme, getStoredTheme, type Theme } from '@/lib/theme';
-import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { usePlan } from '@/components/plan/PlanContext';
+
+/*
+ * Sidebar — reskinned to the `vx-sidebar` structure from the design package.
+ *
+ * VISUAL CHANGE ONLY. Everything this component DOES is unchanged: Next.js
+ * <Link> routing (the prototype used client-side state, which would have
+ * broken deep links and per-route auth), the Pro-plan lock on Decisions and
+ * Advisor, the theme toggle, and sign-out. The prototype's hardcoded
+ * "Meridian Labs / Example workspace" is replaced by the real companyName.
+ */
 
 interface NavItem {
   label: string;
@@ -29,28 +39,25 @@ interface NavItem {
 }
 
 const MAIN_ITEMS: NavItem[] = [
-  { label: 'Command',      href: '/command',      icon: Command },
-  { label: 'Signals',      href: '/signals',       icon: Zap },
-  { label: 'Strategies',   href: '/strategies',    icon: LayoutGrid },
-  { label: 'Decisions',    href: '/decisions',     icon: GitBranch,     proOnly: true },
-  { label: 'Advisor',      href: '/advisor',       icon: MessageSquare, proOnly: true },
+  { label: 'Command',    href: '/command',    icon: Command },
+  { label: 'Signals',    href: '/signals',    icon: Zap },
+  { label: 'Strategies', href: '/strategies', icon: LayoutGrid },
+  { label: 'Decisions',  href: '/decisions',  icon: GitBranch,     proOnly: true },
+  { label: 'Advisor',    href: '/advisor',    icon: MessageSquare, proOnly: true },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
-  { label: 'Profile',      href: '/profile',       icon: User },
-  { label: 'Settings',     href: '/settings',      icon: Settings },
+  { label: 'Profile',  href: '/profile',  icon: User },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
-
-// Concept `.side button` — 46px desktop / 42px mobile, shared by every
-// button in the rail regardless of role (nav link, theme toggle, sign out).
-const BTN_SIZE =
-  'flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-[15px] min-[901px]:h-[46px] min-[901px]:w-[46px]';
 
 interface DashboardNavProps {
   companyName: string;
+  open: boolean;
+  onClose: () => void;
 }
 
-export function DashboardNav({ companyName }: DashboardNavProps) {
+export function DashboardNav({ companyName, open, onClose }: DashboardNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -72,118 +79,89 @@ export function DashboardNav({ companyName }: DashboardNavProps) {
     router.push('/login');
   };
 
-  const renderNavIcon = ({ label, href, icon: Icon, proOnly }: NavItem) => {
+  const renderItem = ({ label, href, icon: Icon, proOnly }: NavItem) => {
     const locked = proOnly === true && access.effectivePlan !== 'pro';
     const isActive = pathname.startsWith(href);
 
     if (locked) {
       return (
-        <div key={href} className="relative group flex justify-center">
-          <div
-            title={`${label} — Pro plan required`}
-            aria-label={`${label} — Pro plan required`}
-            className={cn(BTN_SIZE, 'relative cursor-not-allowed select-none text-[#9da0a7]/50')}
-          >
-            <Icon size={19} strokeWidth={1.8} />
-            <Lock size={10} className="absolute right-1 top-1 text-[#9da0a7]" />
-          </div>
-          <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border hairline-strong surf-3 px-2.5 py-1.5 text-[11px] font-medium text-foreground opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100">
-            {label} — Pro plan required
-          </span>
-        </div>
+        <button
+          key={href}
+          type="button"
+          disabled
+          title={`${label} — Pro plan required`}
+          aria-label={`${label} — Pro plan required`}
+          className="vx-nav-locked"
+        >
+          <Icon size={17} />
+          <span className="vx-nav-text">{label}</span>
+          <Lock size={11} className="vx-nav-lock" />
+        </button>
       );
     }
 
     return (
-      <div key={href} className="relative group flex justify-center">
-        <Link
-          href={href}
-          title={label}
-          aria-label={label}
-          aria-current={isActive ? 'page' : undefined}
-          className={cn(BTN_SIZE, 'cx-nav-btn', isActive && 'cx-active')}
-        >
-          <Icon size={19} strokeWidth={isActive ? 2.2 : 1.8} />
-        </Link>
-        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border hairline-strong surf-3 px-2.5 py-1.5 text-[11px] font-medium text-foreground opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100">
-          {label}
-        </span>
-      </div>
+      <Link
+        key={href}
+        href={href}
+        title={label}
+        aria-label={label}
+        aria-current={isActive ? 'page' : undefined}
+        onClick={onClose}
+      >
+        <Icon size={17} />
+        <span className="vx-nav-text">{label}</span>
+      </Link>
     );
   };
 
+  const workspaceName = companyName || 'VANTAGE';
+  const initial = workspaceName.trim().charAt(0).toUpperCase() || 'V';
+
   return (
-    // Concept `.side`: a real grid column, sticky, on desktop; the concept's
-    // own max-width:900px override turns it into a static horizontal
-    // scrolling row instead of a bottom tab bar — one rail handles both
-    // breakpoints, so there's no separate mobile component anymore.
-    <nav
-      className="cx-nav-rail flex items-center gap-[5px] overflow-x-auto overflow-y-hidden rounded-[19px] p-[8px] min-[901px]:sticky min-[901px]:top-[18px] min-[901px]:h-[calc(100vh-85px)] min-[901px]:min-h-[650px] min-[901px]:flex-col min-[901px]:gap-[9px] min-[901px]:overflow-visible min-[901px]:rounded-[25px] min-[901px]:px-0 min-[901px]:py-[13px]"
-      aria-label="Primary navigation"
-    >
-      {/* Wordmark — a small home link, not in the concept's own .side (it
-          has the brand only in the topbar) but keeping one wayfinding icon
-          at the top of the rail matches the app's prior nav and costs
-          nothing structurally. */}
-      <div className="relative group flex justify-center">
-        <Link
-          href="/command"
-          title={companyName || 'VANTAGE'}
-          aria-label="VANTAGE home"
-          className={cn(BTN_SIZE, 'cx-nav-btn')}
-        >
-          <img
-            src="/logo-transparent.png"
-            alt=""
-            className="pointer-events-none select-none object-contain"
-            style={{ width: '22px', height: '22px' }}
-          />
+    <aside className={'vx-sidebar' + (open ? ' vx-sidebar-open' : '')}>
+      <div className="vx-brand-row">
+        <Link className="vx-brand" aria-label="VANTAGE home" href="/command">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-transparent.png" alt="" />
+          <span className="vx-brand-name">Vantage</span>
         </Link>
-        {companyName && (
-          <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border hairline-strong surf-3 px-2.5 py-1.5 text-[11px] font-medium text-foreground opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100">
-            {companyName}
-          </span>
-        )}
       </div>
 
-      {MAIN_ITEMS.map(renderNavIcon)}
+      <div className="vx-workspace">
+        <span className="vx-avatar">{initial}</span>
+        <div>
+          {workspaceName}
+          <small>Workspace</small>
+        </div>
+        <button className="vx-mobile-close" aria-label="Close navigation" onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
 
-      {/* Concept `.side .spacer` — flex:1, hidden below 901px since a
-          horizontal scroll row has nothing to push apart. */}
-      <span className="hidden flex-1 min-[901px]:block" />
+      <nav aria-label="Application">{MAIN_ITEMS.map(renderItem)}</nav>
 
-      {BOTTOM_ITEMS.map(renderNavIcon)}
-
-      <div className="relative group flex justify-center">
+      <nav className="vx-account-nav" aria-label="Account">
+        {BOTTOM_ITEMS.map(renderItem)}
         <button
+          type="button"
           onClick={handleThemeToggle}
-          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className={cn(BTN_SIZE, 'cx-nav-btn')}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {theme === 'dark'
-            ? <Sun size={19} strokeWidth={1.8} />
-            : <Moon size={19} strokeWidth={1.8} />
-          }
+          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          <span className="vx-nav-text">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
         </button>
-        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border hairline-strong surf-3 px-2.5 py-1.5 text-[11px] font-medium text-foreground opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100">
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-        </span>
-      </div>
+        <button type="button" onClick={handleSignOut} title="Sign out" aria-label="Sign out">
+          <LogOut size={17} />
+          <span className="vx-nav-text">Sign out</span>
+        </button>
+      </nav>
 
-      <div className="relative group flex justify-center">
-        <button
-          onClick={handleSignOut}
-          title="Sign Out"
-          aria-label="Sign Out"
-          className={cn(BTN_SIZE, 'cx-nav-btn')}
-        >
-          <LogOut size={19} strokeWidth={1.8} />
-        </button>
-        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border hairline-strong surf-3 px-2.5 py-1.5 text-[11px] font-medium text-foreground opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100">
-          Sign Out
-        </span>
+      <div className="vx-sidebar-bottom">
+        {workspaceName}
+        <small>Signed in</small>
       </div>
-    </nav>
+    </aside>
   );
 }

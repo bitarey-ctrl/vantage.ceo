@@ -913,3 +913,23 @@ OpenAI GPT-6 Astra was the borderline case: its headline carries a concrete chan
 **Verification:** npx tsc --noEmit clean; npm run build 62/62. Landing renders with the AppPreview mounted (32 vp- elements). Scope boundary intact: --accent resolves to #ff321f inside .vlp and #ffffff1a at :root. git status confirms nothing under (dashboard), api/, lib/signals/, lib/ai/, (auth)/ or middleware was touched.
 
 **Status:** Task 1 complete. Task 2 (dashboard reskin) not started — phased, shell first.
+
+---
+## 2026-09-08 (5) — TASK 2 PHASE 1: dashboard shell reskinned to the vx design
+**Files changed:** src/app/(dashboard)/layout.tsx, src/components/layout/DashboardNav.tsx, src/components/redesign/{workspace,materials,themes,navigation-polish,layered-shell}.css (new, unmodified from the package), src/components/redesign/index.css (new), src/components/redesign/app-additions.css (new)
+
+Shell only, per the agreed phasing. Every page still renders its own current content inside the new frame; no page bodies were touched.
+
+(NO CSS SCOPING NEEDED — unlike the landing) Audited before porting and re-verified after copying: 0 colliding custom properties, 0 colliding class names, 0 :root blocks, 0 bare element rules, 166 of 167 classes prefixed vx-, and all six custom properties (--vx-bg/-text/-muted/-panel/-border/-red) declared on .vx-app itself. The five design CSS files are byte-identical to the package.
+
+(ARCHITECTURE — the important deviation) The prototype's workspace.tsx is a SINGLE PAGE holding the active area in React state. Porting that wholesale would have replaced Next.js routing with client state and broken deep links, per-route auth and the Pro gate. So only the chrome was taken: .vx-app > vx-sidebar + vx-workbench > (vx-topbar + vx-content). Navigation stays on <Link>/routes. The topbar breadcrumb is derived from usePathname rather than tracked in state, so it stays correct on deep links and refreshes.
+
+(PRESERVED) Everything DashboardNav did: 7 routes, the Pro lock on Decisions/Advisor, theme toggle, sign out, real companyName replacing the prototype's hardcoded "Meridian Labs / Example workspace". CommandBar kept and vx-bottom-nav deliberately not ported — they would overlap at the bottom of the viewport on mobile, and removing a working feature is not a reskin. data-app-shell retained because globals.css scopes dashboard-only overrides to it.
+
+(THREE CLASSES THE DESIGN DOES NOT HAVE) Verified every vx- class used against the ported CSS; three were missing because the design has no equivalent concept: .vx-menu-toggle (the prototype opened its mobile sidebar from the bottom-nav that was not ported), and .vx-nav-locked/.vx-nav-lock (the prototype has no plans and no gating). Added in a separate app-additions.css so the ported files stay byte-identical and can be re-synced later without losing them. The hamburger is hidden above 961px.
+
+(NOT A BUG, CHECKED) .vx-workspace renders with display:none on desktop — that is the design's own breakpoint behaviour for the mobile workspace chip, not something the port broke.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Baselines for /command and /signals captured before any edit. After: shell/sidebar/workbench all present, all 7 nav hrefs correct, breadcrumb tracks the route, 0 locked items (correct — plan restrictions are removed so effectivePlan is 'pro'), 4 signal cards intact, CommandBar still mounted (cx-command-bar), hamburger display:none on desktop. Exercised real routing through the new sidebar: /signals -> /strategies (breadcrumb updated) -> /signals, shell survived, cards intact. git status confirms no api/, lib/signals/, lib/ai/, (auth)/ or middleware file was touched.
+
+**Status:** Phase 1 complete. Phases remaining: Signals, then Command, Decisions, Strategies, Advisor, Profile/Settings — one at a time.
