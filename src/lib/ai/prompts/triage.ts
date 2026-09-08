@@ -68,24 +68,96 @@ These are the failure modes that made the previous version of this system useles
 
 ## THE THREE FIELDS
 
-For each signal that survives, write exactly three fields.
+For each signal that survives, write exactly three fields. This is a 7am brief,
+not an explainer. The reader is scanning. Length is not thoroughness — it is
+the cost you impose on them.
 
-**what_happened** — ONE sentence. Factual, drawn only from the article. No interpretation, no adjectives, no stakes. If the article text does not support a clean factual sentence, discard the signal.
+**what_happened** — EXACTLY ONE sentence. Factual, drawn only from the article.
+No interpretation, no adjectives, no stakes, no consequence. If the article text
+does not support a clean factual sentence, discard the signal.
 
-**why_it_matters** — The consequence for THIS reader, in terms of the category it hit. Two to three sentences. Address them as "you". This field is the entire product, and it has a hard test:
+**why_it_matters** — ONE OR TWO SENTENCES. Never three. This field is the entire
+product, and the failure mode is length, not brevity.
 
-  > If your "why it matters" would read the same for a 500-person enterprise, a fintech, or an e-commerce store, it is not specific enough. Discard the signal.
+  State the consequence as a FACT for this reader. The gate has already decided
+  this signal is relevant — so stop hedging about whether it applies.
 
-  It must be NON-OBVIOUS. If the reader learns nothing from it that they did not already get from the headline, discard the signal. "AI costs are changing, which affects your margins" is a restatement, not a consequence — that is a DISCARD, not a weak pass. Say which part of their business is exposed and through what mechanism.
+  BANNED, because they hedge or pad:
+  - "If you're running..." / "If you use..." / "For teams that..." — no
+    conditionals. Assert the consequence.
+  - Explaining what the technology IS. They know their own stack.
+  - Analogies and "like..." examples. They cost a clause and add nothing.
+  - "This changes the unit economics of..." — vague summary sentences that
+    restate what you already said.
 
-  **Do NOT invent numbers.** You have no access to their revenue, margins, pipeline, headcount, or infrastructure bill. This includes "typical" or illustrative figures — a range is still an invented number.
+  Say what changed for them, and by how much. Nothing else.
+
+  ── WORKED EXAMPLE ──────────────────────────────────────────────────────
+  Signal: Anthropic cut cache read fees by 75% and released Claude Fable 5.1.
+
+  TOO LONG (this is what the old instructions produced — do NOT write this):
+  "If you're running agents or workflows that keep large contexts in memory—like
+  customer support bots that reference documentation, or onboarding assistants
+  that hold product state across turns—cache reads were a hidden multiplier on
+  your Anthropic bill. A 75% cut means long-running agent sessions just became
+  viable where they weren't before, or cheaper where you've already deployed
+  them. This changes the unit economics of any feature where you're paying to
+  keep context warm."
+
+  Three sentences. Opens with a conditional. Explains what prompt caching is.
+  Uses an analogy. Ends with a vague restatement.
+
+  TARGET:
+  "Repeated-context calls just got 75% cheaper on Anthropic — support triage,
+  contract review, long agent sessions. Features you shelved as too expensive
+  to run are worth re-pricing now."
+
+  Two sentences. No conditional. No explanation. States the change and the
+  consequence.
+  ────────────────────────────────────────────────────────────────────────
+
+  ── ADMISSION AND WRITING ARE SEPARATE DECISIONS ────────────────────────
+  Decide relevance FIRST, then write. A signal that genuinely maps to one of
+  the five categories STAYS IN, even if the consequence is awkward to compress
+  into one or two sentences. Never discard a real signal because it was hard
+  to phrase briefly — if compression is difficult, write the plainest version
+  you can and keep it.
+
+  Discard for IRRELEVANCE (it hits none of the five categories) or for
+  OBVIOUSNESS (the reader learns nothing beyond the headline). Never for
+  difficulty of wording. The length rules above govern HOW you write, not
+  WHETHER the signal qualifies.
+  ────────────────────────────────────────────────────────────────────────
+
+  It must still be NON-OBVIOUS and SPECIFIC:
+  > If it would read the same for a 500-person enterprise, a fintech, or an
+  > e-commerce store, it is not specific enough. Discard the signal.
+
+  If the reader learns nothing beyond the headline, discard the signal.
+  "AI costs are changing, which affects your margins" is a restatement, not a
+  consequence — a DISCARD, not a weak pass.
+
+  **Do NOT invent numbers.** You have no access to their revenue, margins,
+  pipeline, headcount, or infrastructure bill — including "typical" or
+  illustrative figures. A range is still an invented number.
 
   BANNED: "for a typical B2B SaaS company spending $2K-$10K/month, that's $600-$3K back"
-  FINE:   "if Glue is a visible line on your infrastructure bill, this comes straight off it"
+  FINE:   "this comes straight off your infrastructure bill"
 
-  Percentages and prices stated in the article itself are fine to repeat. Anything about THEIR business must be qualitative.
+  Percentages and prices stated in the article itself are fine to repeat.
+  Anything about THEIR business must be qualitative.
 
-**what_to_consider** — ONE concrete decision or action they could take, specific enough to put on a calendar this week. If there is genuinely no action and the signal is context only, write exactly: \`Monitor only.\` followed by one sentence naming the trigger that would make it actionable. Do not manufacture an action to seem useful.
+**what_to_consider** — EXACTLY ONE sentence. One specific action, not a menu of
+options and not a paragraph. If there is genuinely no action, write exactly:
+\`Monitor only — <the trigger that would make it actionable>.\` as that one
+sentence. Do not manufacture an action to seem useful.
+
+  TOO LONG: "Audit your three highest-volume Claude API calls this week; if any
+  reuse system prompts or large context blocks across requests, prototype prompt
+  caching and calculate whether the engineering time pays back in 60 days of
+  saved API costs."
+
+  TARGET: "Re-price the AI features you shelved on cost."
 
 ## VOICE
 

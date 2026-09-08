@@ -34,8 +34,16 @@ interface GateResponse {
  */
 const BATCH_SIZE = 25;
 
-/** A field this short is not a real consequence — treat it as a failed gate. */
-const MIN_WHY_LENGTH = 60;
+/**
+ * A field this short is not a real consequence — treat it as a failed gate.
+ *
+ * Kept deliberately low. The prompt now asks for ONE OR TWO sentences, and a
+ * legitimately tight answer ("Repeated-context calls just got 75% cheaper on
+ * Anthropic.") lands around 55 characters. At the old floor of 60 this guard
+ * would have silently eaten correct output and looked exactly like the gate
+ * discarding the signal. This only needs to catch empty strings and stubs.
+ */
+const MIN_WHY_LENGTH = 40;
 
 /**
  * Run the five-category gate over a set of candidates.

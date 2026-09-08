@@ -810,3 +810,31 @@ Everything else was mechanically scoped under .vlp by a transform script rather 
 **Status:** Complete.
 
 **Note:** bookingUrl is still empty, so "Book a meeting" opens the placeholder dialog by design. The dialog is a fresh Radix build and was only verified to compile and render — the open/close interaction should be clicked through on production, where a logged-out session can actually reach the landing page.
+
+---
+## 2026-09-08 — Tighten the three-field output; separate the writing bar from the admission bar
+**Files changed:** src/lib/ai/prompts/triage.ts, src/lib/signals/gate.ts
+
+(WHY) why_it_matters read like a blog post explaining possibilities rather than a brief stating consequences — conditionals, analogies, explanations of the technology, three sentences where two would do.
+
+(PROMPT) Rewrote the THREE FIELDS spec. what_happened and what_to_consider are now EXACTLY ONE sentence. why_it_matters is ONE OR TWO SENTENCES, never three, stated as a fact rather than a conditional. Explicit bans on "If you're running.../If you use.../For teams that...", on explaining what the technology is, on analogies, and on vague closing restatements ("This changes the unit economics of..."). Added a worked example using the exact Anthropic cache signal verbatim as the TOO LONG anti-pattern, with the failure diagnosed line by line, plus the tightened TARGET version. Same treatment for what_to_consider. Kept the no-invented-numbers rule and the 500-person-enterprise specificity test unchanged.
+
+(GUARD) gate.ts MIN_WHY_LENGTH 60 -> 40. A legitimately tight one-liner ("Repeated-context calls just got 75% cheaper on Anthropic.") is ~55 chars and the old floor would have silently eaten correct output, looking exactly like the gate discarding the signal.
+
+(ADMISSION SEPARATED FROM WRITING) Added an explicit block: decide relevance first, then write; a signal that maps to one of the five categories stays in even if the consequence is awkward to compress; discard for irrelevance or obviousness, never for difficulty of wording.
+
+(MEASURED, AND A WRONG HYPOTHESIS CORRECTED) Re-ran the gate read-only over the 11 stored gated signals. Length improved decisively: why_it_matters 468 -> 201 chars average, 2.7 -> 2.0 sentences, and zero outputs opening with "If you...".
+
+But only 3 of 11 signals survived. First hypothesis was that batching caused it — the volume rule caps at 0-3 per batch and all 11 went in one batch. Tested by re-gating one-per-batch so the budget could not bind: still 8 dropped. Second hypothesis was that the tighter writing bar had propagated into a tighter admission bar; that is what the new ADMISSION block was written to fix. It changed nothing — identical 3/11.
+
+The actual cause is neither. Inspecting the stored content showed FIVE of the eight dropped rows have `content` that is raw Google News anchor markup (<a href="https://news.google.com/rss/articles/CBMi...">) — the rss-ingestion cleanText bug fixed yesterday in c310b71. Those rows were ingested before the fix, so their stored content is still markup. The display layer strips it at render time, but the gate reads stored content on a re-run and correctly finds nothing to work with. A sixth ("Gemini 3.8 Flash Leak") has content identical to its title, 69 characters. Only two drops (Vercel build machines, EC2 R9g) are genuine relevance judgements.
+
+So the drop rate is stale dirty data, not prompt strictness. The ADMISSION block was added on a hypothesis that turned out to be wrong; it is kept because it is correct as a principle and was explicitly requested, not because it changed this measurement.
+
+(PERSISTED) Overwrote the 3 signals that produced new output in place. The other 8 keep their existing text — nothing was blanked or deleted.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Prompt assembly checked for all nine expected sections after an unescaped-backtick bug closed the template literal early during editing. Feed now holds 11 gated signals with why_it_matters lengths spanning 183..481 chars — the three rewritten at the low end, the eight untouched at the old length.
+
+**Status:** Complete.
+
+**Pending user decision:** the five signals with markup stored in `content` cannot be re-gated fairly until that content is cleaned with toPlainText. That is a data repair of a known, already-fixed bug rather than a rewrite of good data, but it modifies stored rows, so it was not done unilaterally.
