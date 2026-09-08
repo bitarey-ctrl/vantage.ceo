@@ -982,3 +982,33 @@ Preserved every API call: /api/signals/raw, /analysis-map, /refresh, /:id/review
   7. Settings — NOTE: /settings is broken for a pre-existing reason unrelated to any of this. notification_preferences does not exist (PGRST205); migration 015 was never applied. Fix that before or alongside the reskin.
 
 The pattern to follow is established in the two completed pages: lift the prototype's JSX structure and vx- class names verbatim, replace its data.ts references with the real API shapes, omit any prototype field with no real column, and check every vx- class against src/components/redesign/*.css before building.
+
+---
+
+## 2026-09-09 — OPTION A COMPLETE: remaining 5 dashboard pages rebuilt + CommandBar restyled
+**Files changed:** src/components/decisions/DecisionsWorkspace.tsx (rewritten), src/app/(dashboard)/advisor/page.tsx (rewritten), src/app/(dashboard)/strategies/page.tsx (rewritten), src/app/(dashboard)/strategies/[id]/page.tsx (rewritten), src/app/(dashboard)/profile/page.tsx (rewritten), src/app/(dashboard)/settings/page.tsx (rewritten), src/app/(dashboard)/settings/actions.ts, src/components/redesign/app-bridge.css, src/components/redesign/app-additions.css
+**New files:** src/app/(dashboard)/settings/prefs.ts
+
+All seven dashboard pages are now rebuilt against the prototype. Every API call, handler and mutation from before is intact.
+
+(DECISIONS — 747 -> 415 lines) Rebuilt to screens.tsx `area==='Decisions'`: eyebrow + heading, Open/Decided/Archived tabs with counts, vx-split vx-focused with a vx-simple-row list and a vx-document detail (THE CHOICE, a vx-disclosure holding WHY NOW plus the WHAT WE KNOW / WHAT'S UNCERTAIN pair, BLIND SPOT REVIEW as vx-risk rows, vx-actions footer). The earlier note in this log about omitting known/unknown was wrong — the columns exist as known_context and open_questions and are now wired. Preserved: runAnalysis (POST /api/decisions/:id/analyze, including the analyzable:false path), saveDeadline and setStatus (PATCH /api/decisions/:id, optimistic with rollback), and both DecisionForm modals.
+
+(ADVISOR — 977 -> 817 lines) Only the render changed. The 380px collapsible rail became the vx-history-popover under the heading; MessageBubble now emits vx-user-message / vx-advisor-answer; the composer is vx-composer vx-advisor-composer. Streaming, session create/select/rename/delete, markdown rendering and the memory hint are untouched.
+
+(STRATEGIES — 263 -> 118 lines, detail 517 -> 428) List: heading, four status tabs with counts, vx-simple-rows linking to the real detail route. Detail: vx-detail-toolbar with the status select, vx-reading with STRATEGIC RESPONSE, the vx-linked-source back to the originating signal, a vx-disclosure holding the vx-timeline and the IF YOU DO NOTHING callout, and the actions footer. Kept the status PATCH (with its considering -> deciding detour through DeadlineModal), OutcomeCapture and the advisor prefill.
+
+(PROFILE — 418 -> 260 lines) Two tabs over one vx-profile-form. Fields are now directly editable with a single save per tab instead of per-card Edit/Save/Cancel. PATCH /api/profile is unchanged.
+
+(SETTINGS — 334 -> 286 lines) vx-settings-panel sections of vx-setting-row entries with vx-toggle switches. Optimistic write-through with rollback unchanged.
+
+**ROOT CAUSE, /settings:** it was NOT migration 015. actions.ts is a "use server" module and it exported NOTIFICATION_DEFAULTS, a plain object — Next.js only permits async function exports there, so every import of the module threw "A 'use server' file can only export async functions, found object". Moved the type and the defaults into a new plain module, settings/prefs.ts. The page loads and the toggles render.
+
+**COMMAND BAR — option A (restyle), not removal.** It is a working entry point to the advisor; deleting it would have cost a feature. Now flat #111416 with the same 1px #ffffff1b border as the new cards and an 8px radius instead of the 23px pill. On clearance: the shell already reserves 126px below <main> on every route except /advisor (where the bar is hidden), and the ported materials.css narrows that on small screens — so no extra padding was added. A short bridge rule that duplicated it was removed.
+
+**OMISSIONS (no real column):** decision owner and area; strategy display id and signal source name; the profile banner, 128px avatar and "Example workspace" tag; the settings "Appearance & density" section (theme lives in the sidebar) and the prototype's "Proposed settings experience" callout.
+
+**ONE CSS ADDITION:** .vx-app .vx-form-grid textarea in app-additions.css. The design's form grid only ever held single-line inputs; three strategic-context fields are prose. Values copied from the grid's own input rule. The ported design files are still byte-identical.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Every vx- class used was checked against src/components/redesign/*.css — zero missing. Live in Chrome with real data: Decisions 5 open / 1 decided / 1 archived with the detail opening on all sections; Advisor renders a real stored conversation with markdown intact; Strategies 11/0/3/4 with a detail showing the real description, originating signal and disclosure; Profile shows the real strategic context; Settings loads with all four toggles.
+
+**Status:** 7 of 7 pages done. Nothing pending for the user — no migrations, no env vars, no installs.

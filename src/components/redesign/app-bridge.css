@@ -126,8 +126,24 @@
   border-radius: 6px;
 }
 
-/* ── The fixed command bar keeps its pill shape — it is a floating control,
-      not a panel, and squaring it off reads as a bug. ────────────────────── */
+/* ── Floating command bar ────────────────────────────────────────────────
+   Restyled to the vx panel treatment rather than removed: it is a working
+   entry point to the advisor and deleting it would cost a feature. Flat
+   surface, the same border as the new cards, and an 8px radius instead of
+   the old 23px pill so it reads as part of the same system.
 
-.vx-app .cx-command-bar { border-radius: 23px; }
-.vx-app .cx-command-bar input { border-radius: 999px; }
+   Clearance is already handled: the shell reserves 126px below <main> on
+   every route except /advisor, where the bar is hidden. ───────────────── */
+
+.vx-app .cx-command-bar {
+  border-radius: 8px;
+  background: #111416;
+  border: 1px solid #ffffff1b;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+  backdrop-filter: none;
+}
+.vx-app .cx-command-bar input {
+  border-radius: 6px;
+  background: transparent;
+}
+

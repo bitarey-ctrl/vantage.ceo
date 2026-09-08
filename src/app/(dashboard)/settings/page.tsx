@@ -1,13 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Bell, Clock, Globe, Check, Loader2 } from "lucide-react";
-import {
-  getNotificationPreferences,
-  saveNotificationPreferences,
-  NOTIFICATION_DEFAULTS,
-  type NotificationPrefsInput,
-} from "./actions";
+
+import { getNotificationPreferences, saveNotificationPreferences } from "./actions";
+import { NOTIFICATION_DEFAULTS, type NotificationPrefsInput } from "./prefs";
 
 // ─── Notification rows ──────────────────────────────────────────────────────────
 
@@ -100,19 +96,12 @@ function Toggle({
     <button
       type="button"
       role="switch"
+      className="vx-toggle"
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors duration-200 ${
-        checked ? "hairline-strong" : "hairline surf-2"
-      }`}
-      style={checked ? { backgroundColor: "var(--brand-accent)" } : undefined}
     >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? "translate-x-[22px]" : "translate-x-[3px]"
-        }`}
-      />
+      <i />
     </button>
   );
 }
@@ -187,147 +176,107 @@ export default function SettingsPage() {
     [persist]
   );
 
+  /*
+   * Rebuilt to the prototype's settings screen (components/redesign/
+   * screens.tsx): eyebrow + heading, then vx-settings-panel sections of
+   * vx-setting-row entries with vx-toggle switches on the right.
+   *
+   * OMITTED from the prototype: its "Proposed settings experience" callout
+   * (a note about this page erroring during their review — migration 015 is
+   * applied and it loads), and the Appearance & density section, which has
+   * no real setting behind it. Theme lives in the sidebar.
+   *
+   * Behaviour is unchanged: every control still writes through `update`,
+   * which applies optimistically and reverts on failure.
+   */
+  const status = saving
+    ? "Saving…"
+    : saveError
+    ? saveError
+    : savedAt
+    ? "Saved."
+    : "Changes save automatically.";
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <div className="sticky top-0 z-20 border-b hairline glass px-6 py-4">
-        <div className="relative z-10 flex items-center justify-between gap-4">
-          <div>
-            <p className="rule-label mb-0.5">
-              Account
-            </p>
-            {/* display-hero not used here — see the same call on Advisor's
-                header: its min size nearly doubles a persistent sticky bar's
-                height, which this compact settings header can't absorb. */}
-            <h1 className="display-font text-lg text-foreground">Settings</h1>
-          </div>
-          {/* Save status */}
-          <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-            {saving ? (
-              <>
-                <Loader2 size={12} className="animate-spin" />
-                Saving…
-              </>
-            ) : saveError ? (
-              <span className="text-foreground">{saveError}</span>
-            ) : savedAt ? (
-              <>
-                <Check size={12} /> Saved
-              </>
-            ) : null}
-          </div>
+    <>
+      <div className="vx-page-heading">
+        <div>
+          <span className="vx-eyebrow">WORKSPACE PREFERENCES</span>
+          <h1>Settings</h1>
+          <p>Quiet defaults. Deliberate control.</p>
         </div>
       </div>
 
-      <div className="px-6 py-6 max-w-3xl mx-auto">
-        {loading ? (
-          <div className="flex flex-col gap-3">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="glass rounded-2xl p-5 animate-pulse h-20" />
-            ))}
-          </div>
-        ) : loadError || !prefs ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="relative z-10">
-              <p className="text-sm text-muted-foreground mb-3">
-                Unable to load your settings
-              </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="text-[11px] font-semibold uppercase tracking-wider text-foreground hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        ) : (
-          <section>
-            <div className="flex items-center gap-2 mb-2">
-              <Bell size={14} className="text-muted-foreground" />
-              <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-                Notifications
-              </h2>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">
-              Email-only for now. Choose which intelligence reaches your inbox —
-              changes save automatically.
-            </p>
+      {loading ? (
+        <div className="vx-empty"><h2>Loading your settings…</h2></div>
+      ) : loadError || !prefs ? (
+        <div className="vx-empty">
+          <h2>Couldn&apos;t load your settings</h2>
+          <button className="vx-btn" onClick={() => window.location.reload()}>Try again</button>
+        </div>
+      ) : (
+        <>
+          <p className="vx-settings-note vx-quiet-note" role="status">{status}</p>
 
-            <div className="glass glass-sheen rounded-2xl">
-              <div className="relative z-10 divide-y divide-[var(--hairline,rgba(255,255,255,0.06))]">
-                {NOTIFICATION_ROWS.map((row) => (
-                  <div key={row.key}>
-                    <div className="flex items-start justify-between gap-4 p-5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground mb-1">
-                          {row.label}
-                        </p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {row.description}
-                        </p>
-                      </div>
-                      <Toggle
-                        label={row.label}
-                        checked={prefs[row.key]}
-                        onChange={(next) => update({ [row.key]: next })}
-                      />
-                    </div>
-
-                    {/* Daily Briefing: time + timezone controls */}
-                    {row.key === "daily_briefing" && (
-                      <div
-                        className={`px-5 pb-5 -mt-1 flex flex-wrap items-end gap-4 transition-opacity duration-200 ${
-                          prefs.daily_briefing ? "opacity-100" : "opacity-40"
-                        }`}
-                      >
-                        <div className="flex flex-col gap-1.5">
-                          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                            <Clock size={11} /> Delivery time
-                          </label>
-                          <input
-                            type="time"
-                            value={prefs.briefing_time}
-                            disabled={!prefs.daily_briefing}
-                            onChange={(e) =>
-                              update({ briefing_time: e.target.value })
-                            }
-                            className="rounded-md border hairline surf-2 px-3 py-2 text-sm text-foreground focus:outline-none focus:border-foreground/30 disabled:cursor-not-allowed"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5 min-w-[200px]">
-                          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                            <Globe size={11} /> Timezone
-                          </label>
-                          <select
-                            value={prefs.timezone}
-                            disabled={!prefs.daily_briefing}
-                            onChange={(e) =>
-                              update({ timezone: e.target.value })
-                            }
-                            className="rounded-md border hairline surf-2 px-3 py-2 text-sm text-foreground focus:outline-none focus:border-foreground/30 disabled:cursor-not-allowed"
-                          >
-                            {/* Ensure the saved value is selectable even if not in the list */}
-                            {!timezones.includes(prefs.timezone) && (
-                              <option value={prefs.timezone}>
-                                {prefs.timezone}
-                              </option>
-                            )}
-                            {timezones.map((tz) => (
-                              <option key={tz} value={tz}>
-                                {tz.replace(/_/g, " ")}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+          <section className="vx-panel vx-settings-panel">
+            <div className="vx-panel-head">
+              <h2>Email notifications</h2>
+            </div>
+            {NOTIFICATION_ROWS.map((row) => (
+              <div className="vx-setting-row" key={row.key}>
+                <div>
+                  <strong>{row.label}</strong>
+                  <p>{row.description}</p>
+                </div>
+                <Toggle
+                  label={row.label}
+                  checked={prefs[row.key]}
+                  onChange={(next) => update({ [row.key]: next })}
+                />
               </div>
+            ))}
+          </section>
+
+          <section className="vx-panel vx-settings-panel">
+            <div className="vx-panel-head">
+              <h2>Daily briefing delivery</h2>
+            </div>
+            <div className="vx-setting-row">
+              <div>
+                <strong>Delivery time</strong>
+                <p>When your morning brief lands. Turn the daily briefing on to change it.</p>
+              </div>
+              <input
+                type="time"
+                aria-label="Delivery time"
+                value={prefs.briefing_time}
+                disabled={!prefs.daily_briefing}
+                onChange={(e) => update({ briefing_time: e.target.value })}
+              />
+            </div>
+            <div className="vx-setting-row">
+              <div>
+                <strong>Timezone</strong>
+                <p>The clock your delivery time is read against.</p>
+              </div>
+              <select
+                aria-label="Timezone"
+                value={prefs.timezone}
+                disabled={!prefs.daily_briefing}
+                onChange={(e) => update({ timezone: e.target.value })}
+              >
+                {/* Keep a saved value selectable even if the runtime omits it. */}
+                {!timezones.includes(prefs.timezone) && (
+                  <option value={prefs.timezone}>{prefs.timezone}</option>
+                )}
+                {timezones.map((tz) => (
+                  <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
+                ))}
+              </select>
             </div>
           </section>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </>
   );
 }

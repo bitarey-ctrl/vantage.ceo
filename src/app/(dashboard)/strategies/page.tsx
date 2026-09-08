@@ -2,52 +2,38 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Zap, LayoutGrid } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Strategy, StrategyStatus } from "@/types/database";
 import { toPlainText } from "@/lib/text";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/*
+ * Strategies — rebuilt to the prototype's structure (components/redesign/
+ * screens.tsx, the `area==='Strategies'` block): eyebrow + heading, status
+ * tabs with counts, then a single reading-width panel of vx-simple-rows.
+ *
+ * The prototype held the detail inline. Here each row still links to
+ * /strategies/[id], which is a real route with real handlers (status change,
+ * outcome recording, decision framing) — collapsing it into this page would
+ * have meant deleting working mutations.
+ *
+ * OMITTED from the prototype: the "DEC–0x" style id and the source name.
+ * Strategies have no display id, and the signal's source is not returned by
+ * /api/strategies. The originating signal title is real, so it stays.
+ */
 
 type StrategyRow = Strategy & {
   signal?: { id: string; title: string } | null;
 };
 
-type FilterTab = StrategyStatus;
-
-const SEGMENTS: { value: FilterTab; label: string }[] = [
+const TABS: { value: StrategyStatus; label: string }[] = [
   { value: "considering", label: "Considering" },
   { value: "deciding", label: "Deciding" },
   { value: "decided", label: "Decided" },
+  { value: "archived", label: "Archived" },
 ];
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
-
-const STATUS_STYLES: Record<StrategyStatus, string> = {
-  considering: "surf-2 text-muted-foreground hairline",
-  deciding: "surf-3 text-foreground hairline-strong",
-  decided: "badge-completed",
-  archived: "surf-1 text-muted-foreground hairline",
-};
-
-function StatusBadge({ status }: { status: StrategyStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${STATUS_STYLES[status]}`}
-    >
-      {status}
-    </span>
-  );
-}
-
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function Skeleton({ className }: { className?: string }) {
-  return <div className={`animate-pulse rounded surf-2 ${className ?? ""}`} />;
-}
-
 function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -55,70 +41,11 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-// ─── Row ──────────────────────────────────────────────────────────────────────
-
-function StrategyRowItem({ strategy }: { strategy: StrategyRow }) {
-  return (
-    <div className="glass glass-sheen rounded-2xl overflow-hidden">
-      <div className="relative z-10 flex items-center gap-4 px-5 py-4">
-        <div className="flex-1 min-w-0">
-          <Link
-            href={`/strategies/${strategy.id}`}
-            className="block text-[15px] font-medium text-foreground leading-snug truncate hover:underline"
-          >
-            {strategy.title}
-          </Link>
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-            {strategy.signal ? (
-              <Link
-                href={`/signals?focus=${strategy.signal.id}`}
-                className="inline-flex items-center gap-1 hover:text-foreground transition-colors truncate max-w-[18rem]"
-                title={toPlainText(strategy.signal.title)}
-              >
-                <Zap size={11} className="flex-shrink-0" />
-                <span className="truncate">From: {toPlainText(strategy.signal.title)}</span>
-              </Link>
-            ) : (
-              <span className="inline-flex items-center gap-1">Manual</span>
-            )}
-          </div>
-          {/* Below sm, the status + timestamp move here (under the title)
-              instead of competing for width on the right with the chevron. */}
-          <div className="sm:hidden mt-2 flex items-center gap-2">
-            <StatusBadge status={strategy.status} />
-            <span className="text-[11px] font-mono text-muted-foreground">
-              {timeAgo(strategy.updated_at)}
-            </span>
-          </div>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-4 flex-shrink-0">
-          <StatusBadge status={strategy.status} />
-          <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-            {timeAgo(strategy.updated_at)}
-          </span>
-        </div>
-
-        <Link
-          href={`/strategies/${strategy.id}`}
-          className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Open strategy"
-          style={{ minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <ChevronRight size={16} />
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [filter, setFilter] = useState<FilterTab>("considering");
+  const [tab, setTab] = useState<StrategyStatus>("considering");
 
   const fetchStrategies = useCallback(async () => {
     setLoading(true);
@@ -139,125 +66,58 @@ export default function StrategiesPage() {
     fetchStrategies();
   }, [fetchStrategies]);
 
-  const filtered = strategies.filter((s) => s.status === filter);
-
-  const counts: Record<FilterTab, number> = {
-    considering: strategies.filter((s) => s.status === "considering").length,
-    deciding: strategies.filter((s) => s.status === "deciding").length,
-    decided: strategies.filter((s) => s.status === "decided").length,
-    archived: strategies.filter((s) => s.status === "archived").length,
-  };
+  const filtered = strategies.filter((s) => s.status === tab);
 
   return (
-    <div className="min-h-screen text-foreground px-8 py-10">
-      <div className="glass max-w-[1200px] mx-auto p-10">
-        <div className="relative z-10">
-          {/* Header */}
-          <div className="mb-8">
-            <p className="rule-label mb-3">
-              Intelligence
-            </p>
-            <h1 className="display-hero text-foreground mb-2">
-              Strategies
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Recommendations derived from your signals.
-            </p>
-          </div>
-
-          {/* Segmented tab bar + archived link — glass pills, per the
-              concept. Scrolls below md (a forced 1/3 grid column is narrower
-              than "CONSIDERING" + its count, which used to overlap the next
-              label); at md+ it's an even 3-way split. */}
-          <div className="glass-pill scroll-x-pane flex items-center gap-1 p-1 mb-8 flex-nowrap w-full md:w-fit">
-            <div className="flex flex-nowrap md:grid md:grid-cols-3 gap-1">
-              {SEGMENTS.map((seg) => {
-                const count = counts[seg.value];
-                const isActive = filter === seg.value;
-                return (
-                  <button
-                    key={seg.value}
-                    onClick={() => setFilter(seg.value)}
-                    className={`flex-shrink-0 whitespace-nowrap rounded-full px-4 py-2 md:text-center text-[13px] font-semibold uppercase tracking-wider transition-colors ${
-                      isActive
-                        ? "glass-pill-active"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {seg.label}
-                    {count > 0 && (
-                      <span
-                        className={`ml-1.5 ${
-                          isActive ? "text-foreground/70" : "text-muted-foreground"
-                        }`}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => setFilter("archived")}
-              className={`flex-shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold uppercase tracking-wider transition-colors ${
-                filter === "archived"
-                  ? "glass-pill-active"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Archived
-              {counts.archived > 0 && (
-                <span className="ml-1.5 text-muted-foreground">
-                  {counts.archived}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Content */}
-          {loading ? (
-            <div className="flex flex-col gap-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="glass rounded-2xl px-5 py-4">
-                  <Skeleton className="h-5 w-3/4 mb-2" />
-                  <Skeleton className="h-4 w-1/3" />
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="text-center py-16">
-              <p className="text-sm text-muted-foreground mb-3">
-                Unable to load strategies
-              </p>
-              <button
-                onClick={fetchStrategies}
-                className="text-[11px] font-bold uppercase tracking-wider text-foreground hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center text-center py-20">
-              <div className="surf-2 rounded-2xl flex items-center justify-center mb-6" style={{ width: 96, height: 96 }}>
-                <LayoutGrid size={36} className="text-muted-foreground" strokeWidth={1.5} />
-              </div>
-              <p className="text-sm font-semibold text-foreground mb-1.5">
-                No {filter} strategies
-              </p>
-              <p className="text-[12px] text-muted-foreground max-w-xs">
-                Generate one from a signal, or change the tab to see other strategies.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {filtered.map((strategy) => (
-                <StrategyRowItem key={strategy.id} strategy={strategy} />
-              ))}
-            </div>
-          )}
+    <>
+      <div className="vx-page-heading">
+        <div>
+          <span className="vx-eyebrow">FROM SIGNAL TO DIRECTION</span>
+          <h1>Strategies</h1>
+          <p>Understand the move before making the commitment.</p>
         </div>
       </div>
-    </div>
+
+      <div className="vx-tabs">
+        {TABS.map((t) => (
+          <button key={t.value} aria-pressed={tab === t.value} onClick={() => setTab(t.value)}>
+            {t.label}
+            <span>{strategies.filter((s) => s.status === t.value).length}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="vx-split vx-focused">
+        <section className="vx-panel">
+          {loading ? (
+            <div className="vx-empty"><h2>Loading strategies…</h2></div>
+          ) : error ? (
+            <div className="vx-empty">
+              <h2>Couldn&apos;t load your strategies</h2>
+              <button className="vx-btn" onClick={fetchStrategies}>Try again</button>
+            </div>
+          ) : filtered.length ? (
+            filtered.map((s) => (
+              <Link className="vx-simple-row" key={s.id} href={`/strategies/${s.id}`}>
+                <span>
+                  <small>{timeAgo(s.updated_at)}</small>
+                  <strong>{toPlainText(s.title)}</strong>
+                  <small>
+                    {s.signal ? `From ${toPlainText(s.signal.title)}` : "Framed by you"}
+                  </small>
+                </span>
+                <ChevronRight size={15} />
+              </Link>
+            ))
+          ) : (
+            <div className="vx-empty">
+              <h2>No {tab} strategies</h2>
+              <p>A strategy appears here when it reaches this stage.</p>
+              <Link className="vx-btn" href="/signals">Review signals</Link>
+            </div>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

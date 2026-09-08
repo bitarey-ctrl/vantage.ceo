@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Send, Loader2, Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, Check, X, Search } from "lucide-react";
+import { ArrowUpRight, Loader2, Plus, MessageSquare, ChevronRight, Search } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,26 +193,13 @@ const MessageBubble = React.memo(function MessageBubble({
   );
 
   if (role === "user") {
-    return (
-      <div className="flex flex-col gap-1.5 items-end">
-        <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
-          YOU
-        </span>
-        <div className="max-w-[85%] rounded-2xl rounded-br-md px-5 py-3.5 text-[13px] leading-[1.7] border hairline surf-2 text-foreground whitespace-pre-wrap">
-          {content}
-        </div>
-      </div>
-    );
+    return <div className="vx-user-message">{content}</div>;
   }
 
   return (
-    <div className="flex flex-col gap-1.5 items-start">
-      <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-foreground/60">
-        VANTAGE ADVISOR
-      </span>
-      <div className="max-w-[85%] glass rounded-2xl rounded-tl-md px-5 py-3.5 text-[13px] leading-[1.7] text-foreground">
-        <div className="relative z-10">{rendered}</div>
-      </div>
+    <div className="vx-advisor-answer">
+      <span>VANTAGE ADVISOR</span>
+      {rendered}
     </div>
   );
 });
@@ -228,7 +215,6 @@ function AdvisorChat() {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [initComplete, setInitComplete] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -624,347 +610,202 @@ function AdvisorChat() {
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
+  // Structure lifted from the design package's advisor.tsx. What changed is
+  // only markup: the old 380px collapsible rail is now the vx-history-popover
+  // that drops under the heading, and the sticky header is now vx-page-heading.
+  // Every handler, fetch, stream and piece of state below is untouched.
+
+  const currentSession = sessions.find((x) => x.id === currentSessionId) ?? null;
+  const visibleSessions = sessions.filter(
+    (x) =>
+      !sessionSearch.trim() ||
+      x.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())
+  );
 
   return (
-    <div
-      className="flex bg-background text-foreground overflow-hidden"
-      // 96px accounts for the shell's new topbar chrome above <main> (26px
-      // canvas top padding + the topbar row + its 32px bottom margin) — the
-      // old 72px was sized for a bottom tab bar that no longer exists. The
-      // dashboard layout also skips its usual 126px bottom canvas padding on
-      // this route (see (dashboard)/layout.tsx's isAdvisor check), since the
-      // CommandBar is hidden here and nothing needs that space reserved.
-      style={{ height: "calc(100dvh - 96px - env(safe-area-inset-bottom))" }}
-    >
-
-      {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
-      {/* Below md this is a full-width pane, toggled by `showSidebar` (mobile
-          push-flow); at md+ it's the collapsible 380px rail, driven by
-          `sidebarOpen` as before — the two states are independent so desktop
-          behaviour is untouched. Always mounted so session state, scroll
-          position, and the composer's draft text survive switching panes. */}
-      <aside
-        className={`flex flex-col flex-shrink-0 h-full overflow-hidden transition-all duration-200 border-r hairline glass ${
-          showSidebar ? "w-full" : "w-0"
-        } ${sidebarOpen ? "md:w-[380px]" : "md:w-0"}`}
-      >
-        {/* Accent line at top */}
-        <div className="relative z-10 h-1 bg-gradient-to-r from-foreground/15 via-foreground/5 to-transparent flex-shrink-0" />
-
-        <div className="relative z-10 flex flex-col flex-1 overflow-hidden">
-        {/* Branding */}
-        <div className="px-4 pt-4 pb-3">
-          <p className="text-[10px] font-black tracking-[0.25em] text-foreground uppercase leading-none">
-            VANTAGE
-          </p>
-          <p className="text-[9px] font-medium tracking-[0.2em] uppercase mt-0.5 text-muted-foreground">
-            ADVISOR
-          </p>
+    <div className="vx-advisor-page">
+      <div className="vx-page-heading">
+        <div>
+          <h1>Advisor</h1>
+          <p>Work through the decision. Keep the context.</p>
         </div>
-
-        {/* Search field */}
-        <div className="mx-3 mb-3">
-          <div className="hairline surf-2 relative flex items-center rounded-lg border px-3 py-2">
-            <Search size={13} className="text-muted-foreground flex-shrink-0" strokeWidth={1.8} />
-            <input
-              type="text"
-              value={sessionSearch}
-              onChange={(e) => setSessionSearch(e.target.value)}
-              placeholder="Search chats..."
-              className="bg-transparent border-none outline-none flex-1 ml-2 text-[12px] text-foreground placeholder:text-muted-foreground min-w-0"
-            />
-          </div>
-        </div>
-
-        {/* New Chat button */}
-        <div className="mx-3 mb-4">
+        <div className="vx-advisor-tools">
           <button
-            onClick={() => { handleNewChat(); setShowSidebar(false); }}
-            className="w-full surf-2 surf-hover border hairline rounded-lg py-2.5 text-xs font-bold text-foreground tracking-wider uppercase transition-all duration-150 flex items-center justify-center gap-2"
+            className="vx-btn"
+            type="button"
+            aria-expanded={showSidebar}
+            onClick={() => setShowSidebar((v) => !v)}
           >
-            <Plus size={11} />
-            New Chat
+            <MessageSquare size={15} />History
           </button>
-        </div>
-
-        {/* Divider + RECENT label */}
-        <div className="mx-4 mb-3 border-t hairline" />
-        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] px-4 pb-2 text-muted-foreground">
-          RECENT
-        </p>
-
-        {/* Sessions list */}
-        <div className="flex-1 overflow-y-auto">
-          {sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <MessageSquare size={16} className="text-muted-foreground" />
-              <p className="text-[11px] mt-2 text-muted-foreground">No chats yet</p>
-            </div>
-          ) : sessions.filter((s) =>
-              !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())
-            ).length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <p className="text-[11px] text-muted-foreground">No chats match your search</p>
-            </div>
-          ) : (
-            sessions
-              .filter((s) =>
-                !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())
-              )
-              .map((session) => {
-              const isActive = session.id === currentSessionId;
-              const isRenaming = renamingId === session.id;
-              const isDeleteArmed = deletingId === session.id;
-              return (
-                <div
-                  key={session.id}
-                  className={`group relative border-l-2 transition-all duration-100 ${
-                    isActive
-                      ? "surf-3 hairline-strong border-l-foreground/30"
-                      : "border-transparent surf-hover"
-                  }`}
-                >
-                  {isRenaming ? (
-                    <div className="flex items-center gap-1 px-3 py-2.5">
-                      <input
-                        autoFocus
-                        value={renameDraft}
-                        onChange={(e) => setRenameDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitRename(session.id);
-                          else if (e.key === "Escape") cancelRename();
-                        }}
-                        onBlur={() => commitRename(session.id)}
-                        className="flex-1 bg-transparent text-[12px] outline-none border-b hairline-strong text-foreground px-1 py-0.5"
-                      />
-                      <button
-                        onClick={() => commitRename(session.id)}
-                        className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Save"
-                      >
-                        <Check size={11} />
-                      </button>
-                      <button
-                        onClick={cancelRename}
-                        className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Cancel"
-                      >
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => handleSelectSession(session.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleSelectSession(session.id);
-                        }
-                      }}
-                      className="w-full px-3 py-2.5 text-left relative overflow-hidden cursor-pointer"
-                    >
-                      <span
-                        className={`text-[12px] leading-snug truncate block mb-0.5 pr-12 ${
-                          isActive ? "text-foreground font-medium" : "text-muted-foreground"
-                        }`}
-                      >
-                        {session.title}
-                      </span>
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {formatSessionDate(session.updated_at)}
-                      </span>
-
-                      {/* Hover-revealed actions */}
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={(e) => startRename(session, e)}
-                          className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:surf-2 transition-colors"
-                          title="Rename"
-                          type="button"
-                        >
-                          <Pencil size={11} />
-                        </button>
-                        <button
-                          onClick={(e) => handleDelete(session.id, e)}
-                          className={`p-1.5 rounded transition-colors ${
-                            isDeleteArmed
-                              ? "text-[var(--brand-accent)] surf-2"
-                              : "text-muted-foreground hover:text-foreground hover:surf-2"
-                          }`}
-                          title={isDeleteArmed ? "Click again to confirm" : "Delete"}
-                          type="button"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Collapse button — desktop: collapses the rail. Mobile: this is the
-            only "back to chat" control while the sessions pane is showing. */}
-        <div className="border-t hairline py-2.5 px-3 flex items-center justify-center flex-shrink-0">
           <button
-            onClick={() => { setSidebarOpen(false); setShowSidebar(false); }}
-            className="w-full flex items-center justify-center gap-2 transition-colors py-1 hover:opacity-70 text-muted-foreground"
-            style={{ minHeight: 44 }}
+            className="vx-btn"
+            type="button"
+            onClick={() => {
+              handleNewChat();
+              setShowSidebar(false);
+            }}
           >
-            <PanelLeftClose size={13} />
-            <span className="md:hidden text-[11px] font-bold uppercase tracking-wider">Back to chat</span>
+            <Plus size={15} />New chat
           </button>
-        </div>
-        </div>
-      </aside>
-
-      {/* ── Chat Area ────────────────────────────────────────────────────────── */}
-      {/* Below md: hidden while the sessions pane is showing (mobile
-          push-flow). At md+: always visible, alongside the collapsible rail —
-          matches the desktop behaviour from before this pass. */}
-      <div className={`flex-1 flex-col h-full bg-background ${showSidebar ? "hidden md:flex" : "flex"}`}>
-
-        {/* Header */}
-        <div className="sticky top-0 z-20 border-b hairline glass flex-shrink-0">
-          <div className="relative z-10">
-          <div className="h-px bg-gradient-to-r from-foreground/20 via-transparent to-transparent" />
-          <div className="px-6 py-4 flex items-center gap-3">
-            <button
-              onClick={() => { setSidebarOpen((s) => !s); setShowSidebar(true); }}
-              className="flex-shrink-0 p-1.5 rounded surf-hover transition-colors text-muted-foreground"
-              aria-label="Show conversations"
-              style={{ minWidth: 44, minHeight: 44 }}
-            >
-              <span className="md:hidden"><PanelLeftOpen size={14} /></span>
-              <span className="hidden md:inline-flex">
-                {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-              </span>
-            </button>
-            <div>
-              <p className="rule-label mb-0.5">
-                Strategic Counsel
-              </p>
-              {/* display-hero is not used here — its clamp(2.75rem,7vw,5.5rem)
-                  min size nearly doubled this persistent sticky header's
-                  height in testing (80px → 165px), eating into the chat
-                  scroll area on the tight mobile viewport budget. The
-                  eyebrow still upgrades to rule-label; the title stays at
-                  its original compact size. */}
-              <h1 className="display-font text-[1.75rem] tracking-tight leading-none text-foreground">
-                Advisor
-              </h1>
-              <p className="text-[11px] mt-1 text-muted-foreground">
-                Ask anything about your signals, decisions, and strategy
-              </p>
-            </div>
-          </div>
-          </div>
-        </div>
-
-        {/* Messages + Input — flex-1/min-h-0 fills whatever the header leaves
-            behind, so the composer pins to the bottom of THIS column instead
-            of a calc(100vh - Npx) guess that ignored the mobile tab bar. */}
-        <div className="flex flex-col flex-1 min-h-0">
-          <div className="scroll-pane flex-1 px-6 py-8">
-
-            {/* Empty state — suggested starters */}
-            {messages.length === 0 && !sending && (
-              <div className="max-w-2xl mx-auto">
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] mb-5 text-muted-foreground">
-                  START WITH A QUESTION
-                </p>
-                <div className="flex flex-col gap-2">
-                  {STARTERS.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => send(s)}
-                      className="group flex items-center justify-between px-5 py-4 rounded-xl border hairline surf-2 surf-hover text-[13px] text-muted-foreground transition-all duration-150"
-                    >
-                      <span>{s}</span>
-                      <span className="ml-auto pl-3 flex-shrink-0 text-muted-foreground group-hover:text-foreground">
-                        →
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Message thread */}
-            <div className="max-w-2xl mx-auto flex flex-col gap-5">
-              {messages.map((msg, i) => (
-                <MessageBubble key={i} role={msg.role} content={msg.content} />
-              ))}
-
-              {/* Thinking indicator */}
-              {thinking && (
-                <div className="flex flex-col gap-1.5 items-start">
-                  <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-foreground/60">
-                    VANTAGE ADVISOR
-                  </span>
-                  <div className="glass rounded-2xl rounded-tl-md px-5 py-3.5">
-                    <div className="relative z-10">
-                      <ThinkingDots />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <p className="text-xs text-foreground border hairline-strong surf-2 rounded-xl px-4 py-2.5">
-                  {error}
-                </p>
-              )}
-
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          {/* Input bar */}
-          <div className="border-t hairline glass px-6 py-4">
-            <div className="relative z-10">
-            <div className="max-w-2xl mx-auto flex items-end gap-3">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask your advisor anything..."
-                rows={1}
-                className="flex-1 resize-none rounded-xl px-5 py-3.5 text-[13px] outline-none focus:border-foreground/30 transition-colors leading-relaxed border hairline surf-2 text-foreground"
-                style={{ maxHeight: "120px" }}
-                onInput={(e) => {
-                  const el = e.currentTarget;
-                  el.style.height = "auto";
-                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-                }}
-              />
-              {/* The one primary CTA on this screen (§2, §6) */}
-              <button
-                onClick={() => send(input)}
-                disabled={!input.trim() || sending}
-                className="btn-primary flex-shrink-0 flex items-center justify-center w-11 h-11 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {sending ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Send size={16} />
-                )}
-              </button>
-            </div>
-            <p className="max-w-2xl mx-auto mt-2 text-[10px] text-muted-foreground">
-              {showMemoryHint
-                ? "VANTAGE remembers your business context — no setup needed."
-                : "Press Enter to send · Shift+Enter for new line"}
-            </p>
-            </div>
-          </div>
         </div>
       </div>
+
+      {showSidebar && (
+        <section className="vx-history-popover" aria-label="Conversation history">
+          <label className="vx-search">
+            <Search size={16} />
+            <input
+              aria-label="Search conversations"
+              placeholder="Search conversations…"
+              value={sessionSearch}
+              onChange={(e) => setSessionSearch(e.target.value)}
+            />
+          </label>
+          {visibleSessions.map((session) => (
+            <button
+              className="vx-history-item"
+              key={session.id}
+              type="button"
+              onClick={() => {
+                handleSelectSession(session.id);
+                setShowSidebar(false);
+              }}
+            >
+              <span>
+                {session.title}
+                <small>{formatSessionDate(session.updated_at)}</small>
+              </span>
+              <ChevronRight size={15} />
+            </button>
+          ))}
+          {!visibleSessions.length && (
+            <p className="vx-quiet-note">
+              {sessions.length
+                ? "No conversations match your search."
+                : "No conversations yet."}
+            </p>
+          )}
+        </section>
+      )}
+
+      {currentSession && renamingId !== currentSession.id && (
+        <div className="vx-chat-title">
+          <span>{currentSession.title}</span>
+          <details>
+            <summary aria-label="Conversation actions">•••</summary>
+            <button
+              type="button"
+              onClick={(e) => startRename(currentSession, e)}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={(e) => handleDelete(currentSession.id, e)}
+            >
+              {deletingId === currentSession.id ? "Click again to confirm" : "Delete"}
+            </button>
+          </details>
+        </div>
+      )}
+
+      {currentSession && renamingId === currentSession.id && (
+        <form
+          className="vx-rename"
+          onSubmit={(e) => {
+            e.preventDefault();
+            commitRename(currentSession.id);
+          }}
+        >
+          <input
+            autoFocus
+            aria-label="Conversation name"
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") cancelRename();
+            }}
+            required
+            maxLength={100}
+          />
+          <button className="vx-btn" type="submit">Save</button>
+          <button className="vx-text-btn" type="button" onClick={cancelRename}>
+            Cancel
+          </button>
+        </form>
+      )}
+
+      <section className="vx-advisor-thread" aria-label="Conversation">
+        {!messages.length && !sending ? (
+          <div className="vx-advisor-welcome">
+            <div className="vx-advisor-mark">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-transparent.png" alt="" />
+            </div>
+            <h2>What are you weighing?</h2>
+            <p>
+              Bring a decision, a changing signal, or an assumption you want
+              challenged. Your business context is already attached.
+            </p>
+            <div className="vx-prompt-options">
+              {STARTERS.map((starter) => (
+                <button key={starter} type="button" onClick={() => send(starter)}>
+                  {starter}
+                  <ArrowUpRight size={13} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, i) => (
+            <MessageBubble key={i} role={msg.role} content={msg.content} />
+          ))
+        )}
+
+        {thinking && (
+          <div className="vx-advisor-answer">
+            <span>VANTAGE ADVISOR</span>
+            <ThinkingDots />
+          </div>
+        )}
+
+        {error && <p className="vx-quiet-note">{error}</p>}
+
+        <div ref={bottomRef} />
+      </section>
+
+      <form
+        className="vx-composer vx-advisor-composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(input);
+        }}
+      >
+        <textarea
+          ref={inputRef}
+          aria-label="Message Advisor"
+          placeholder="Ask your advisor…"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <div>
+          <small>
+            {showMemoryHint
+              ? "VANTAGE remembers your business context — no setup needed."
+              : "Enter to send · Shift + Enter for a new line"}
+          </small>
+          <button
+            className="vx-btn vx-primary"
+            type="submit"
+            aria-label="Send message"
+            disabled={!input.trim() || sending}
+          >
+            {sending ? <Loader2 size={18} className="vx-refreshing" /> : <ArrowUpRight size={18} />}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

@@ -2,23 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-export interface NotificationPrefsInput {
-  daily_briefing: boolean;
-  missed_signals: boolean;
-  monthly_recap: boolean;
-  decision_nudges: boolean;
-  briefing_time: string;
-  timezone: string;
-}
-
-export const NOTIFICATION_DEFAULTS: NotificationPrefsInput = {
-  daily_briefing: true,
-  missed_signals: true,
-  monthly_recap: true,
-  decision_nudges: true,
-  briefing_time: "07:00",
-  timezone: "UTC",
-};
+import {
+  NOTIFICATION_DEFAULTS,
+  type NotificationPrefsInput,
+} from "./prefs";
 
 const SELECT_COLS =
   "daily_briefing, missed_signals, monthly_recap, decision_nudges, briefing_time, timezone";

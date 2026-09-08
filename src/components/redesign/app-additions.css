@@ -40,3 +40,21 @@
 }
 .vx-app .vx-sidebar nav .vx-nav-locked:hover { background: transparent; color: inherit; }
 .vx-app .vx-nav-lock { margin-left: auto; flex-shrink: 0; }
+
+/* The design's vx-form-grid only ever held single-line inputs. Three of the
+   real strategic-context fields are prose (priorities, competitors, the
+   avoided decision), so textareas get the same treatment as inputs. */
+.vx-app .vx-form-grid textarea {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  background: #0c0d0f;
+  color: #dddde3;
+  border: 1px solid #ffffff1e;
+  border-radius: 7px;
+  padding: 12px;
+  margin-top: 9px;
+  font: inherit;
+  font-size: 14px;
+}
