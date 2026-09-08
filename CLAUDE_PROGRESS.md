@@ -838,3 +838,35 @@ So the drop rate is stale dirty data, not prompt strictness. The ADMISSION block
 **Status:** Complete.
 
 **Pending user decision:** the five signals with markup stored in `content` cannot be re-gated fairly until that content is cleaned with toPlainText. That is a data repair of a known, already-fixed bug rather than a rewrite of good data, but it modifies stored rows, so it was not done unilaterally.
+
+---
+## 2026-09-08 (2) — Clean stored content, re-gate on clean data, retire genuine failures
+**Files changed:** none (data operation only)
+
+Followed the previous entry's pending item. Backed up all 11 gated signals first (preserved at scratchpad/signals-backup-before-retire.json), then ran toPlainText over the stored `content` of the 8 not rewritten in the previous pass, re-gated each one-per-batch so the volume budget could not bind, persisted survivors, and soft-retired failures by deleting their signal_triages rows — the signals rows themselves are untouched, same soft-retire pattern as migration 023.
+
+(RESULT) 5 of the 8 had their content cleaned (762->128, 356->83, 399->85, 325->81, 622->443 chars). All 8 then failed the gate. Zero survivors. The feed went from 11 signals to 3.
+
+(THE IMPORTANT PART — the failures are NOT all the same kind) Cleaning revealed how little text those rows ever held. Classifying by post-clean body length:
+
+  Genuine relevance judgements, real article body present:
+    - Basic build machines (Vercel changelog), 771 chars
+    - Amazon EC2 R9g / Graviton5, 209 chars
+    - Payment Processor Nuvei FTC action, 443 chars
+
+  No body to judge, content reduced to headline + source name:
+    - Gemini 3.8 Flash Leak (69), OpenAI GPT-6 Astra (128),
+      Claude Fable 5.1 Arrives (81), Atlassian usage-based pricing (83),
+      OpenAI outcome pricing (85)
+
+So three are real calls. Five failed because there was nothing to judge.
+
+(ROOT CAUSE, STRUCTURAL) Verified directly against the live feed: Google News RSS items carry NO article body. Every <description> is an anchor link that reduces to `headline + source name` — sampled three items at 71, 92 and 86 plain-text characters. This is not a parsing bug and cleaning cannot recover it; the summary does not exist at source.
+
+That affects every Google News-sourced query in sources.ts: AI_PRICING_QUERY (cost_base), SAAS_PRICING_QUERY (pricing), and all per-competitor queries (competition). Those are the ONLY source of the Pricing category and, besides Product Hunt, the only source for Competition. Signals from them will always reach the gate as a headline with no supporting text, which both weakens the gate's judgement and makes a factual one-sentence what_happened hard to write.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Feed now 3 signal_triages rows; 210 signals rows retained (nothing deleted). Full pre-retire state backed up to JSON.
+
+**Status:** Complete as instructed.
+
+**Open question for the user:** the five headline-only retirements are arguably still a data-quality artifact rather than a relevance call — just a different artifact than the markup one. They are restorable from the backup. The durable fix is at the source level: either fetch the article body for Google News results, replace those queries with feeds that carry summaries, or tell the gate explicitly that a headline-only candidate may still qualify when the headline itself states the change. Not actioned — this changes source strategy or the gate prompt, neither of which was in scope here.
