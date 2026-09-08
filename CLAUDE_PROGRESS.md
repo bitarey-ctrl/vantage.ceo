@@ -955,3 +955,30 @@ TRADE-OFF, recorded: this changes surfaces, borders, radii and type — not layo
 **Status:** Complete. One commit, one deployment, as asked.
 
 **Pending user action:** run supabase/migrations/015_notification_preferences.sql to fix /settings.
+
+---
+## 2026-09-08 (7) — OPTION A: full JSX rebuild of dashboard pages (Signals, Command done)
+**Files changed:** src/app/(dashboard)/signals/page.tsx (rewritten), src/app/(dashboard)/command/page.tsx (rewritten)
+
+Switched from the option-B bridge to a full JSX rebuild against the prototype in /tmp/vantage-app-updated/Vantage-application/components/redesign/. Two of seven pages are complete, verified against live data, and pushed.
+
+(SIGNALS — 896 -> 602 lines) Rebuilt to the vx-calm-page block from workspace.tsx. Two views: the calm inbox (vx-calm-row rows leading with why_it_matters, what_happened as the summary line, category/urgency meta, source and age) and the reading document (vx-calm-document: urgency tag, title, what_happened intro, linked source, "Why it matters", "Suggested next step"). Filter bar with search plus category and urgency selects, feed status line, empty states, and the quiet count note — all from the prototype.
+
+Preserved every API call: /api/signals/raw, /analysis-map, /refresh, /:id/review, /:id/consequence, /:id/analyse, /:id/respond, /api/strategies?signalId=, /api/strategies/generate, and the advisor hand-off.
+
+(COMMAND — 390 -> 423 lines) Rebuilt to home.tsx: page heading, date strip, the two-up vx-command-brief-grid (next action + signal brief), vx-progress-strip, and the tabbed vx-home-queue. Sources: /api/dashboard, /api/signals/raw, /api/decisions, /api/strategies, /api/advisor/read, /api/signals/refresh.
+
+(OMISSIONS, per the agreed rule) Signals: the prototype's per-signal confidence and "if you wait" line have no gate-level equivalent — both DO exist on a consequence, so they render in the analysis block only after Analyse has actually run. Command: the owner avatar (no owner column on decisions) and the Follow-ups tab (no such table); the next-action context slot shows the real blind-spot count instead.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean. Every vx- class used by both pages was checked against the ported CSS — zero missing. Live data confirmed: Signals renders 4 signals with correct meta, source and the analysis-map "Analysed" badge, and the document opens with all sections; Command shows 1/7 decisions resolved, 6 open, 4 signals, 18 strategies, real priority decision and signal brief. Final sweep of all seven routes: every one lands correctly with no error boundary.
+
+**Status:** 2 of 7 pages rebuilt. STOPPED DELIBERATELY rather than rush the rest — Decisions (DecisionsWorkspace.tsx, 747 lines: tabs, search, detail pane, analyze, deadline and status mutations) and Advisor (streaming chat) are the two most complex remaining and need more room than was left to do them at the same verification standard.
+
+**Remaining pages, in the user's priority order:**
+  3. Decisions — src/components/decisions/DecisionsWorkspace.tsx (747 lines). Prototype reference: screens.tsx, the `if(area==='Decisions')` early-return block. Omit owner/due/known/unknown — the decisions table has none of them; it has category, rationale, predicted_outcome, confidence_score (1-5 int), urgency_level, status (draft/active/pending/resolved/archived).
+  4. Advisor — prototype reference: components/redesign/advisor.tsx. Keep the streaming /api/advisor/chat and /api/advisor/sessions intact.
+  5. Strategies — prototype reference: screens.tsx `if(area==='Strategies')`.
+  6. Profile — prototype reference: screens.tsx `if(area==='Profile')`.
+  7. Settings — NOTE: /settings is broken for a pre-existing reason unrelated to any of this. notification_preferences does not exist (PGRST205); migration 015 was never applied. Fix that before or alongside the reskin.
+
+The pattern to follow is established in the two completed pages: lift the prototype's JSX structure and vx- class names verbatim, replace its data.ts references with the real API shapes, omit any prototype field with no real column, and check every vx- class against src/components/redesign/*.css before building.
