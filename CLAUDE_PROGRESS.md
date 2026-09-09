@@ -1062,3 +1062,43 @@ All seven dashboard pages are now rebuilt against the prototype. Every API call,
 Also removed the hand-written `<link rel="icon" href="/logo-transparent.png">` from `<head>`, which pointed at a different file than the metadata did.
 
 **Verification:** tsc and build clean. Five link tags emitted and no others: shortcut icon, three rel=icon (ico + 192 + 512), apple-touch-icon. All four assets return 200 with correct content types. The bytes served at /favicon.ico are identical to the generated file, and its 32px payload decodes back to the V mark, legible on both light and dark tab backgrounds. Confirmed again on production after deploy.
+
+---
+
+## 2026-09-09 (5) — Two bugs on fresh accounts: empty signals, unusable New Decision
+**Files changed:** src/app/api/signals/refresh/route.ts, src/app/api/cron/ingest/route.ts, src/app/(dashboard)/signals/page.tsx, src/components/decisions/DecisionForm.tsx, src/app/(dashboard)/strategies/[id]/page.tsx
+**New files:** src/lib/signal-linking/backfill.ts, src/components/ui/ShellPortal.tsx
+**NOTE:** two protected files were edited (signals/refresh, cron/ingest). Both changes are call sites only — three lines each. The gate, the sources and the prompts are untouched. All new logic is in unprotected modules.
+
+### BUG 1 — new accounts see zero signals
+
+Answering the three questions directly:
+
+**Does Refresh trigger a live ingest?** Yes. It delegates to processSignalsForProfile — fetch, gate, insert. It is not a re-read, so the button is not lying about that.
+
+**Are signals associated with every profile, or only the one active at ingest?** Only the one active at ingest. `signals` is a global table; visibility is per-profile through the `signal_triages` join table, and the pipeline writes triage rows only for the profile it is currently running for. Measured on production: 216 rows in `signals`, and `signal_triages` had 10 rows for the first account and ZERO for every other profile — including "pluming services", which had completed onboarding and had a ceo_context.
+
+**Why a new user stays empty, and why the next cron does not save them.** processSignalsForProfile drops any candidate whose normalised title was ingested in the last 7 days — and that dedupe queries the GLOBAL signals table. So when a second profile refreshes, every one of today's articles is already "seen", nothing survives the filter, no triage rows are written, and the button honestly reports zero. The cron does not fix it: it runs the same processor with the same global dedupe. A new account stays empty until a genuinely novel article appears, and then gets only that one.
+
+**The fix.** A new module, lib/signal-linking/backfill.ts, reconciles the join table: for a profile, link the recent signals that already passed the gate and that this profile is not linked to yet. Idempotent (UNIQUE (signal_id, profile_id), upserted with ignoreDuplicates), capped at 40 signals over 7 days, and deliberately not part of the gate — it links rows the gate already approved and invents nothing. Called at the top of the per-profile loop in both the refresh route and the ingest cron, BEFORE the fetch, and it runs even for profiles with no company_name or no ceo_context (linking needs neither). Those profiles used to `continue` into a silent success.
+
+The refresh response now carries `signalsLinked` alongside `signalsAdded`, and the Signals page reports the sum — reporting only `signalsAdded` is what made an ordinary first refresh look like a dead pipeline.
+
+Verified on a genuinely fresh account created for the test: signal_triages went 0 -> 23, with the route returning `{signalsAdded: 6, signalsLinked: 17, candidatesFetched: 122}`.
+
+### BUG 2 — "Add decision" fails
+
+Not RLS, not the schema, not a missing field. All three were checked and cleared:
+- RLS is correct. `FOR ALL USING (auth.uid() = profile_id)` with no WITH CHECK is applied as the INSERT check by Postgres. Proved it by inserting as a real fresh-user JWT through PostgREST: HTTP 201.
+- The schema is fine. Every NOT NULL column the route does not send has a default (predicted_outcome '', confidence_score 3, urgency_level 'medium', alternatives_considered []). (PostgREST lists every NOT NULL column as "required" regardless of default — that is not evidence of a missing default.)
+- The form sends everything the route validates, and POST /api/decisions returns 201 end to end for a brand-new account.
+
+**The actual cause is z-index.** layered-shell.css gives `.vx-workbench` `position: relative; z-index: 2`, making it a stacking context. The New Decision modal renders inside a page, so its `fixed inset-0 z-50` is scoped to that context — and the CommandBar, a `z-[5]` sibling of .vx-workbench, painted on top of it. The modal's Cancel / Create footer sat exactly under the command bar and could not be clicked. The form was never broken; the button was unreachable. This came in with the layered-shell port, which is why it hit both accounts.
+
+Fixed with components/ui/ShellPortal.tsx, which portals the overlay to document.body so its z-index competes at the top level. Applied to DecisionForm and to the strategy DeadlineModal, which had the same defect. (DecisionLogModal also has a fixed overlay but is not rendered anywhere — left alone.)
+
+Verified: the overlay is now a direct child of BODY, elementFromPoint at the Create button returns the button itself rather than the bar, and a decision was created end to end through the UI on a fresh account.
+
+**Test fixture:** a throwaway auth user was created via the admin API to reproduce a genuine fresh signup, then deleted — profile, decisions and triages all cascaded away. Two earlier probe rows on the main account were deleted as well.
+
+**No action needed from you:** existing accounts self-heal on their next refresh or the next cron run. No migration.

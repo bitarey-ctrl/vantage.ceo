@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processSignalsForProfile } from '@/lib/signals/signal-processor';
+import { backfillTriagesForProfile } from '@/lib/signal-linking/backfill';
 
 export const maxDuration = 300; // 5 min — allow time for all profiles
 
@@ -59,6 +60,16 @@ export async function POST(request: NextRequest) {
     const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; error?: string }[] = [];
 
     for (const profile of profiles) {
+      // Link gated signals this profile is missing, regardless of whether it
+      // has a context to ingest FOR. The pipeline's dedupe is global while
+      // visibility is per-profile, so without this a profile that was never
+      // the active one during an ingest stays empty forever.
+      try {
+        await backfillTriagesForProfile(profile.id);
+      } catch (err) {
+        console.error(`[cron/ingest] Backfill failed for ${profile.id}:`, err);
+      }
+
       const context = contextMap.get(profile.id);
       if (!context) {
         results.push({ profileId: profile.id, signalsProcessed: 0, consequencesGenerated: 0, error: 'No CEO context' });

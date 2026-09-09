@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowUpRight, Check, Plus, X, Loader2 } from "lucide-react";
 import type { Strategy, StrategyStatus } from "@/types/database";
 import { toPlainText } from "@/lib/text";
+import { ShellPortal } from "@/components/ui/ShellPortal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,7 @@ function DeadlineModal({
   };
 
   return (
+    <ShellPortal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div className="glass glass-sheen w-full max-w-md rounded-2xl overflow-hidden">
         <div className="relative z-10 p-6">
@@ -213,6 +215,7 @@ function DeadlineModal({
         </div>
       </div>
     </div>
+    </ShellPortal>
   );
 }
 

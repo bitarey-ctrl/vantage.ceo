@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { X, Plus, Check, Loader2 } from "lucide-react";
+import { ShellPortal } from "@/components/ui/ShellPortal";
 import type { Decision, DecisionConfidence } from "@/types/database";
 
 const CONFIDENCE_OPTIONS: { value: DecisionConfidence; label: string }[] = [
@@ -99,6 +100,7 @@ export default function DecisionForm({
   };
 
   return (
+    <ShellPortal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-8">
       <div className="w-full max-w-lg max-h-full overflow-y-auto rounded-2xl border border-white/10 bg-popover shadow-2xl">
         <div className="p-6">
@@ -260,5 +262,6 @@ export default function DecisionForm({
         </div>
       </div>
     </div>
+    </ShellPortal>
   );
 }

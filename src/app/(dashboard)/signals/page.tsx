@@ -172,13 +172,21 @@ export default function SignalsPage() {
     setNotice("");
     try {
       const res = await fetch("/api/signals/refresh", { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as { signalsAdded?: number; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        signalsAdded?: number;
+        signalsLinked?: number;
+        error?: string;
+      };
       if (!res.ok) {
         setCheckedAt("Check failed");
         setNotice(body.error ?? "Refresh failed.");
         return;
       }
-      const added = body.signalsAdded ?? 0;
+      // "Added" is what the gate surfaced this run; "linked" is what already
+      // existed and has now been attached to this account. A new account
+      // usually sees the second number, and reporting only the first is what
+      // made an ordinary first refresh look like a dead pipeline.
+      const added = (body.signalsAdded ?? 0) + (body.signalsLinked ?? 0);
       setCheckedAt(added > 0 ? "Checked just now · " + added + " new" : "Checked just now · nothing new");
       await fetchSignals();
     } catch {

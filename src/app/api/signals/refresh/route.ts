@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { processSignalsForProfile } from "@/lib/signals/signal-processor";
+import { backfillTriagesForProfile } from "@/lib/signal-linking/backfill";
 import { PIPELINE_ENV, requireEnv } from "@/lib/env";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 import type { Profile, CeoContext, Decision } from "@/types/database";
@@ -18,6 +19,14 @@ import type { Profile, CeoContext, Decision } from "@/types/database";
  * failure indistinguishable from a quiet news day. Two things fix that: a
  * requireEnv assertion up front, and a hard error if no source returned a
  * single candidate.
+ *
+ * It now also reconciles the signal_triages join table before ingesting. The
+ * pipeline's 7-day title dedupe is global while visibility is per-profile, so
+ * a profile that was not the active one during an earlier ingest would find
+ * every candidate "already seen", surface nothing, and stay permanently empty
+ * — the next cron did not help either, since it runs the same processor with
+ * the same global dedupe. Linking first means a new account sees the signals
+ * that already exist, immediately. See lib/signal-linking/backfill.ts.
  */
 
 const BUDGET_MS = 50_000; // 50s budget — fetching + gating takes time
@@ -60,6 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     let totalSignalsAdded = 0;
+    let totalSignalsLinked = 0;
     let totalCandidates = 0;
     let profilesProcessed = 0;
     let profilesAttempted = 0;
@@ -72,8 +82,25 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        // Reconcile first: link gated signals this profile is missing. This
+        // does not need a company_name and does not run the gate — it only
+        // joins rows the gate already accepted.
+        try {
+          const back = await backfillTriagesForProfile(profile.id);
+          totalSignalsLinked += back.linked;
+          if (back.linked > 0) {
+            console.log(`[refresh] Linked ${back.linked} existing signal(s) to ${profile.id}`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[refresh] Backfill failed for ${profile.id}:`, msg);
+          failures.push(msg);
+        }
+
         if (!profile.company_name) {
-          console.log(`[refresh] Skipping ${profile.id}: no company_name`);
+          // Onboarding is incomplete, so there is nothing to fetch FOR. The
+          // backfill above still ran, so this is not a dead end.
+          console.log(`[refresh] ${profile.id}: no company_name — link-only`);
           continue;
         }
 
@@ -135,7 +162,8 @@ export async function POST(request: NextRequest) {
 
     const elapsed = Date.now() - startTime;
     console.log(
-      `[refresh] Done — ${totalCandidates} candidates → ${totalSignalsAdded} surfaced, ${profilesProcessed} profiles, ${elapsed}ms`
+      `[refresh] Done — ${totalCandidates} candidates → ${totalSignalsAdded} surfaced, ` +
+        `${totalSignalsLinked} linked, ${profilesProcessed} profiles, ${elapsed}ms`
     );
 
     // Every source returning nothing is a broken pipeline, not a quiet day.
@@ -154,7 +182,7 @@ export async function POST(request: NextRequest) {
     // A profile that threw must not be reported as a clean run. Without this,
     // a failed database insert looked exactly like "the gate discarded
     // everything" and the button said "No new signals found".
-    if (failures.length > 0 && totalSignalsAdded === 0) {
+    if (failures.length > 0 && totalSignalsAdded === 0 && totalSignalsLinked === 0) {
       return NextResponse.json(
         { error: failures[0], failures: failures.length },
         { status: 500 }
@@ -164,6 +192,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       signalsAdded: totalSignalsAdded,
+      signalsLinked: totalSignalsLinked,
       candidatesFetched: totalCandidates,
       profilesProcessed,
       ...(failures.length > 0 ? { partialFailures: failures.length } : {}),
