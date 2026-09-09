@@ -1102,3 +1102,21 @@ Verified: the overlay is now a direct child of BODY, elementFromPoint at the Cre
 **Test fixture:** a throwaway auth user was created via the admin API to reproduce a genuine fresh signup, then deleted — profile, decisions and triages all cascaded away. Two earlier probe rows on the main account were deleted as well.
 
 **No action needed from you:** existing accounts self-heal on their next refresh or the next cron run. No migration.
+
+---
+
+## 2026-09-09 (6) — Hourly rate limit on manual signal refresh
+**Files changed:** src/app/api/signals/refresh/route.ts (call site only), src/app/(dashboard)/signals/page.tsx
+**New files:** src/lib/rate-limit/refresh-limit.ts
+
+One manual refresh per user per hour. A refresh fans out to every curated source and then runs the whole candidate set through the gate (a Claude call), so an unbounded button is an unbounded bill.
+
+State lives in the existing `feature_events` table — no migration. It writes its own event name (`signal_refresh_attempt`) rather than reusing `signal_refreshed`, which the pipeline only logs when something was surfaced; attempts that surface nothing cost the same money and must still count. Recorded BEFORE the work, so a slow or failing run still consumes the window — otherwise a failing refresh is an unlimited retry loop. Serverless-safe: the state is in Postgres, not process memory, so it survives cold starts and holds across instances. Fails OPEN if it cannot read its own state; a rate limiter must not become an outage.
+
+Cron and the secret-auth path are exempt. Returns 429 with a plain-English message and a Retry-After header; the Signals page now says "Checked recently" for a 429 instead of dressing it up as "Check failed".
+
+**Verified locally against the production database on a fresh account:** refresh #1 returned 200 `{signalsAdded: 2, signalsLinked: 23}`, refresh #2 immediately after returned 429 with `Retry-After: 3566`.
+
+### Two items from the same request NOT built — see the session notes
+- **Per-user cron**: every onboarded profile already gets a daily ingestion from the single /api/cron/ingest job (05:00 UTC, iterates all profiles with onboarding_completed = true). Vercel Hobby cannot host one cron per user — crons are declared statically in vercel.json. Separately flagged: `maxDuration = 300` on that route exceeds the Hobby 60s function limit, so as the user count grows later profiles in the loop will be cut off. A fairness fix (rotate the processing order by least-recently-served) would solve that inside Hobby limits; not built, because it was not what was actually asked for.
+- **Migration 029 / market_context**: `market_context` does not exist in the codebase, in supabase/migrations, or on the live decisions / profiles / ceo_context tables, and there is no 029. Decision creation was verified working on the OLD pre-existing account 70491d75 (HTTP 201, probe row deleted). The decisions bug was the CommandBar z-index, fixed in 5e4b1e6.

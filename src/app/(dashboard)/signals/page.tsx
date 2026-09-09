@@ -178,7 +178,9 @@ export default function SignalsPage() {
         error?: string;
       };
       if (!res.ok) {
-        setCheckedAt("Check failed");
+        // 429 is the hourly limit, not a failure — say so, and do not
+        // dress it up as a broken pipeline.
+        setCheckedAt(res.status === 429 ? "Checked recently" : "Check failed");
         setNotice(body.error ?? "Refresh failed.");
         return;
       }

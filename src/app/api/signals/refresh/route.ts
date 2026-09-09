@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { processSignalsForProfile } from "@/lib/signals/signal-processor";
 import { backfillTriagesForProfile } from "@/lib/signal-linking/backfill";
+import {
+  checkRefreshAllowance,
+  recordRefreshAttempt,
+  describeWait,
+} from "@/lib/rate-limit/refresh-limit";
 import { PIPELINE_ENV, requireEnv } from "@/lib/env";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 import type { Profile, CeoContext, Decision } from "@/types/database";
@@ -58,6 +63,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
       profileIds = [user.id];
+
+      // One manual refresh per user per hour. A refresh fans out to every
+      // source and then runs the candidates through the gate, so an
+      // unbounded button is an unbounded bill. Cron and the secret-auth
+      // path are deliberately exempt.
+      const allowance = await checkRefreshAllowance(user.id);
+      if (!allowance.allowed) {
+        return NextResponse.json(
+          {
+            error: `You have already refreshed in the last hour. Try again ${describeWait(
+              allowance.retryAfterSeconds
+            )}.`,
+            retryAfterSeconds: allowance.retryAfterSeconds,
+          },
+          { status: 429, headers: { "Retry-After": String(allowance.retryAfterSeconds) } }
+        );
+      }
+      // Recorded before the work: a slow or failing run still consumes the
+      // window, otherwise a failing refresh is an unlimited retry loop.
+      await recordRefreshAttempt(user.id);
     }
 
     let profileQuery = adminSupabase.from("profiles").select("*");
