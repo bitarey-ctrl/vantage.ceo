@@ -88,13 +88,38 @@ export default function DecisionForm({
         }
       );
       if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to save decision");
+        const b = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string | null;
+          details?: string | null;
+          hint?: string | null;
+        };
+        // Put the whole thing in the console. The reported symptom was a bare
+        // "Failed to create decision" with nothing anywhere to diagnose from;
+        // whatever the server knows should be one keystroke away.
+        console.error("[DecisionForm] save failed", {
+          status: res.status,
+          ...b,
+          sent: {
+            title_len: payload.title.length,
+            description_len: payload.description.length,
+            rationale_len: payload.rationale.length,
+            confidence: payload.confidence,
+            has_deadline: Boolean(payload.deadline),
+          },
+        });
+        const parts = [b.error ?? "Failed to save decision"];
+        if (b.code) parts.push(`(${b.code})`);
+        throw new Error(parts.join(" "));
       }
       const saved = (await res.json()) as Decision;
       onSaved(saved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save decision");
+      const message = err instanceof Error ? err.message : "Failed to save decision";
+      // Covers the cases the response branch cannot see: a dropped
+      // connection, or a serverless function killed before it replies.
+      console.error("[DecisionForm] save threw", err);
+      setError(message);
       setSaving(false);
     }
   };

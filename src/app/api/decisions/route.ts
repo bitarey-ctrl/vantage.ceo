@@ -125,15 +125,76 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError || !decision) {
-      console.error('[POST /api/decisions] Insert error:', insertError);
-      return NextResponse.json({ error: 'Failed to create decision' }, { status: 500 });
+      /*
+       * DIAGNOSTIC, not decoration. This branch used to log the error server
+       * side and return the bare string 'Failed to create decision' — which
+       * is exactly the message reported from the field, and it carries zero
+       * information. Four faithful reproductions (fresh auth user, all nine
+       * real onboarding steps, real modal, localhost AND production) all
+       * returned 201, so the failing input is something we have not
+       * constructed. Three changes so the NEXT occurrence is self-explaining:
+       *
+       *   1. the real Postgres code/message/details/hint go back to the
+       *      client, so the browser console and the modal both show it;
+       *   2. the same detail plus the SHAPE of the payload (types and
+       *      lengths, never the content) is written to feature_events, so a
+       *      failure can be read out of the database afterwards even if
+       *      nobody thinks to copy the console;
+       *   3. it is logged as one structured line rather than an object that
+       *      serialises to "{}".
+       *
+       * Returning driver errors to the client is a deliberate trade for a
+       * pre-launch product with a handful of users. Reduce it to a code
+       * before opening signup more widely.
+       */
+      const detail = {
+        code: insertError?.code ?? null,
+        message: insertError?.message ?? 'insert returned no row',
+        details: insertError?.details ?? null,
+        hint: insertError?.hint ?? null,
+      };
+
+      console.error(
+        `[POST /api/decisions] Insert failed for profile ${user.id}: ` +
+          `${detail.message} (code ${detail.code ?? 'none'}; details ${detail.details ?? 'none'}; hint ${detail.hint ?? 'none'})`
+      );
+
+      // Shape only — never the text the user typed.
+      await logEvent(user.id, 'decision_create_failed', {
+        ...detail,
+        payload_shape: {
+          title_len: title.trim().length,
+          description_len: description.trim().length,
+          rationale_len: rationale.trim().length,
+          confidence,
+          source: resolvedSource,
+          has_deadline: Boolean(deadline),
+          has_known_context: Boolean(knownContext && knownContext.trim()),
+          has_open_questions: Boolean(openQuestions && openQuestions.trim()),
+          source_id_present: sourceId !== undefined && sourceId !== null,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          error: `Could not create the decision: ${detail.message}`,
+          code: detail.code,
+          details: detail.details,
+          hint: detail.hint,
+        },
+        { status: 500 }
+      );
     }
 
     await logEvent(user.id, EVENTS.decision_logged, { decision_id: decision.id, category: decision.category });
 
     return NextResponse.json(decision, { status: 201 });
   } catch (error) {
-    console.error('[POST /api/decisions]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('[POST /api/decisions] Unhandled:', msg);
+    return NextResponse.json(
+      { error: `Could not create the decision: ${msg}` },
+      { status: 500 }
+    );
   }
 }

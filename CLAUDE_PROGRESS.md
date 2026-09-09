@@ -1143,3 +1143,47 @@ Two stages, cheapest first: (1) backfill, which links already-gated signals — 
 - Stage 2: 121 candidates → 0 surfaced, 17.5s total. Zero is correct here: those 121 were already in the global pool, so the 7-day dedupe discarded them. Stage 1 had already delivered.
 
 **Answer for the empty-state decision: ~2.5 seconds to first visible signals, not 1-2 minutes.** Navigating onboarding → Command → Signals takes longer than that on its own. Caveat: that 2.5s assumes the global pool is non-empty (it holds 216 signals). For the very first account on a fresh database, stage 1 links nothing and the wait is stage 2's ~17s.
+
+---
+
+## 2026-09-09 (8) — Decision-create instrumentation; ICP limit recorded; PMF observation
+
+### PRODUCT OBSERVATION — preserve this
+Tested against a real company profile, VANTAGE surfaced a strategic suggestion the founder had genuinely not considered, and that Claude, ChatGPT and Grok did NOT produce when asked comparable questions directly. That is a product-market-fit signal, not a nice demo.
+
+The differentiator is the COMBINATION, and none of the three parts is valuable alone:
+  1. persistent business context (ceo_context — priorities, competitors, ARR band, the avoided decision),
+  2. signals filtered by the five-category gate rather than a news firehose,
+  3. forced consequence mapping (so what / if you act / if you don't / immediate action).
+
+A general assistant has none of (1), gets no (2), and will not do (3) unless asked precisely the right question. Protect this combination in any future refactor — especially resist "simplify the pipeline into one prompt", which collapses all three into a generic assistant. This is the product.
+
+### ARCHITECTURAL LIMIT — VANTAGE is B2B SaaS only, on purpose
+The curated sources are SaaS-scoped by construction: SaaS pricing moves, AI provider pricing, EU AI Act, SOC 2, the SaaS funding climate. A fintech (or any non-SaaS) founder therefore correctly receives ZERO signals — the gate is working, there is simply nothing in the pipeline scoped to their world. This is not a bug and must not be "fixed" by widening the gate.
+
+Before any non-SaaS user signs up, one of two things must be DECIDED (neither is built, and neither should be built without that decision):
+  (a) restrict signup to B2B SaaS at onboarding, or
+  (b) show non-SaaS users an honest "VANTAGE is currently built for B2B SaaS founders — sources for [industry] are coming soon" state instead of an empty feed.
+
+DO NOT add fintech (or other vertical) sources without an explicit decision. Adding sources silently widens the ICP, which is the exact thing the five-category gate was built to prevent, and it would dilute the signal quality that makes (2) above work.
+
+### DECISION CREATE — instrumented, NOT fixed
+**Files changed:** src/app/api/decisions/route.ts, src/components/decisions/DecisionForm.tsx
+
+Still cannot reproduce. Four faithful attempts, all 201:
+  - fresh auth user created the same way /api/auth/signup creates one (admin createUser, email_confirm true — verified the real signup route does exactly this and does NOT insert a profile itself; the handle_new_user trigger does),
+  - all nine real /api/onboarding/step calls, then /api/onboarding/complete,
+  - the real modal in Chrome (fetch intercepted: POST /api/decisions -> 201, modal closed, no error),
+  - the same account against PRODUCTION: 201 in 2.9s.
+
+Schema re-checked against the live database: `status` and `confidence` are plain text with defaults 'open'/'torn' and no enum; `urgency_level` and `category` are enums but both are defaulted or nullable; the only FK is profile_id -> profiles.id, created by the trigger at signup. decisions does not reference ceo_context at all, and there is no company_id.
+
+So the failing input is something not yet constructed. The blocker was that the failure carried no information — the route logged the error server-side and returned the bare string 'Failed to create decision', which is precisely the reported symptom. Now:
+  1. the real Postgres code/message/details/hint go back to the client and into the browser console;
+  2. the same detail plus the SHAPE of the payload (field lengths, flags — never the typed content) is written to feature_events as `decision_create_failed`, so the failure can be read out of the database afterwards;
+  3. the outer catch reports its actual message instead of 'Internal server error'.
+
+Query after the next reproduction:
+  select created_at, metadata from feature_events where event = 'decision_create_failed' order by created_at desc;
+
+NOTE: returning driver errors to the client is a deliberate trade for a pre-launch product with a handful of users. Reduce it to an error code before opening signup more widely.
