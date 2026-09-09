@@ -1047,3 +1047,18 @@ All seven dashboard pages are now rebuilt against the prototype. Every API call,
 **3. LANDING -> APP.** No change needed: siteConfig.appUrl was already '/signup', Landing.tsx renders it as a same-tab anchor, and /signup returns 200. Verified on production after deploy.
 
 **Verification:** npx tsc --noEmit clean; npm run build clean; no reference to applyTheme / getStoredTheme / lib/theme / nocturne-theme / Sun / Moon left anywhere in src. Rendered locally: dashboard is dark with no toggle in the sidebar, advisor composer matches the answer column.
+
+---
+
+## 2026-09-09 (4) — Favicon
+**Files changed:** src/app/layout.tsx
+**New files:** public/favicon.ico, public/icon-192.png, public/icon-512.png, public/apple-icon.png
+**Deleted:** src/app/favicon.ico
+
+**ROOT CAUSE:** `src/app/favicon.ico` existed — the Next scaffold's default, dated the day the project was created. In the App Router the icon FILE CONVENTION takes precedence over `metadata.icons`, so the tab showed the triangle no matter what the metadata said. Editing metadata alone would never have fixed it. Deleted that file; icons are now driven entirely from `metadata.icons` with a single source of truth in public/.
+
+**Assets**, all generated from public/vantage-logo.png (1254x1254, alpha). The source has ~7% transparent margin, so the mark was trimmed and re-centred on a square canvas — otherwise it renders floating in its own padding at tab size. Checked legibility by rendering 16px and 32px at 8x nearest-neighbour before committing: the V reads clearly at both, so the mark is used whole rather than cropped to its solid head. favicon.ico is a PNG-in-ICO container (16/32/48) written by hand — sharp cannot emit ICO — and `file` parses all three entries. apple-icon.png is flattened onto #0b0c0d because iOS ignores alpha and composites on a background of its own choosing.
+
+Also removed the hand-written `<link rel="icon" href="/logo-transparent.png">` from `<head>`, which pointed at a different file than the metadata did.
+
+**Verification:** tsc and build clean. Five link tags emitted and no others: shortcut icon, three rel=icon (ico + 192 + 512), apple-touch-icon. All four assets return 200 with correct content types. The bytes served at /favicon.ico are identical to the generated file, and its 32px payload decodes back to the V mark, legible on both light and dark tab backgrounds. Confirmed again on production after deploy.
