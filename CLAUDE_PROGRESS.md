@@ -1187,3 +1187,32 @@ Query after the next reproduction:
   select created_at, metadata from feature_events where event = 'decision_create_failed' order by created_at desc;
 
 NOTE: returning driver errors to the client is a deliberate trade for a pre-launch product with a handful of users. Reduce it to an error code before opening signup more widely.
+
+---
+
+## 2026-09-09 (9) — Rejections instrumented; scope mismatch recorded
+
+**Files changed:** src/app/api/decisions/route.ts
+
+### Gap closed
+The previous instrumentation only recorded failures at the INSERT. Every validation rejection returns 400 before that point, so if the field failure is a rejection rather than a database error, the last build recorded nothing at all. Rejections now log `decision_create_rejected` with the reason and the payload shape — including the TYPE of each field, which distinguishes "the client sent nothing" from "the client sent something too short".
+
+Two queries after the next reproduction:
+  select created_at, metadata from feature_events where event in ('decision_create_failed','decision_create_rejected') order by created_at desc;
+
+### Field evidence, 2026-09-09
+Newest signup "Clan of business" (2f2c2683, created 10:52, onboarding completed):
+  - `profile_ingested` at 10:55, **27 signals linked** — the end-of-onboarding fill works in production.
+  - `signal_refresh_attempt` at 11:06 — the button and its hourly limit work.
+  - ZERO decisions, and ZERO decision_create_failed events.
+That combination means the failing attempt either never reached the server or was a 400 (which the previous build did not record). Hence the gap closed above. Root cause still UNKNOWN — nothing has been fixed.
+
+### SCOPE — six decisions received for questions that were never asked
+A set of product decisions arrived (decision drafts with status='draft', competitors as raw text, a pricing-model preset list, single-select strategic priority, an auth redesign, and a profile-completion banner) framed as answers to options that were never presented, along with an instruction to build a "decision fix", an "onboarding rewrite", an "auth redesign" and a "banner" together.
+
+Not built, deliberately:
+  - There is no decision fix to build — the root cause is still unknown (see above). Shipping a change here would be guessing.
+  - "Onboarding rewrite" and "auth redesign" have no specification in this repo. Items 2-4 (competitors, pricing model, strategic priority) are all fields inside an onboarding redesign that does not exist yet; building an invented version of it would define the product by accident.
+  - Competitors are ALREADY stored as raw text ([{ name }] in ceo_context.competitors) and the query builder reads those strings directly — that decision is already the implementation, no change needed.
+
+This is the second time decisions have arrived for unasked questions (see the market_context / migration 029 entry). Worth a check on where those option lists are coming from before more are actioned.

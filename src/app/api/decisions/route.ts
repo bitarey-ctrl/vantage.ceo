@@ -44,6 +44,23 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/*
+ * Validation rejections return 400 BEFORE the insert, so they never reach the
+ * decision_create_failed branch — the previous build would have recorded
+ * nothing at all for them. Record the reason and the payload shape (lengths
+ * and flags, never the typed content) so a rejection is as visible as a
+ * database error.
+ */
+async function rejectCreate(
+  profileId: string,
+  reason: string,
+  shape: Record<string, unknown>
+) {
+  console.error(`[POST /api/decisions] Rejected for ${profileId}: ${reason}`, shape);
+  await logEvent(profileId, 'decision_create_rejected', { reason, payload_shape: shape });
+  return NextResponse.json({ error: reason, reason }, { status: 400 });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -76,29 +93,34 @@ export async function POST(request: NextRequest) {
       sourceId?: string | null;
     };
 
+    // Shape of what actually arrived — the single most useful thing to have
+    // when a report says "all the fields were filled in".
+    const shape = {
+      title_type: typeof title,
+      title_len: typeof title === 'string' ? title.trim().length : null,
+      description_type: typeof description,
+      description_len: typeof description === 'string' ? description.trim().length : null,
+      rationale_type: typeof rationale,
+      rationale_len: typeof rationale === 'string' ? rationale.trim().length : null,
+      confidence_value: confidence ?? null,
+      has_deadline: Boolean(deadline),
+      source: source ?? null,
+    };
+
     if (!title || typeof title !== 'string' || title.trim() === '') {
-      return NextResponse.json({ error: 'title is required' }, { status: 400 });
+      return rejectCreate(user.id, 'title is required', shape);
     }
     if (title.trim().length > 120) {
-      return NextResponse.json({ error: 'title must be 120 characters or fewer' }, { status: 400 });
+      return rejectCreate(user.id, 'title must be 120 characters or fewer', shape);
     }
     if (!description || typeof description !== 'string' || description.trim().length < 30) {
-      return NextResponse.json(
-        { error: 'description must be at least 30 characters' },
-        { status: 400 }
-      );
+      return rejectCreate(user.id, 'description must be at least 30 characters', shape);
     }
     if (!rationale || typeof rationale !== 'string' || rationale.trim().length < 20) {
-      return NextResponse.json(
-        { error: 'rationale must be at least 20 characters' },
-        { status: 400 }
-      );
+      return rejectCreate(user.id, 'rationale must be at least 20 characters', shape);
     }
     if (!confidence || !['confident', 'torn', 'exploring'].includes(confidence)) {
-      return NextResponse.json(
-        { error: 'confidence must be confident, torn, or exploring' },
-        { status: 400 }
-      );
+      return rejectCreate(user.id, 'confidence must be confident, torn, or exploring', shape);
     }
 
     const resolvedSource =
