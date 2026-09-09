@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, LogOut } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const [saveError, setSaveError] = useState("");
 
   // Step 1
@@ -276,9 +278,45 @@ export default function OnboardingPage() {
   const meta = STEP_META[step - 1];
   const isFinal = step === TOTAL_STEPS;
 
+  /*
+   * Escape hatch.
+   *
+   * Onboarding was a dead end: the browser Back button cannot get you out,
+   * and not because anything here intercepts it. Back goes to /signup, where
+   * middleware redirects an authenticated user to /command, where the
+   * dashboard layout sees onboarding is incomplete and pushes straight back
+   * to /onboarding. A loop, so the only real exit is to stop being signed in.
+   *
+   * Signing out is therefore the honest control, not a cosmetic one — and it
+   * is also what someone who started on the wrong account actually needs.
+   */
+  async function handleExit() {
+    if (exiting) return;
+    setExiting(true);
+    try {
+      await createClient().auth.signOut();
+    } catch {
+      // Even a failed sign-out should not strand them here.
+    }
+    router.push("/login");
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-[480px]">
+        {/* Exit — deliberately quiet, but always reachable. */}
+        <div className="flex justify-end mb-3">
+          <button
+            type="button"
+            onClick={handleExit}
+            disabled={exiting}
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-[#666666] hover:text-[#e8eaee] transition-colors disabled:opacity-50"
+          >
+            {exiting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+            {exiting ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-8">
           <div className="w-7 h-7 rounded-sm bg-[#CC1F1F] flex items-center justify-center flex-shrink-0">

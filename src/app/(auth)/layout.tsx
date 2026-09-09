@@ -1,30 +1,37 @@
+/*
+ * Auth shell.
+ *
+ * Brought in line with the dashboard: the same ground colour, the real logo
+ * mark rather than a coloured bar, and the brand red — these pages were the
+ * last thing still using the old blue accent, which made signing in feel like
+ * a different product from the one it leads into.
+ *
+ * Deliberately minimal: mark, then the form. The old "SECURE ACCESS —
+ * ENCRYPTED CHANNEL" footer was decoration that said nothing true.
+ */
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center px-4">
-      {/* Wordmark */}
-      <div className="mb-12 flex flex-col items-center gap-2">
-        <div className="flex items-center gap-2">
-          <div className="w-1.5 h-6 bg-[#1b7ff0]" />
-          <span className="text-[#f5f5f5] text-sm font-mono font-medium tracking-[0.3em] uppercase">
-            VANTAGE
-          </span>
-        </div>
-        <span className="text-[#a0a0a0] text-xs tracking-[0.15em] uppercase font-mono">
-          Strategic Intelligence
+    <div className="min-h-screen bg-[#090a0b] flex flex-col items-center justify-center px-4 py-12">
+      <div className="mb-10 flex flex-col items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo-transparent.png"
+          alt=""
+          className="h-9 w-9 object-contain"
+        />
+        <span
+          className="text-[22px] font-medium tracking-[-0.5px] text-[#e8eaee]"
+          style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
+        >
+          Vantage
         </span>
       </div>
 
-      {/* Content */}
       <div className="w-full max-w-sm">{children}</div>
-
-      {/* Footer */}
-      <p className="mt-12 text-[#a0a0a0] text-xs font-mono tracking-wider">
-        SECURE ACCESS — ENCRYPTED CHANNEL
-      </p>
     </div>
   );
 }

@@ -1300,3 +1300,25 @@ Stored on ceo_context as product_description / target_customer / top_priority / 
 ### Verified
 tsc clean; build clean. Rendered step 1 on a real account: three fields present, Industry gone, still "Step 1 of 9". Validation: Continue disabled while empty, disabled with text but no priority, enabled on Growth, disabled again on Other until named, enabled once named. Guard confirmed against the live DB pre-migration — step 1 returned 200, company_name saved, log named migration 031.
 NOT verified: storage of the four values, which needs 031 applied.
+
+---
+
+## 2026-09-09 (13) — Onboarding escape hatch + auth visual pass
+**Files changed:** src/app/onboarding/page.tsx, src/app/(auth)/layout.tsx, and all five src/app/(auth)/*/page.tsx
+**NOTE:** src/app/(auth)/ is a protected directory. Edited under explicit authorisation — the user named "the sign-in/sign-up/forgot-password pages" and asked for the redesign.
+
+### 1. Onboarding was genuinely a dead end
+Nothing in the page intercepts navigation. The trap is a redirect loop: Back from /onboarding goes to /signup, middleware sends an authenticated user to /command, and the dashboard layout sees onboarding incomplete and pushes back to /onboarding. So the browser Back button CANNOT get you out, and no amount of fixing the page would change that — the only real exit is to stop being signed in.
+
+Added a quiet "Sign out" in the top-right above the card: signs out via the browser Supabase client, then routes to /login. Wrapped so a failed sign-out still navigates — being stranded is the failure mode being fixed. Also the right control for the actual use case, someone who started on the wrong account.
+
+The loop itself is left alone deliberately: breaking it would mean weakening the gate that keeps un-onboarded users out of the dashboard.
+
+### 2. Auth pages
+These were the last surface still on the OLD BLUE accent (#1b7ff0, 25 uses) — which is why signing in felt like a different product from the one it leads into. Light pass, no rebuild, no new components:
+- Systematic palette swap across all five pages plus the layout, 134 colours in total, onto the vx tokens already used by the dashboard: accent -> #ff321f, ground -> #090a0b, panel -> #111214, hairline -> #ffffff13, text -> #e8eaee, muted -> #959ca7, error -> #ff4938.
+- Layout rebuilt minimal: the real logo mark and "Vantage" wordmark instead of a coloured bar, and the "SECURE ACCESS — ENCRYPTED CHANNEL" footer dropped — decoration that said nothing true.
+- Removed each page's own /logo.png block: with the layout supplying the mark, every auth page was rendering two stacked logos.
+
+### Verified
+tsc clean, build clean, zero occurrences of the old blues left. Rendered /login, /signup and /forgot-password — single mark, red accent, dark ground, consistent with the dashboard. Escape hatch tested end to end on a real account: onboarding renders with the control, clicking it lands on /login, the auth cookie is gone, and /command bounces back to /login.

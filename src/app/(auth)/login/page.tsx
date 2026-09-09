@@ -65,21 +65,16 @@ export default function LoginPage() {
     <div>
       {/* Header */}
       <div className="mb-8 flex flex-col items-center text-center">
-        <img
-          src="/logo.png"
-          alt="VANTAGE"
-          className="h-20 w-20 object-contain mb-5 rounded-2xl"
-        />
-        <h1 className="text-[#f5f5f5] text-2xl font-light tracking-tight mb-2">
+        <h1 className="text-[#e8eaee] text-2xl font-light tracking-tight mb-2">
           Access your intelligence
         </h1>
-        <p className="text-[#a0a0a0] text-sm font-mono">
+        <p className="text-[#959ca7] text-sm font-mono">
           Authenticated session required
         </p>
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-[#242424] mb-8" />
+      <div className="h-px bg-[#ffffff13] mb-8" />
 
       <GoogleButton
         label="Continue with Google"
@@ -89,20 +84,20 @@ export default function LoginPage() {
       />
 
       <div className="flex items-center gap-3 mb-6">
-        <div className="flex-1 h-px bg-[#222222]" />
-        <span className="text-[#343434] text-[10px] font-mono uppercase tracking-widest">or</span>
-        <div className="flex-1 h-px bg-[#222222]" />
+        <div className="flex-1 h-px bg-[#ffffff0f]" />
+        <span className="text-[#ffffff1b] text-[10px] font-mono uppercase tracking-widest">or</span>
+        <div className="flex-1 h-px bg-[#ffffff0f]" />
       </div>
 
       <form onSubmit={handleLogin} className="flex flex-col gap-4">
         {/* Email */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#a0a0a0] text-xs font-mono tracking-widest uppercase">
+          <label className="text-[#959ca7] text-xs font-mono tracking-widest uppercase">
             Email
           </label>
           <div className="relative">
             <Mail
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#959ca7]"
               size={14}
             />
             <input
@@ -112,19 +107,19 @@ export default function LoginPage() {
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono"
+              className="w-full bg-[#111214] border border-[#ffffff13] text-[#e8eaee] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#737d8a] focus:border-[#ff321f] transition-colors duration-150 font-mono"
             />
           </div>
         </div>
 
         {/* Password */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#a0a0a0] text-xs font-mono tracking-widest uppercase">
+          <label className="text-[#959ca7] text-xs font-mono tracking-widest uppercase">
             Password
           </label>
           <div className="relative">
             <Lock
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a0a0a0]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#959ca7]"
               size={14}
             />
             <input
@@ -134,24 +129,24 @@ export default function LoginPage() {
               required
               autoComplete="current-password"
               placeholder="••••••••••••"
-              className="w-full bg-[#111111] border border-[#242424] text-[#f5f5f5] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#404040] focus:border-[#1b7ff0] transition-colors duration-150 font-mono tracking-widest"
+              className="w-full bg-[#111214] border border-[#ffffff13] text-[#e8eaee] text-sm pl-9 pr-4 py-3 rounded-none outline-none placeholder:text-[#737d8a] focus:border-[#ff321f] transition-colors duration-150 font-mono tracking-widest"
             />
           </div>
         </div>
 
         {/* Error — actionable based on what Supabase returned */}
         {error && (
-          <div className="flex flex-col gap-2 bg-[#1a0a0a] border border-[#3a1010] px-3 py-2.5">
+          <div className="flex flex-col gap-2 bg-[#ff321f0d] border border-[#ff321f33] px-3 py-2.5">
             <div className="flex items-start gap-2">
-              <AlertCircle size={14} className="text-[#e05252] mt-0.5 shrink-0" />
-              <p className="text-[#e05252] text-xs font-mono leading-relaxed">{error}</p>
+              <AlertCircle size={14} className="text-[#ff4938] mt-0.5 shrink-0" />
+              <p className="text-[#ff4938] text-xs font-mono leading-relaxed">{error}</p>
             </div>
 
             {/* Recovery actions appear based on which error fired */}
             {/email not confirmed/i.test(error) && (
               <Link
                 href={`/signup?email=${encodeURIComponent(email)}`}
-                className="text-[#1b7ff0] hover:text-[#4a9ff5] text-xs font-mono underline ml-6"
+                className="text-[#ff321f] hover:text-[#ff6657] text-xs font-mono underline ml-6"
               >
                 Confirm this email & set a new password →
               </Link>
@@ -160,13 +155,13 @@ export default function LoginPage() {
               <div className="flex flex-col gap-1 ml-6">
                 <Link
                   href={`/forgot-password?email=${encodeURIComponent(email)}`}
-                  className="text-[#1b7ff0] hover:text-[#4a9ff5] text-xs font-mono underline"
+                  className="text-[#ff321f] hover:text-[#ff6657] text-xs font-mono underline"
                 >
                   Reset your password →
                 </Link>
                 <Link
                   href={`/signup?email=${encodeURIComponent(email)}`}
-                  className="text-[#a0a0a0] hover:text-[#1b7ff0] text-xs font-mono underline"
+                  className="text-[#959ca7] hover:text-[#ff321f] text-xs font-mono underline"
                 >
                   Don&apos;t have an account? Sign up →
                 </Link>
@@ -179,7 +174,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="mt-2 flex items-center justify-center gap-2 bg-[#1b7ff0] hover:bg-[#1a6fd0] text-white text-sm font-mono tracking-widest uppercase py-3 px-6 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-2 flex items-center justify-center gap-2 bg-[#ff321f] hover:bg-[#e02c1b] text-white text-sm font-mono tracking-widest uppercase py-3 px-6 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? (
             <>
@@ -198,7 +193,7 @@ export default function LoginPage() {
         <div className="text-center">
           <Link
             href="/forgot-password"
-            className="text-[#a0a0a0] hover:text-[#1b7ff0] text-xs font-mono transition-colors duration-150"
+            className="text-[#959ca7] hover:text-[#ff321f] text-xs font-mono transition-colors duration-150"
           >
             Forgot password?
           </Link>
@@ -206,21 +201,21 @@ export default function LoginPage() {
       </form>
 
       {/* Footer link */}
-      <div className="mt-8 pt-6 border-t border-[#242424]">
-        <p className="text-[#a0a0a0] text-xs font-mono text-center">
+      <div className="mt-8 pt-6 border-t border-[#ffffff13]">
+        <p className="text-[#959ca7] text-xs font-mono text-center">
           Don&apos;t have an account?{' '}
           <Link
             href="/signup"
-            className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150"
+            className="text-[#ff321f] hover:text-[#ff6657] transition-colors duration-150"
           >
             Sign up
           </Link>
         </p>
-        <p className="text-[#666666] text-xs font-mono text-center mt-3">
+        <p className="text-[#737d8a] text-xs font-mono text-center mt-3">
           Just want to get in touch?{' '}
           <Link
             href="/request-access"
-            className="text-[#a0a0a0] hover:text-[#1b7ff0] transition-colors duration-150"
+            className="text-[#959ca7] hover:text-[#ff321f] transition-colors duration-150"
           >
             Request access
           </Link>

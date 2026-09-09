@@ -13,23 +13,22 @@ export default function RequestAccessPage() {
     <div>
       <div className="mb-8 flex flex-col items-center text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="VANTAGE" className="h-20 w-20 object-contain mb-5 rounded-2xl" />
-        <h1 className="text-[#f5f5f5] text-2xl font-light tracking-tight mb-2">Get in touch</h1>
-        <p className="text-[#a0a0a0] text-sm font-mono leading-relaxed">
+        <h1 className="text-[#e8eaee] text-2xl font-light tracking-tight mb-2">Get in touch</h1>
+        <p className="text-[#959ca7] text-sm font-mono leading-relaxed">
           Tell us what you&apos;re working on and we&apos;ll come back to you.
         </p>
       </div>
 
-      <div className="h-px bg-[#242424] mb-8" />
+      <div className="h-px bg-[#ffffff13] mb-8" />
 
       <RequestAccessForm source="login_link" />
 
-      <div className="mt-8 pt-6 border-t border-[#242424]">
-        <p className="text-[#a0a0a0] text-xs font-mono text-center">
+      <div className="mt-8 pt-6 border-t border-[#ffffff13]">
+        <p className="text-[#959ca7] text-xs font-mono text-center">
           Ready to start now?{" "}
           <Link
             href="/signup"
-            className="text-[#1b7ff0] hover:text-[#4a9ff5] transition-colors duration-150"
+            className="text-[#ff321f] hover:text-[#ff6657] transition-colors duration-150"
           >
             Create an account
           </Link>
