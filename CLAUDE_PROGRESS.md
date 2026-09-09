@@ -1254,3 +1254,21 @@ Manufactured the exact state (auth user, profiles row deleted), then POST /api/d
 
 ### Housekeeping
 Deleted a leftover test account of mine (846f1e7b, rls-probe-…) created by a script that died mid-run in an earlier session.
+
+---
+
+## 2026-09-09 (11) — Hedged openers rejected at link time
+**Files changed:** src/lib/signal-linking/backfill.ts
+
+Chose option (b), content-based rejection, over (a), a date floor. A date floor is a proxy for quality and fails in both directions: it would discard good pre-ban signals, and it would still admit the ~21% the prompt leaks AFTER the ban. Matching the actual text covers both, and keeps covering future leaks.
+
+`isHedged()` rejects a signal whose `why_it_matters` OPENS with a conditional — if you / if your / if there / for teams / for those / should you / assuming you / when you / in case you. Anchored to the start on purpose: the gate's rule is "assert the consequence, don't hedge about whether it applies", so a mid-sentence conditional is fine and must not be filtered. Verified: "Claude calls just became nearly half-price if you're running on AWS" is correctly KEPT.
+
+`BackfillResult` now carries `rejectedHedged`, and skips are logged, so the leak rate stays observable rather than silently swallowed.
+
+**Verified against the real pool:** 27 gated signals → 10 rejected (including both examples reported from the field, "If you're building AI features…" and "If you run Adobe Commerce…"), 17 kept. End to end on a fresh account: onboarding completed, 17 signals linked, ZERO hedged, log shows "Skipped 10 hedged signal(s)".
+
+**KNOWN GAP, deliberate.** This filters what a profile is LINKED to. A hedged signal freshly produced by the pipeline is inserted AND triaged inside signal-processor.ts (protected, tuned) in one step, so it still reaches the account that generated it — roughly 1 in 5 of that account's own new signals. Closing that needs the same isHedged() check at the triage insert in the protected pipeline, or a further prompt iteration. Raised, not done.
+
+### Paused by the user until after outreach
+Onboarding rewrite, auth redesign, fintech/non-SaaS handling. To be driven by what real CEOs say they need, not guessed at now.

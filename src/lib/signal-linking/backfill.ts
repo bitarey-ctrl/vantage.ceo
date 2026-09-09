@@ -36,12 +36,41 @@ import { createAdminClient } from "@/lib/supabase/server";
  */
 
 /** Only link signals that actually made it through the five-category gate. */
-const GATED_COLUMNS = "id";
+const GATED_COLUMNS = "id, why_it_matters";
+
+/*
+ * Hedged openers, rejected at LINK time.
+ *
+ * The gate prompt bans these (triage.ts: "If you're running..." / "If you
+ * use..." / "For teams that..." — assert the consequence, do not hedge about
+ * whether it applies). The ban landed 2026-09-08 11:36 and measurably works:
+ * hedged output went from 6/11 before it to 3/14 after. But two things mean
+ * the prompt alone cannot keep hedged text off a new account's feed:
+ *
+ *   1. The pool still holds rows gated BEFORE the ban, and backfill links the
+ *      last 7 days — which reaches behind it. A new account inherits them all
+ *      at once, which is exactly how this surfaced: 8 of one account's 9
+ *      hedged signals arrived in a single backfill.
+ *   2. The prompt still leaks about 1 in 5, so a date floor would not be
+ *      sufficient either — it would discard good old signals and still admit
+ *      new hedged ones.
+ *
+ * Rejecting on the text itself covers both, and keeps covering future leaks.
+ * This only decides what a profile is LINKED to; the row stays in the pool.
+ */
+const HEDGED_OPENER =
+  /^\s*(?:if\s+(?:you|your|there|these|that)|for\s+(?:teams|those|companies|anyone)|should\s+you|assuming\s+you|when\s+you|in\s+case\s+you)\b/i;
+
+export function isHedged(whyItMatters: string | null | undefined): boolean {
+  return typeof whyItMatters === "string" && HEDGED_OPENER.test(whyItMatters);
+}
 
 export interface BackfillResult {
   linked: number;
   alreadyLinked: number;
   candidates: number;
+  /** Gated signals skipped because they open with a hedge. */
+  rejectedHedged: number;
 }
 
 export async function backfillTriagesForProfile(
@@ -68,10 +97,20 @@ export async function backfillTriagesForProfile(
     throw new Error(`[backfill] Could not read recent signals: ${recentError.message}`);
   }
   if (!recent || recent.length === 0) {
-    return { linked: 0, alreadyLinked: 0, candidates: 0 };
+    return { linked: 0, alreadyLinked: 0, candidates: 0, rejectedHedged: 0 };
   }
 
-  const ids = recent.map((s) => s.id as string);
+  // Never hand a new account a hedged opener, whenever it was gated.
+  const usable = recent.filter((s) => !isHedged(s.why_it_matters as string | null));
+  const rejectedHedged = recent.length - usable.length;
+  if (rejectedHedged > 0) {
+    console.log(`[backfill] Skipped ${rejectedHedged} hedged signal(s) for ${profileId}`);
+  }
+  if (usable.length === 0) {
+    return { linked: 0, alreadyLinked: 0, candidates: recent.length, rejectedHedged };
+  }
+
+  const ids = usable.map((s) => s.id as string);
 
   const { data: existing, error: existingError } = await supabase
     .from("signal_triages")
@@ -87,7 +126,12 @@ export async function backfillTriagesForProfile(
   const missing = ids.filter((id) => !linkedAlready.has(id));
 
   if (missing.length === 0) {
-    return { linked: 0, alreadyLinked: linkedAlready.size, candidates: ids.length };
+    return {
+      linked: 0,
+      alreadyLinked: linkedAlready.size,
+      candidates: ids.length,
+      rejectedHedged,
+    };
   }
 
   // relevant / relevance_score / relevance_reason are deprecated constants
@@ -112,5 +156,6 @@ export async function backfillTriagesForProfile(
     linked: missing.length,
     alreadyLinked: linkedAlready.size,
     candidates: ids.length,
+    rejectedHedged,
   };
 }
