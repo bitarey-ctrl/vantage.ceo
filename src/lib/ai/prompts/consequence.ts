@@ -63,9 +63,16 @@ ${CATEGORY_DEFINITIONS}
 
 Anchor every field below to whichever of those five this signal actually hit. If your analysis would read the same for a 500-person enterprise or a non-software business, it is too generic — rewrite it until it is specific to a B2B SaaS company at this stage.
 
+Then go one step further. You are told what this company builds, who it sells to, and the single priority it is working on right now. If your analysis would read the same for a DIFFERENT B2B SaaS company at the same stage, it is still too generic. Tie the consequence to their product, their customer, or their stated priority — and if this signal genuinely does not touch any of the three, say that plainly rather than inventing a connection.
+
 ## COMPANY CONTEXT
 Company: ${profile.company_name}
-Industry: ${profile.industry} | Geography: ${profile.geography}
+What they build: ${context?.product_description ?? profile.industry ?? 'B2B SaaS'}
+Who they sell to: ${context?.target_customer ?? 'Not specified'}
+Their #1 priority right now: ${context?.top_priority === 'Other'
+    ? (context?.top_priority_other || 'Other')
+    : (context?.top_priority ?? 'Not specified')}
+Geography: ${profile.geography}
 Revenue range: ${context?.monthly_revenue_range ?? 'Not specified'} | Business Model: ${context?.revenue_model ?? 'Not specified'}
 
 Strategic Priorities:

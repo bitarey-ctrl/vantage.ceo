@@ -1272,3 +1272,31 @@ Chose option (b), content-based rejection, over (a), a date floor. A date floor 
 
 ### Paused by the user until after outreach
 Onboarding rewrite, auth redesign, fintech/non-SaaS handling. To be driven by what real CEOs say they need, not guessed at now.
+
+---
+
+## 2026-09-09 (12) — Onboarding step 1: Industry replaced by product / customer / priority
+**Files changed:** src/app/onboarding/page.tsx, src/app/api/onboarding/step/route.ts, src/types/database.ts, src/app/api/advisor/chat/route.ts (approved), src/lib/ai/prompts/consequence.ts (approved)
+**New files:** supabase/migrations/031_ceo_context_product_fields.sql
+**PENDING USER ACTION:** run migration 031.
+
+Scoped change. The Industry dropdown on step 1 is replaced by three questions; everything else in onboarding is untouched — still 9 steps, ARR band, competitors, risks, decision style, primary goal all unchanged.
+
+  1. "What does your product do?" — textarea, 2 rows, max 300, helper "One or two sentences, plain English."
+  2. "Who is your target customer?" — input, max 160.
+  3. "What's your #1 priority right now?" — single-select: Growth / Retention / Pricing / Fundraising / Hiring / Other. Choosing Other reveals a required free-text box; the value is cleared when another option is chosen, so no stale text is stored.
+
+Stored on ceo_context as product_description / target_customer / top_priority / top_priority_other (migration 031, all nullable + a CHECK on top_priority). Existing users keep what they have; nothing is backfilled.
+
+### Where they flow
+- **Advisor** (approved): selected and injected as "What they build / Who they sell to / Their #1 priority", with an instruction to use them in every answer and to name the conflict when the stated priority and the question pull apart.
+- **Consequence** (approved): same three lines in COMPANY CONTEXT, plus a second anchoring paragraph — it was already told not to read the same for a non-SaaS business; it is now also told not to read the same for a DIFFERENT B2B SaaS company at the same stage, and to say so plainly rather than invent a link when a signal touches none of the three.
+- **Gate: deliberately NOT touched.** triage.ts and gate.ts are unchanged. Confirmed decision, not to be revisited: signals is a global table shared to every account by the backfill, so personalising gate output would write one user's context into rows every other user inherits.
+
+### Two judgement calls worth flagging
+- **`sector` fallback left alone.** The only place `profile.industry` was a fallback is `sector`, which renders as "Sector: …" in the advisor. A product sentence there would read wrong, and two of the three builders that set it live in protected files that were not approved. It now falls through to "B2B SaaS", which is correct for the ICP. The *descriptor* — the thing that actually said "a your industry company" — now uses product_description in both approved prompts. Intent honoured, semantics kept.
+- **Deploy-ordering guard.** If this ships before 031 is run, the four columns do not exist and step 1 would 500 for every new signup. Step 1 now treats ONLY 42703 / PGRST204 as non-fatal, logs loudly naming the migration, and continues — company name is already saved. Any other error still fails hard.
+
+### Verified
+tsc clean; build clean. Rendered step 1 on a real account: three fields present, Industry gone, still "Step 1 of 9". Validation: Continue disabled while empty, disabled with text but no priority, enabled on Growth, disabled again on Other until named, enabled once named. Guard confirmed against the live DB pre-migration — step 1 returned 200, company_name saved, log named migration 031.
+NOT verified: storage of the four values, which needs 031 applied.

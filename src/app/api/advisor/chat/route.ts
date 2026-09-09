@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
           .single(),
         adminSupabase
           .from("ceo_context")
-          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors")
+          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other")
           .eq("profile_id", user.id)
           .maybeSingle(),
         adminSupabase
@@ -75,9 +75,29 @@ export async function POST(request: NextRequest) {
     const consequences = consequencesRes.data ?? [];
 
     const companyName = profile?.company_name ?? "your company";
-    const industry = profile?.industry ?? "your industry";
     const stage = profile?.company_stage ?? "unknown stage";
-    const sector = ctx?.sector ?? industry;
+
+    /*
+     * Onboarding step 1 no longer asks for an Industry (migration 031). It
+     * asks what the product does, who it is sold to, and the single priority
+     * that matters right now. Those are far better advisor context than a
+     * dropdown value, so they lead here.
+     *
+     * `industry` is kept only as a fallback for accounts that onboarded
+     * before the change — without it their prompt would lose the descriptor
+     * entirely. New accounts have product_description instead.
+     */
+    const productDescription = ctx?.product_description ?? null;
+    const targetCustomer = ctx?.target_customer ?? null;
+    const topPriority =
+      ctx?.top_priority === "Other"
+        ? ctx?.top_priority_other || "Other"
+        : ctx?.top_priority ?? null;
+
+    const industry = profile?.industry ?? null;
+    // What the company IS, in one clause, for the opening line.
+    const descriptor = productDescription ?? industry ?? "a B2B SaaS";
+    const sector = ctx?.sector ?? industry ?? "B2B SaaS";
     const geography = ctx?.geography_detail ?? profile?.geography ?? "unknown geography";
     const revenueModel = ctx?.revenue_model ?? "unknown";
 
@@ -109,14 +129,19 @@ export async function POST(request: NextRequest) {
         ).join("\n")
       : "No signals analysed yet.";
 
-    const systemPrompt = `You are VANTAGE Advisor — the Honest Advisor for ${companyName}, a ${industry} company at ${stage} stage.
+    const systemPrompt = `You are VANTAGE Advisor — the Honest Advisor for ${companyName}, at ${stage} stage.
 
 You have full access to the CEO's strategic context:
 
+What they build: ${descriptor}
+Who they sell to: ${targetCustomer ?? "not specified"}
+Their #1 priority right now: ${topPriority ?? "not specified"}
 Sector: ${sector} | Geography: ${geography}
 Revenue model: ${revenueModel}
 Strategic priorities: ${priorities}
 Competitors: ${competitors}
+
+Use "what they build", "who they sell to" and their #1 priority in every answer. A suggestion that would read the same for any B2B SaaS company is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
 
 Recent signals analysed:
 ${consequencesText}

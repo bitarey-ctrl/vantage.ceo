@@ -8,24 +8,14 @@ import { Loader2, ArrowLeft } from "lucide-react";
 
 const TOTAL_STEPS = 9;
 
-const INDUSTRIES = [
-  "B2B SaaS",
-  "FinTech / PayTech",
-  "HealthTech",
-  "E-commerce",
-  "Marketplace",
-  "AI / ML",
-  "DeepTech",
-  "Climate / CleanTech",
-  "EdTech",
-  "PropTech",
-  "Defence / GovTech",
-  "Media / Content",
-  "Logistics",
-  "AgriTech",
-  "Consulting / Services",
+const TOP_PRIORITIES = [
+  "Growth",
+  "Retention",
+  "Pricing",
+  "Fundraising",
+  "Hiring",
   "Other",
-];
+] as const;
 
 const COMPANY_STAGES = [
   "Pre-revenue",
@@ -71,7 +61,7 @@ const ARR_BANDS: { value: string; label: string }[] = [
 ];
 
 const STEP_META: { title: string; subtitle: string }[] = [
-  { title: "Your Company", subtitle: "Tell us who you are and what you build." },
+  { title: "Your Company", subtitle: "Tell us what you build, who you build it for, and what matters most right now." },
   { title: "Company Stage", subtitle: "Where are you in the journey?" },
   { title: "Team Size", subtitle: "How big is your team right now?" },
   { title: "Primary Goal", subtitle: "What's the one thing that matters most this quarter?" },
@@ -129,7 +119,10 @@ export default function OnboardingPage() {
 
   // Step 1
   const [companyName, setCompanyName] = useState("");
-  const [industry, setIndustry] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  const [targetCustomer, setTargetCustomer] = useState("");
+  const [topPriority, setTopPriority] = useState("");
+  const [topPriorityOther, setTopPriorityOther] = useState("");
   // Step 2
   const [companyStage, setCompanyStage] = useState("");
   // Step 3
@@ -176,7 +169,14 @@ export default function OnboardingPage() {
   function canContinue(): boolean {
     switch (step) {
       case 1:
-        return companyName.trim().length > 0 && industry.length > 0;
+        return (
+          companyName.trim().length > 0 &&
+          productDescription.trim().length > 0 &&
+          targetCustomer.trim().length > 0 &&
+          topPriority.length > 0 &&
+          // "Other" is only a real answer once they have named it.
+          (topPriority !== "Other" || topPriorityOther.trim().length > 0)
+        );
       case 2:
         return companyStage.length > 0;
       case 3:
@@ -202,7 +202,13 @@ export default function OnboardingPage() {
   function getStepData(): Record<string, unknown> {
     switch (step) {
       case 1:
-        return { companyName: companyName.trim(), industry };
+        return {
+          companyName: companyName.trim(),
+          productDescription: productDescription.trim(),
+          targetCustomer: targetCustomer.trim(),
+          topPriority,
+          topPriorityOther: topPriority === "Other" ? topPriorityOther.trim() : "",
+        };
       case 2:
         return { companyStage };
       case 3:
@@ -330,22 +336,57 @@ export default function OnboardingPage() {
               </div>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#555555] mb-1.5">
-                  Industry
+                  What does your product do?
                 </label>
-                <select
-                  value={industry}
-                  onChange={(e) => setIndustry(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#242424] rounded-lg text-sm text-white px-4 py-3 outline-none focus:border-[#CC1F1F]/60 transition-colors appearance-none cursor-pointer"
-                >
-                  <option value="" className="bg-[#1a1a1a] text-[#555555]">
-                    Select your industry
-                  </option>
-                  {INDUSTRIES.map((ind) => (
-                    <option key={ind} value={ind} className="bg-[#1a1a1a]">
-                      {ind}
-                    </option>
+                <p className="text-[11px] text-[#555555] mb-1.5">
+                  One or two sentences, plain English.
+                </p>
+                <textarea
+                  rows={2}
+                  maxLength={300}
+                  value={productDescription}
+                  onChange={(e) => setProductDescription(e.target.value)}
+                  placeholder="e.g. We give finance teams a single view of spend across every SaaS tool they buy."
+                  className="w-full bg-[#1a1a1a] border border-[#242424] rounded-lg text-sm text-white px-4 py-3 outline-none placeholder:text-[#333333] focus:border-[#CC1F1F]/60 transition-colors resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#555555] mb-1.5">
+                  Who is your target customer?
+                </label>
+                <input
+                  type="text"
+                  maxLength={160}
+                  value={targetCustomer}
+                  onChange={(e) => setTargetCustomer(e.target.value)}
+                  placeholder="e.g. mid-market fintech CFOs, or engineering leads at Series B startups"
+                  className="w-full bg-[#1a1a1a] border border-[#242424] rounded-lg text-sm text-white px-4 py-3 outline-none placeholder:text-[#333333] focus:border-[#CC1F1F]/60 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#555555] mb-1.5">
+                  What&apos;s your #1 priority right now?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {TOP_PRIORITIES.map((p) => (
+                    <OptionCard
+                      key={p}
+                      label={p}
+                      selected={topPriority === p}
+                      onClick={() => setTopPriority(p)}
+                    />
                   ))}
-                </select>
+                </div>
+                {topPriority === "Other" && (
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={topPriorityOther}
+                    onChange={(e) => setTopPriorityOther(e.target.value)}
+                    placeholder="Name it in a few words"
+                    className="mt-2 w-full bg-[#1a1a1a] border border-[#242424] rounded-lg text-sm text-white px-4 py-3 outline-none placeholder:text-[#333333] focus:border-[#CC1F1F]/60 transition-colors"
+                  />
+                )}
               </div>
             </div>
           )}

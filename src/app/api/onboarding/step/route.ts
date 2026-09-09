@@ -34,14 +34,63 @@ export async function POST(request: NextRequest) {
 
     switch (body.step) {
       case 1: {
-        const { companyName, industry } = body.data as {
-          companyName: string;
-          industry: string;
-        };
-        await supabase
+        // The Industry dropdown was replaced (migration 031) by three
+        // questions that actually describe the business. Company name stays
+        // on profiles; the three new answers live on ceo_context, which is
+        // what the advisor and consequence prompts already read.
+        const { companyName, productDescription, targetCustomer, topPriority, topPriorityOther } =
+          body.data as {
+            companyName: string;
+            productDescription?: string;
+            targetCustomer?: string;
+            topPriority?: string;
+            topPriorityOther?: string;
+          };
+
+        const { error: profileError } = await supabase
           .from("profiles")
-          .update({ company_name: companyName, industry })
+          .update({ company_name: companyName })
           .eq("id", user.id);
+        if (profileError) {
+          return NextResponse.json({ error: profileError.message }, { status: 500 });
+        }
+
+        await supabase
+          .from("ceo_context")
+          .upsert(
+            { profile_id: user.id },
+            { onConflict: "profile_id", ignoreDuplicates: true }
+          );
+        const { error: contextError } = await supabase
+          .from("ceo_context")
+          .update({
+            product_description: productDescription?.trim() || null,
+            target_customer: targetCustomer?.trim() || null,
+            top_priority: topPriority || null,
+            // Only meaningful for 'Other'; never leave a stale value behind.
+            top_priority_other:
+              topPriority === "Other" ? topPriorityOther?.trim() || null : null,
+          })
+          .eq("profile_id", user.id);
+        if (contextError) {
+          // Deploy ordering guard. If this ships before migration 031 is run,
+          // these four columns do not exist yet — 42703 (undefined_column) or
+          // PostgREST's PGRST204 (unknown column in schema cache). Failing the
+          // step there would break signup for every new user until the SQL is
+          // pasted. The company name above is already saved, so degrade to a
+          // loud warning and let onboarding continue; the answers are lost for
+          // that user, which is recoverable, unlike a blocked signup.
+          const missingColumns =
+            contextError.code === '42703' || contextError.code === 'PGRST204';
+          if (!missingColumns) {
+            return NextResponse.json({ error: contextError.message }, { status: 500 });
+          }
+          console.error(
+            '[onboarding/step 1] ceo_context is missing the step-1 columns — ' +
+              'run supabase/migrations/031_ceo_context_product_fields.sql. ' +
+              `Continuing without them. (${contextError.code}: ${contextError.message})`
+          );
+        }
         break;
       }
       case 2: {

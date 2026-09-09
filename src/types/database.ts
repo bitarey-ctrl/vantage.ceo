@@ -93,6 +93,14 @@ export interface Profile {
   updated_at: string;
 }
 
+export type TopPriority =
+  | 'Growth'
+  | 'Retention'
+  | 'Pricing'
+  | 'Fundraising'
+  | 'Hiring'
+  | 'Other';
+
 export interface CeoContext {
   id: string;
   profile_id: string;
@@ -105,6 +113,19 @@ export interface CeoContext {
    * that build CeoContext literals from partial rows keep compiling.
    */
   arr_band?: ArrBand | null;
+  /*
+   * Onboarding step 1 (migration 031), replacing the old Industry dropdown.
+   * Optional for the same reason as arr_band — several routes build
+   * CeoContext literals from partial rows.
+   */
+  /** What the product does, 1-2 sentences in the founder's own words. */
+  product_description?: string | null;
+  /** Who they sell to, e.g. "mid-market fintech CFOs". */
+  target_customer?: string | null;
+  /** Growth | Retention | Pricing | Fundraising | Hiring | Other. */
+  top_priority?: TopPriority | null;
+  /** Free text, only meaningful when top_priority is 'Other'. */
+  top_priority_other?: string | null;
   avoided_decision: string | null;
   avoided_decision_stated_reason: string | null;
   sector: string | null;
