@@ -30,9 +30,10 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   // Advisor hides the global CommandBar (it already IS that experience,
-  // full-page, with its own composer) — so it doesn't need the 126px of
-  // bottom canvas padding reserved to clear a bar that isn't there. Advisor
-  // manages its own full-height layout instead (see its `100dvh` calc).
+  // full-page, with its own composer), so it needs neither the 126px of
+  // bottom canvas padding that clears the bar nor page-level scrolling. It
+  // gets .vx-route-advisor instead, which locks the workbench to the
+  // viewport so the topbar stays put and only the chat scrolls.
   const isAdvisor = pathname?.startsWith("/advisor") ?? false;
 
   // Mobile sidebar. Closed on every route change so navigating from the
@@ -110,7 +111,7 @@ export default function DashboardLayout({
           sit on top of the existing CommandBar on mobile, and removing a
           working feature is not a reskin. */}
       <div
-        className="vx-app grid-ground min-h-screen text-foreground"
+        className="vx-app vx-hover-navigation grid-ground min-h-screen text-foreground"
         data-app-shell
         onKeyDown={(e) => { if (e.key === 'Escape') setMenu(false); }}
       >
@@ -129,7 +130,7 @@ export default function DashboardLayout({
           onClose={() => setMenu(false)}
         />
 
-        <div className="vx-workbench">
+        <div className={"vx-workbench" + (isAdvisor ? " vx-route-advisor" : "")}>
           <header className="vx-topbar">
             <button
               className="vx-menu-toggle"
@@ -141,10 +142,6 @@ export default function DashboardLayout({
             </button>
             <div className="vx-breadcrumb">
               <strong>{areaLabel}</strong>
-            </div>
-            <div className="cx-topbar-status">
-              <i />
-              {(companyName || 'VANTAGE').toUpperCase()} · ONLINE
             </div>
           </header>
 

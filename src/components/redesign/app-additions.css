@@ -58,3 +58,141 @@
   font: inherit;
   font-size: 14px;
 }
+
+/* ── Sidebar nav, app-side corrections ───────────────────────────────────
+   The design styles sidebar items as `nav button`; ours are Next <Link>
+   anchors (so deep links, prefetch and cmd-click keep working). The five
+   ported files now select `nav :is(button,a)` — identical specificity, so
+   nothing about their cascade changed.
+
+   Two consequences to undo. At <=680px the design hides most sidebar items
+   because a .vx-bottom-nav takes over; we render no bottom nav, and the
+   sidebar IS the mobile drawer, so every item has to stay. */
+@media (max-width: 680px) {
+  .vx-app .vx-sidebar nav :is(button, a) { display: flex !important; }
+}
+
+/* Anchors do not inherit font like buttons do, and carry an underline. */
+.vx-app .vx-sidebar nav a {
+  font: inherit;
+  text-decoration: none;
+}
+
+/* ── Advisor: chat scrolls, chrome does not ──────────────────────────────
+   The design's advisor is a normal-flow page with a sticky composer, which
+   means the whole workbench scrolls and the topbar leaves with it. On this
+   route we pin the workbench to the viewport and give the message thread
+   its own overflow, so the sidebar and topbar hold still and only the
+   conversation moves — and the composer sits at the bottom of the column
+   rather than sticking to a scrolling page. */
+.vx-app .vx-workbench.vx-route-advisor {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (min-width: 681px) {
+  /* Matches the 12px top/bottom margin layered-shell gives the workbench. */
+  .vx-app .vx-hover-navigation .vx-workbench.vx-route-advisor,
+  .vx-app .vx-workbench.vx-route-advisor { height: calc(100dvh - 24px); }
+}
+.vx-app .vx-workbench.vx-route-advisor > .vx-topbar { flex: 0 0 auto; }
+.vx-app .vx-workbench.vx-route-advisor > .vx-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.vx-app .vx-route-advisor .vx-advisor-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.vx-app .vx-route-advisor .vx-advisor-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* keep the last answer clear of the composer's top edge */
+  padding-bottom: 8px;
+}
+.vx-app .vx-route-advisor .vx-advisor-composer {
+  position: static;
+  flex: 0 0 auto;
+  margin-bottom: 16px;
+}
+
+/* ── Analysed signals read differently at a glance ───────────────────────
+   "Analysed" used to be plain meta text sitting in the same slot as
+   "Watch", so the two were indistinguishable while scanning. It is now a
+   filled accent chip, and the row carries a matching inset rule. */
+.vx-app .vx-analysed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #ff321f;
+  border: 1px solid #ff321f;
+  color: #fff;
+  font: 500 10px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vx-app .vx-analysed-badge svg { flex: 0 0 11px; }
+
+.vx-app .vx-calm-row.vx-row-analysed {
+  box-shadow: inset 2px 0 #ff321f;
+  padding-left: 16px;
+}
+.vx-app .vx-calm-row.vx-row-analysed:hover { background: #ff321f06; }
+
+/* The analysed row's leading dot would otherwise double up with the rule. */
+.vx-app .vx-calm-row.vx-row-analysed > .vx-dot { opacity: .35; }
+
+/* ── Company-specific analysis: blocks, not an essay ─────────────────────
+   Four labelled sections with real separation instead of four h3 +
+   paragraph pairs running together. */
+.vx-app .vx-analysis > * + * { margin-top: 26px; }
+
+.vx-app .vx-analysis-lead {
+  padding-left: 16px;
+  border-left: 2px solid #ff321f;
+}
+.vx-app .vx-analysis-lead p {
+  font-size: 15px !important;
+  line-height: 1.75;
+  color: #c3c5cd;
+  margin: 0 !important;
+}
+
+/* vx-outcome-grid's own top border is redundant between stacked blocks. */
+.vx-app .vx-analysis .vx-outcome-grid {
+  border-top: 0;
+  padding-top: 0;
+  margin-bottom: 0;
+}
+.vx-app .vx-analysis .vx-outcome-grid > div {
+  padding: 18px;
+  border: 1px solid #ffffff12;
+  border-radius: 8px;
+  background: #ffffff02;
+}
+.vx-app .vx-analysis .vx-outcome-grid p { margin: 0; }
+
+.vx-app .vx-analysis .vx-analysis-action {
+  margin: 0;
+  border-color: #ff321f33;
+  background: #ff321f07;
+}
+.vx-app .vx-analysis .vx-analysis-action p {
+  margin: 0 !important;
+  color: #cfd1d8;
+}
+.vx-app .vx-analysis .vx-footnote { display: block; }

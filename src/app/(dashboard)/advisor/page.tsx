@@ -231,6 +231,11 @@ function AdvisorChat() {
   }, []);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLElement>(null);
+  // Follow the stream only while the reader is parked at the bottom. The
+  // moment they scroll up mid-answer we stop yanking them back, and resume
+  // as soon as they return to the end.
+  const stickToBottom = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Refs that always hold the latest values — safe to read inside async closures
@@ -239,12 +244,22 @@ function AdvisorChat() {
   messagesRef.current = messages;
   currentSessionIdRef.current = currentSessionId;
 
-  // Scroll to bottom — instant during streaming (much cheaper), smooth otherwise.
+  const handleThreadScroll = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  // Scroll to bottom — instant during streaming (much cheaper), smooth
+  // otherwise. Driving the container's own scrollTop rather than
+  // scrollIntoView: the thread is its own scroll box now, and
+  // scrollIntoView would not reliably land on the end when a whole
+  // conversation mounts at once (opening a session from History).
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: sending ? "instant" : "smooth",
-      block: "end",
-    });
+    if (!stickToBottom.current) return;
+    const el = threadRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: sending ? "instant" : "smooth" });
   }, [messages, sending, thinking]);
 
   // Load sessions on mount — silent failure if table is not yet created
@@ -355,6 +370,7 @@ function AdvisorChat() {
   // ── Select Session ──────────────────────────────────────────────────────────
 
   const handleSelectSession = useCallback(async (id: string) => {
+    stickToBottom.current = true;
     if (id === currentSessionIdRef.current) {
       setShowSidebar(false); // mobile: return to the chat pane
       return;
@@ -602,10 +618,16 @@ function AdvisorChat() {
     }
   };
 
+  // Anything the user sends is theirs to watch — re-anchor on send.
+  const sendAnchored = (text: string) => {
+    stickToBottom.current = true;
+    send(text);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      send(input);
+      sendAnchored(input);
     }
   };
 
@@ -736,7 +758,12 @@ function AdvisorChat() {
         </form>
       )}
 
-      <section className="vx-advisor-thread" aria-label="Conversation">
+      <section
+        className="vx-advisor-thread"
+        aria-label="Conversation"
+        ref={threadRef}
+        onScroll={handleThreadScroll}
+      >
         {!messages.length && !sending ? (
           <div className="vx-advisor-welcome">
             <div className="vx-advisor-mark">
@@ -750,7 +777,7 @@ function AdvisorChat() {
             </p>
             <div className="vx-prompt-options">
               {STARTERS.map((starter) => (
-                <button key={starter} type="button" onClick={() => send(starter)}>
+                <button key={starter} type="button" onClick={() => sendAnchored(starter)}>
                   {starter}
                   <ArrowUpRight size={13} />
                 </button>
@@ -779,7 +806,7 @@ function AdvisorChat() {
         className="vx-composer vx-advisor-composer"
         onSubmit={(e) => {
           e.preventDefault();
-          send(input);
+          sendAnchored(input);
         }}
       >
         <textarea

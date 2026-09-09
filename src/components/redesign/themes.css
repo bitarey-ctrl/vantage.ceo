@@ -5,7 +5,7 @@
 @media(min-width:681px){
  .vx-collapsed .vx-sidebar{width:68px;padding-inline:8px;transition:width .2s}
  .vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-nav-text,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-brand-name,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-collapse-toggle,.vx-collapsed .vx-sidebar:not(.vx-sidebar-open) .vx-sidebar-bottom{display:none}
- .vx-collapsed .vx-sidebar:not(.vx-sidebar-open) nav button{justify-content:center;padding-inline:10px}
+ .vx-collapsed .vx-sidebar:not(.vx-sidebar-open) nav :is(button,a){justify-content:center;padding-inline:10px}
  .vx-collapsed .vx-sidebar .vx-brand{justify-content:center;padding:0;gap:0}
  .vx-collapsed .vx-sidebar-open{position:fixed;width:236px;left:0;z-index:80;padding-inline:14px}.vx-collapsed:has(.vx-sidebar-open) .vx-workbench{margin-left:80px}
  .vx-collapsed .vx-sidebar-open .vx-brand{justify-content:flex-start;gap:7px}.vx-collapsed .vx-sidebar-open .vx-nav-text{display:inline}
@@ -13,6 +13,6 @@
 }
 @media(min-width:681px) and (max-width:900px){
  .vx-sidebar:not(.vx-sidebar-open) .vx-nav-text,.vx-sidebar:not(.vx-sidebar-open) .vx-brand-name,.vx-sidebar:not(.vx-sidebar-open) .vx-collapse-toggle{display:none}
- .vx-sidebar-open{width:236px!important;position:fixed;left:0;z-index:80}.vx-sidebar-open .vx-nav-text{display:inline}.vx-sidebar-open nav button{justify-content:flex-start;gap:12px}.vx-sidebar-open .vx-brand{font-size:21px;justify-content:flex-start;gap:7px}.vx-sidebar .vx-account-nav{display:grid}.vx-sidebar .vx-brand-row{justify-content:center}
+ .vx-sidebar-open{width:236px!important;position:fixed;left:0;z-index:80}.vx-sidebar-open .vx-nav-text{display:inline}.vx-sidebar-open nav :is(button,a){justify-content:flex-start;gap:12px}.vx-sidebar-open .vx-brand{font-size:21px;justify-content:flex-start;gap:7px}.vx-sidebar .vx-account-nav{display:grid}.vx-sidebar .vx-brand-row{justify-content:center}
 }
-@media(max-width:680px){.vx-desktop-toggle,.vx-collapse-toggle{display:none}.vx-sidebar .vx-brand-row{display:none}.vx-sidebar .vx-account-nav{margin-top:4px;padding-top:0}.vx-sidebar .vx-account-nav button{display:flex!important}.vx-sidebar .vx-nav-text{display:inline}.vx-theme-toggle{width:40px;height:40px}.vx-bottom-nav button{font-size:9px}}
+@media(max-width:680px){.vx-desktop-toggle,.vx-collapse-toggle{display:none}.vx-sidebar .vx-brand-row{display:none}.vx-sidebar .vx-account-nav{margin-top:4px;padding-top:0}.vx-sidebar .vx-account-nav :is(button,a){display:flex!important}.vx-sidebar .vx-nav-text{display:inline}.vx-theme-toggle{width:40px;height:40px}.vx-bottom-nav button{font-size:9px}}

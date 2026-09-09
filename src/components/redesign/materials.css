@@ -12,14 +12,14 @@
 }
 .vx-brand{font-size:22px;font-weight:530;letter-spacing:-.65px}
 .vx-sidebar nav{gap:6px}
-.vx-sidebar nav button{position:relative;border:1px solid transparent!important;border-radius:5px;color:#a6a6af;transition:background .16s,border-color .16s,color .16s;}
-.vx-sidebar nav button:hover{color:#f0f0f5;background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.04)!important;}
-.vx-sidebar nav button[aria-current=page]{
+.vx-sidebar nav :is(button,a){position:relative;border:1px solid transparent!important;border-radius:5px;color:#a6a6af;transition:background .16s,border-color .16s,color .16s;}
+.vx-sidebar nav :is(button,a):hover{color:#f0f0f5;background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.04)!important;}
+.vx-sidebar nav :is(button,a)[aria-current=page]{
  background:linear-gradient(100deg,rgba(255,50,31,.095),rgba(255,255,255,.045) 55%);
  border-color:rgba(255,255,255,.08)!important;color:#f4f4f6;
  box-shadow:inset 2px 0 #ff321f,inset 0 1px rgba(255,255,255,.035),0 2px 5px #0002;
 }
-.vx-sidebar nav button[aria-current=page] svg{color:#ff4938}
+.vx-sidebar nav :is(button,a)[aria-current=page] svg{color:#ff4938}
 .vx-sidebar-bottom{border-top:1px solid #ffffff0e;margin-inline:8px;padding:19px 4px 0;font-size:11px;}
 .vx-topbar{
  position:sticky;top:0;z-index:40;
@@ -57,12 +57,12 @@
 .vx-decision-progress{height:4px;gap:4px}.vx-decision-progress>span{border-radius:1px}.vx-decision-progress>span.is-resolved{background:#d6d6dd;box-shadow:0 0 0 1px #ffffff05}
 .vx-tabs button[aria-pressed=true]{box-shadow:inset 0 -1px #ff321f;color:#eeeeF2}
 .vx-app :focus-visible{outline:2px solid #ff6657;outline-offset:3px}
-@media(max-width:900px) and (min-width:681px){.vx-sidebar{margin-left:8px;border-radius:8px;padding-inline:8px}.vx-sidebar-bottom{margin-inline:0;padding-inline:0}.vx-sidebar nav button{padding-inline:10px}}
+@media(max-width:900px) and (min-width:681px){.vx-sidebar{margin-left:8px;border-radius:8px;padding-inline:8px}.vx-sidebar-bottom{margin-inline:0;padding-inline:0}.vx-sidebar nav :is(button,a){padding-inline:10px}}
 @media(max-width:680px){
  .vx-sidebar{top:8px;margin:0 0 0 8px;height:calc(100dvh - 16px);border-radius:9px;width:250px;background:#111214;backdrop-filter:none;-webkit-backdrop-filter:none;z-index:80}
  .vx-sidebar-open{box-shadow:inset 0 1px #ffffff10,24px 0 70px #0009}
  .vx-topbar{height:58px}.vx-next-action{border-radius:8px}.vx-next-action:before{left:22px;right:22px}
- .vx-sidebar nav button{min-height:46px}.vx-topbar .vx-mobile-menu{min-width:44px;min-height:44px;justify-content:center}
+ .vx-sidebar nav :is(button,a){min-height:46px}.vx-topbar .vx-mobile-menu{min-width:44px;min-height:44px;justify-content:center}
 }
 @media(prefers-reduced-transparency:reduce){.vx-sidebar{background:#131416;backdrop-filter:none;-webkit-backdrop-filter:none}.vx-topbar{background:#0c0d0f;backdrop-filter:none;-webkit-backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){.vx-app *{transition:none!important}}
@@ -79,8 +79,8 @@
  .vx-nav-backdrop{display:block;position:fixed;inset:0;z-index:75;border:0;background:#0009}
  .vx-sidebar{left:10px;right:10px;top:auto;bottom:calc(82px + env(safe-area-inset-bottom));width:auto;height:auto;max-height:calc(100dvh - 180px);margin:0;padding:20px 16px 16px;overflow-y:auto;transform:translateY(12px);opacity:0;transition:opacity .16s,transform .16s;}
  .vx-sidebar-open{transform:translateY(0);opacity:1}.vx-sidebar .vx-brand,.vx-sidebar .vx-nav-label,.vx-sidebar-bottom{display:none!important}
- .vx-sidebar .vx-workspace{margin:0 5px 14px}.vx-sidebar nav{margin-top:0;gap:4px}.vx-sidebar nav button:nth-child(6){margin-top:0}
- .vx-sidebar nav button:nth-child(1),.vx-sidebar nav button:nth-child(2),.vx-sidebar nav button:nth-child(4),.vx-sidebar nav button:nth-child(5){display:none}
+ .vx-sidebar .vx-workspace{margin:0 5px 14px}.vx-sidebar nav{margin-top:0;gap:4px}.vx-sidebar nav :is(button,a):nth-child(6){margin-top:0}
+ .vx-sidebar nav :is(button,a):nth-child(1),.vx-sidebar nav :is(button,a):nth-child(2),.vx-sidebar nav :is(button,a):nth-child(4),.vx-sidebar nav :is(button,a):nth-child(5){display:none}
  .vx-modal[open]{z-index:110}.vx-app{scroll-padding-bottom:100px}
 }
 @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){@media(max-width:680px){.vx-bottom-nav{background:rgba(19,20,23,.91);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}}}

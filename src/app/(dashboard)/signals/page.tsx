@@ -12,6 +12,7 @@ import {
   Link2,
   Plus,
   Loader2,
+  Check,
   X,
 } from "lucide-react";
 import { toPlainText } from "@/lib/text";
@@ -318,16 +319,22 @@ export default function SignalsPage() {
             return (
               <button
                 key={s.id}
-                className="vx-calm-row vx-news-row"
+                className={"vx-calm-row vx-news-row" + (analysed ? " vx-row-analysed" : "")}
                 onClick={() => { setOpenId(s.id); window.scrollTo({ top: 0 }); }}
               >
                 <span className={"vx-dot " + (urg === "act_this_week" ? "vx-red" : "")} />
                 <span>
                   <div className="vx-news-meta">
                     <span>{CATEGORY_LABEL[cat]}</span>
-                    <span className={urg === "act_this_week" ? "vx-red" : ""}>
-                      {analysed ? "Analysed" : URGENCY_LABEL[urg]}
-                    </span>
+                    {analysed ? (
+                      <span className="vx-analysed-badge">
+                        <Check size={11} strokeWidth={3} />Analysed
+                      </span>
+                    ) : (
+                      <span className={urg === "act_this_week" ? "vx-red" : ""}>
+                        {URGENCY_LABEL[urg]}
+                      </span>
+                    )}
                   </div>
                   <h2>{s.why_it_matters ? s.why_it_matters : toPlainText(s.title)}</h2>
                   <p className="vx-news-summary">
@@ -501,9 +508,16 @@ function SignalDocument({
 
       <article className="vx-calm-document">
         <div className="vx-reading-meta">
-          <span className={"vx-tag " + (urg === "act_this_week" ? "vx-tag-red" : "")}>
-            {analysis ? (analysis.status === "accepted" ? "Accepted" : "Analysed") : URGENCY_LABEL[urg]}
-          </span>
+          {analysis ? (
+            <span className="vx-analysed-badge">
+              <Check size={11} strokeWidth={3} />
+              {analysis.status === "accepted" ? "Accepted" : "Analysed"}
+            </span>
+          ) : (
+            <span className={"vx-tag " + (urg === "act_this_week" ? "vx-tag-red" : "")}>
+              {URGENCY_LABEL[urg]}
+            </span>
+          )}
           <span>{CATEGORY_LABEL[cat]}</span>
         </div>
 
@@ -555,17 +569,33 @@ function SignalDocument({
         {analysis && (
           <details className="vx-disclosure" open>
             <summary>Company-specific analysis<Plus size={15} /></summary>
-            <div>
-              <h3>So what</h3>
-              <p>{analysis.soWhat}</p>
-              <h3>If you act</h3>
-              <p>{analysis.ifYouAct}</p>
-              <h3>If you don&apos;t</h3>
-              <p>{analysis.ifYouDont}</p>
-              <h3>Immediate action</h3>
-              <p>{analysis.immediateAction}</p>
+            <div className="vx-analysis">
+              {/* Four labelled blocks rather than four headed paragraphs:
+                  the lead reading, the act/don't-act pair side by side, and
+                  the one thing to do, set apart in a callout. */}
+              <div className="vx-analysis-lead">
+                <span className="vx-section-label">SO WHAT</span>
+                <p>{analysis.soWhat}</p>
+              </div>
+
+              <div className="vx-outcome-grid">
+                <div>
+                  <span className="vx-section-label">IF YOU ACT</span>
+                  <p>{analysis.ifYouAct}</p>
+                </div>
+                <div>
+                  <span className="vx-section-label">IF YOU DON&apos;T</span>
+                  <p>{analysis.ifYouDont}</p>
+                </div>
+              </div>
+
+              <div className="vx-callout vx-analysis-action">
+                <span className="vx-section-label">IMMEDIATE ACTION</span>
+                <p>{analysis.immediateAction}</p>
+              </div>
+
               {typeof analysis.confidence_score === "number" && (
-                <p className="vx-quiet-note">Analysis confidence: {analysis.confidence_score}/100</p>
+                <p className="vx-footnote">Analysis confidence: {analysis.confidence_score}/100</p>
               )}
             </div>
           </details>

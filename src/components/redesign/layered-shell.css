@@ -3,9 +3,9 @@
 @media(min-width:681px){
  .vx-hover-navigation .vx-sidebar{inset:0 auto 0 0;margin:0;width:76px;height:100dvh;padding:29px 13px 22px;background:#101112;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;z-index:1;transition:width .22s cubic-bezier(.2,.8,.2,1)}
  .vx-hover-navigation .vx-sidebar:is(:hover,:has(:focus-visible)){width:228px;background:#101112;box-shadow:none}
- .vx-hover-navigation .vx-sidebar nav button{border-radius:6px;border-color:transparent!important;box-shadow:none;color:#94969e}
- .vx-hover-navigation .vx-sidebar nav button[aria-current=page]{background:#ffffff06;box-shadow:none;color:#e6e6eb;border-color:transparent!important}
- .vx-hover-navigation .vx-sidebar nav button[aria-current=page] svg{color:#ff4938}
+ .vx-hover-navigation .vx-sidebar nav :is(button,a){border-radius:6px;border-color:transparent!important;box-shadow:none;color:#94969e}
+ .vx-hover-navigation .vx-sidebar nav :is(button,a)[aria-current=page]{background:#ffffff06;box-shadow:none;color:#e6e6eb;border-color:transparent!important}
+ .vx-hover-navigation .vx-sidebar nav :is(button,a)[aria-current=page] svg{color:#ff4938}
  .vx-hover-navigation .vx-sidebar .vx-sidebar-bottom,.vx-hover-navigation .vx-sidebar:is(:hover,:has(:focus-visible)) .vx-sidebar-bottom{display:none!important}
  .vx-hover-navigation .vx-workbench{position:relative;z-index:2;margin:12px 12px 12px 84px;min-height:calc(100dvh - 24px);background:#0b0c0d;border:1px solid #ffffff13;border-radius:12px;box-shadow:inset 0 1px #ffffff04,-5px 0 16px #0002,0 12px 36px #0003;transition:transform .22s cubic-bezier(.2,.8,.2,1);}
  .vx-hover-navigation .vx-sidebar:is(:hover,:has(:focus-visible))~.vx-workbench{transform:translateX(148px)}
