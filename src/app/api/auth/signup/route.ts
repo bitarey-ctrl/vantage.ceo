@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { claimInviteCode, normalizeInviteCode, releaseInviteCode } from "@/lib/invites";
+import { ensureProfileExists } from "@/lib/auth/ensure-profile";
 
 interface SignupBody {
   email?: string;
@@ -143,6 +144,18 @@ export async function POST(request: NextRequest) {
           { error: "Could not complete signup. Please try again." },
           { status: 500 }
         );
+      }
+
+      // THIS is where accounts were being created with nothing behind them.
+      // The profiles row comes from a trigger on INSERT INTO auth.users, and
+      // the repair above is an UPDATE — so the trigger never fires and the
+      // user ends up authenticated with no profile. Every later write keyed on
+      // profile_id then fails (23503 on decisions) or silently no-ops
+      // (onboarding's .update() calls, which is what hid it).
+      try {
+        await ensureProfileExists(existing.id);
+      } catch (profileErr) {
+        console.error("[signup] Could not ensure profile on recovery:", profileErr);
       }
 
       claimedCode = null;

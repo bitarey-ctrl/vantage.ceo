@@ -1216,3 +1216,41 @@ Not built, deliberately:
   - Competitors are ALREADY stored as raw text ([{ name }] in ceo_context.competitors) and the query builder reads those strings directly — that decision is already the implementation, no change needed.
 
 This is the second time decisions have arrived for unasked questions (see the market_context / migration 029 entry). Worth a check on where those option lists are coming from before more are actioned.
+
+---
+
+## 2026-09-09 (10) — ROOT CAUSE FOUND: "Failed to create decision" was a missing profiles row
+**Files changed:** src/app/api/decisions/route.ts, src/app/api/onboarding/step/route.ts, src/app/api/onboarding/complete/route.ts, src/app/api/auth/signup/route.ts
+**New files:** src/lib/auth/ensure-profile.ts, supabase/migrations/030_backfill_missing_profiles.sql
+**PENDING USER ACTION:** run migration 030 in the Supabase SQL editor.
+
+### Root cause
+`decisions.profile_id` is a FK to `profiles.id`. Three auth users on production have NO profiles row, so any write keyed on auth.uid() fails. Reproduced the reported error exactly:
+
+  23503 — insert or update on table "decisions" violates foreign key constraint "decisions_profile_id_fkey"
+  Key (profile_id)=(bae29a19-…) is not present in table "profiles".
+
+Orphans: bae29a19 / bita.reyhani.n@gmail.com (CONFIRMED, real, and updated 2026-09-09 19:14 — i.e. actively in use), plus two unconfirmed May test accounts.
+
+### Why the trigger did not cover them
+`on_auth_user_created` is verified present and enabled, `SECURITY DEFINER`, no WHEN clause, no deferral — so it is NOT a race. But it is `AFTER INSERT ON auth.users`, so it only ever fires for a genuinely NEW auth row. Two populations slip past:
+  1. Accounts predating the trigger (the three above, all 2026-05-17).
+  2. /api/auth/signup's recovery path: when an email exists but is unconfirmed it calls `updateUserById` to confirm and reset the password. That is an UPDATE, so the trigger never fires and the "new signup" ends up with no profile.
+
+### Why it stayed invisible
+Onboarding is all `.update()` calls, and updating ZERO rows is not a Postgres error. All nine steps and /complete returned `{success:true}` while writing nothing. The first operation that actually INSERTS with profile_id is creating a decision — so the account looked fine right up until that moment.
+
+Also why synthetic reproduction always passed: every test account was created by INSERT (admin createUser), so the trigger always fired.
+
+### Fix — three layers
+1. `lib/auth/ensure-profile.ts` — creates the row if missing, pulling email/full_name off the auth record. Called before every profile-keyed write: decisions create, both onboarding routes, and the signup recovery branch. Makes the broken state unreachable at runtime regardless of how the auth row came to exist.
+2. Migration 030 backfills the existing orphans. Idempotent, safe to re-run.
+3. /api/onboarding/complete now `.select()`s its update and fails loudly on zero rows, instead of reporting success while writing nothing.
+
+A repair is recorded as `profile_row_repaired` in feature_events so this is visible if it ever happens again.
+
+### Verified
+Manufactured the exact state (auth user, profiles row deleted), then POST /api/decisions: **201**, and the log shows `[ensure-profile] Repaired missing profiles row`. Before the fix the same state returned 23503.
+
+### Housekeeping
+Deleted a leftover test account of mine (846f1e7b, rls-probe-…) created by a script that died mid-run in an earlier session.

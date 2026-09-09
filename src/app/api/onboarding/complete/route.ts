@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { backfillTriagesForProfile } from "@/lib/signal-linking/backfill";
+import { ensureProfileExists } from "@/lib/auth/ensure-profile";
 import { processSignalsForProfile } from "@/lib/signals/signal-processor";
 import { markProfileIngested } from "@/lib/ingest-queue/order";
 import type { Profile, CeoContext, Decision } from "@/types/database";
@@ -44,14 +45,31 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { error } = await supabase
+    try {
+      await ensureProfileExists(user.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[POST /api/onboarding/complete] ensureProfileExists failed:", msg);
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+
+    // .select() so a zero-row update is detectable — it is not an error.
+    const { data: updated, error } = await supabase
       .from("profiles")
       .update({ onboarding_completed: true })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .select("id");
 
     if (error) {
       console.error("[POST /api/onboarding/complete]", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!updated || updated.length === 0) {
+      console.error(`[POST /api/onboarding/complete] Updated 0 rows for ${user.id}`);
+      return NextResponse.json(
+        { error: "Your profile could not be found. Please sign out and back in." },
+        { status: 500 }
+      );
     }
 
     const profileId = user.id;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { logEvent, EVENTS } from '@/lib/analytics/log-event';
+import { ensureProfileExists } from '@/lib/auth/ensure-profile';
 
 export async function GET(request: NextRequest) {
   try {
@@ -125,6 +126,24 @@ export async function POST(request: NextRequest) {
 
     const resolvedSource =
       source && ['signal', 'strategy', 'manual'].includes(source) ? source : 'manual';
+
+    // decisions.profile_id is a FK to profiles.id, and a profiles row is not
+    // guaranteed: the creating trigger is AFTER INSERT ON auth.users, so it
+    // never fired for accounts that predate it or that were repaired via
+    // signup's update path. Without this the insert fails 23503.
+    try {
+      const repaired = await ensureProfileExists(user.id);
+      if (repaired) {
+        await logEvent(user.id, 'profile_row_repaired', { at: 'decisions.create' });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[POST /api/decisions] ensureProfileExists failed:', msg);
+      return NextResponse.json(
+        { error: `Could not prepare your account: ${msg}` },
+        { status: 500 }
+      );
+    }
 
     const { data: decision, error: insertError } = await supabase
       .from('decisions')
