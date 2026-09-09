@@ -1120,3 +1120,26 @@ Cron and the secret-auth path are exempt. Returns 429 with a plain-English messa
 ### Two items from the same request NOT built — see the session notes
 - **Per-user cron**: every onboarded profile already gets a daily ingestion from the single /api/cron/ingest job (05:00 UTC, iterates all profiles with onboarding_completed = true). Vercel Hobby cannot host one cron per user — crons are declared statically in vercel.json. Separately flagged: `maxDuration = 300` on that route exceeds the Hobby 60s function limit, so as the user count grows later profiles in the loop will be cut off. A fairness fix (rotate the processing order by least-recently-served) would solve that inside Hobby limits; not built, because it was not what was actually asked for.
 - **Migration 029 / market_context**: `market_context` does not exist in the codebase, in supabase/migrations, or on the live decisions / profiles / ceo_context tables, and there is no 029. Decision creation was verified working on the OLD pre-existing account 70491d75 (HTTP 201, probe row deleted). The decisions bug was the CommandBar z-index, fixed in 5e4b1e6.
+
+---
+
+## 2026-09-09 (7) — Fair ingest rotation + signals ready at the end of onboarding
+**Files changed:** src/app/api/cron/ingest/route.ts, src/app/api/onboarding/complete/route.ts
+**New files:** src/lib/ingest-queue/order.ts
+
+### 1. Queue starvation defused
+/api/cron/ingest declared `maxDuration = 300`, but Vercel Hobby caps a function at 60s — the extra 240s bought nothing, it just meant the loop was killed mid-flight with no report. The loop order was whatever Postgres returned, which is stable, so the same profiles were served every morning and the tail of the list would be cut off every day, silently, as the user count grew.
+
+Now: `maxDuration = 60` (the real ceiling) with a 50s internal budget so the run stops itself and returns a report. Profiles are ordered least-recently-served first via `lib/ingest-queue/order.ts`, which marks each served profile with a `profile_ingested` event in the existing `feature_events` table (no migration) and sorts ascending on it. Never-served profiles sort FIRST, so a brand new signup leads the very next run. A profile cut off by the budget therefore leads tomorrow's queue rather than being starved forever. The response now reports profilesEligible / profilesProcessed / profilesDeferred. Fails soft: if the markers cannot be read the run proceeds unordered rather than not at all.
+
+### 2. Signals are ready before the user arrives
+/api/onboarding/complete now fires the ingestion for that profile without blocking the response, using `after()` from next/server. A floating promise would not do — on serverless, work that is neither awaited nor registered can be killed the moment the response is flushed; `after` keeps the invocation alive.
+
+Two stages, cheapest first: (1) backfill, which links already-gated signals — pure joins, no model calls; (2) the profile's own full ingest — fan-out fetch plus the gate. Stage 1 is what makes the page populated; stage 2 may legitimately add nothing on a day when the pool already holds everything. Stage 1 failing does not stop stage 2, and stage 2 failing leaves the account already usable — plus the cron picks that profile up first, since it sorts as never-served.
+
+### MEASURED (fresh account, real production data)
+- POST /api/onboarding/complete returned in **2.9s** — the user is never blocked.
+- **Stage 1: 25 signals linked and visible 2.5s after completion.**
+- Stage 2: 121 candidates → 0 surfaced, 17.5s total. Zero is correct here: those 121 were already in the global pool, so the 7-day dedupe discarded them. Stage 1 had already delivered.
+
+**Answer for the empty-state decision: ~2.5 seconds to first visible signals, not 1-2 minutes.** Navigating onboarding → Command → Signals takes longer than that on its own. Caveat: that 2.5s assumes the global pool is non-empty (it holds 216 signals). For the very first account on a fresh database, stage 1 links nothing and the wait is stage 2's ~17s.

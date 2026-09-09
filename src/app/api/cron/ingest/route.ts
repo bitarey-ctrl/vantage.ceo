@@ -16,8 +16,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processSignalsForProfile } from '@/lib/signals/signal-processor';
 import { backfillTriagesForProfile } from '@/lib/signal-linking/backfill';
+import { orderByLeastRecentlyServed, markProfileIngested } from '@/lib/ingest-queue/order';
 
-export const maxDuration = 300; // 5 min — allow time for all profiles
+// Vercel Hobby caps a function at 60s. Declaring 300 did not buy time — it
+// meant the loop was killed mid-flight with nothing written and no report.
+// Declare the real ceiling and stop ourselves just under it instead.
+export const maxDuration = 60;
+
+// Leave room to finish the in-flight profile and return a response.
+const BUDGET_MS = 50_000;
 
 export async function POST(request: NextRequest) {
   // ── Auth ─────────────────────────────────────────────────────────────────
@@ -59,7 +66,23 @@ export async function POST(request: NextRequest) {
     // ── Run pipeline per profile ─────────────────────────────────────────
     const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; error?: string }[] = [];
 
-    for (const profile of profiles) {
+    // Least-recently-served first, so a profile cut off by the budget leads
+    // tomorrow's queue instead of being starved every morning. Never-served
+    // profiles (a brand new signup) sort to the very front.
+    const queue = await orderByLeastRecentlyServed(profiles);
+
+    let servedCount = 0;
+    let deferredCount = 0;
+
+    for (const profile of queue) {
+      if (Date.now() - startedAt >= BUDGET_MS) {
+        // Not an error: these lead the next run by construction.
+        deferredCount = queue.length - servedCount;
+        console.log(`[cron/ingest] Budget reached — ${deferredCount} profile(s) deferred to the next run`);
+        break;
+      }
+      servedCount++;
+
       // Link gated signals this profile is missing, regardless of whether it
       // has a context to ingest FOR. The pipeline's dedupe is global while
       // visibility is per-profile, so without this a profile that was never
@@ -92,6 +115,9 @@ export async function POST(request: NextRequest) {
           recentDecisions ?? []
         );
 
+        // Served — go to the back of the queue.
+        await markProfileIngested(profile.id);
+
         results.push({
           profileId: profile.id,
           signalsProcessed: result.signalsProcessed,
@@ -112,10 +138,15 @@ export async function POST(request: NextRequest) {
     const totalConsequences = results.reduce((sum, r) => sum + r.consequencesGenerated, 0);
     const elapsedMs = Date.now() - startedAt;
 
-    console.log(`[cron/ingest] Done — ${totalSignals} signals, ${totalConsequences} consequences, ${elapsedMs}ms`);
+    console.log(
+      `[cron/ingest] Done — ${totalSignals} signals, ${totalConsequences} consequences, ` +
+        `${servedCount}/${queue.length} profiles served, ${deferredCount} deferred, ${elapsedMs}ms`
+    );
 
     return NextResponse.json({
-      profilesProcessed: profiles.length,
+      profilesEligible: queue.length,
+      profilesProcessed: servedCount,
+      profilesDeferred: deferredCount,
       totalSignalsProcessed: totalSignals,
       totalConsequencesGenerated: totalConsequences,
       elapsedMs,
