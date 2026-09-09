@@ -118,6 +118,9 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Reserve the scrollbar so the answer column and the composer below it
+     centre on the same axis instead of drifting apart when it appears. */
+  scrollbar-gutter: stable;
   /* keep the last answer clear of the composer's top edge */
   padding-bottom: 8px;
 }
@@ -196,3 +199,33 @@
   color: #cfd1d8;
 }
 .vx-app .vx-analysis .vx-footnote { display: block; }
+
+/* ── Advisor composer: part of the conversation, not a bar under it ──────
+   The page is 820px but answers are 700px centred inside it, so a
+   full-width composer sat visibly wider than everything it belongs to.
+   Match the answer column, and give the textarea room and a readable
+   size — it is the one field on this screen people actually write in. */
+.vx-app .vx-route-advisor .vx-advisor-composer {
+  width: 100%;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 16px 18px;
+}
+.vx-app .vx-route-advisor .vx-advisor-composer textarea {
+  min-height: 92px;
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 2px 0 8px;
+}
+.vx-app .vx-route-advisor .vx-advisor-composer textarea::placeholder {
+  font-size: 16px;
+}
+.vx-app .vx-route-advisor .vx-advisor-note { max-width: 700px; margin-inline: auto; }
+
+@media (max-width: 680px) {
+  .vx-app .vx-route-advisor .vx-advisor-composer textarea {
+    min-height: 76px;
+    font-size: 16px; /* below 16px iOS zooms the viewport on focus */
+  }
+}

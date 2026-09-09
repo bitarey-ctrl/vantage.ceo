@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -13,11 +12,8 @@ import {
   Settings,
   LogOut,
   Lock,
-  Sun,
-  Moon,
   X,
 } from 'lucide-react';
-import { applyTheme, getStoredTheme, type Theme } from '@/lib/theme';
 import { createClient } from '@/lib/supabase/client';
 import { usePlan } from '@/components/plan/PlanContext';
 
@@ -62,17 +58,6 @@ export function DashboardNav({ companyName, open, onClose }: DashboardNavProps) 
   const router = useRouter();
   const supabase = createClient();
   const access = usePlan();
-  const [theme, setTheme] = useState<Theme>('dark');
-
-  useEffect(() => {
-    setTheme(getStoredTheme());
-  }, []);
-
-  const handleThemeToggle = () => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    setTheme(next);
-  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -143,15 +128,6 @@ export function DashboardNav({ companyName, open, onClose }: DashboardNavProps) 
 
       <nav className="vx-account-nav" aria-label="Account">
         {BOTTOM_ITEMS.map(renderItem)}
-        <button
-          type="button"
-          onClick={handleThemeToggle}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-          <span className="vx-nav-text">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-        </button>
         <button type="button" onClick={handleSignOut} title="Sign out" aria-label="Sign out">
           <LogOut size={17} />
           <span className="vx-nav-text">Sign out</span>

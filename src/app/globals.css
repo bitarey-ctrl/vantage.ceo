@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -39,72 +37,13 @@
 }
 
 :root {
+  /* VANTAGE is dark-only. These were the `.dark` token values; the light
+     palette and the toggle that reached it are gone. They are declared on
+     :root now so there is no class for the app to be in the wrong state of.
+     Structural tokens that only ever existed on the light side are kept
+     below, unchanged. */
   --nav-width: 220px;
   --radius: 0.625rem;
-  /* Black + White + Red — Day base. Same discipline inverted: white canvas,
-     near-black text, red as accent only. */
-  --background: #FAFAFA;
-  --foreground: #141414;
-  --card: oklch(1 0 0 / 0.6);
-  --card-foreground: oklch(0.15 0 0);
-  --popover: oklch(0.99 0 0);
-  --popover-foreground: oklch(0.15 0 0);
-  --primary: oklch(0.18 0 0);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.92 0 0);
-  --secondary-foreground: oklch(0.18 0 0);
-  --muted: oklch(0.94 0 0);
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.88 0 0);
-  --accent-foreground: oklch(0.18 0 0);
-  --destructive: oklch(0.6 0.22 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0 0 0 / 0.1);
-  --input: oklch(0 0 0 / 0.1);
-  --ring: oklch(0.5 0 0);
-
-  --ink: #000000;
-  --brand-accent: #B91C1C;                /* deeper red for light bg contrast */
-  --brand-accent-soft: rgba(185, 28, 28, 0.08);
-  --brand-accent-border: rgba(185, 28, 28, 0.35);
-
-  /* Urgency ladder — only "act" is red */
-  --urgency-act: #B91C1C;
-  --urgency-act-soft: rgba(185, 28, 28, 0.08);
-  --urgency-decide: #B47614;
-  --urgency-decide-soft: rgba(180, 118, 20, 0.08);
-  --urgency-watch: #6B6B6B;
-  --urgency-watch-soft: rgba(107, 107, 107, 0.08);
-
-  /* Depth ladder — 4 levels from background up */
-  --depth-0: transparent;                                    /* page bg */
-  --depth-1: oklch(0 0 0 / 0.025);                          /* section container */
-  --depth-2: oklch(0 0 0 / 0.045);                          /* card */
-  --depth-3: oklch(0 0 0 / 0.07);                           /* elevated card */
-
-  /* Category temperature accents — neutral hints, NOT loud colors */
-  --cat-market: oklch(0.55 0.06 240 / 0.45);                /* cool blue-gray */
-  --cat-regulatory: oklch(0.55 0.05 280 / 0.45);            /* cool purple-gray */
-  --cat-macro: oklch(0.55 0.06 60 / 0.45);                  /* warm amber-gray */
-  --cat-competitors: oklch(0.55 0.06 160 / 0.45);           /* cool teal-gray */
-  --cat-market-soft: oklch(0.55 0.06 240 / 0.05);
-  --cat-regulatory-soft: oklch(0.55 0.05 280 / 0.05);
-  --cat-macro-soft: oklch(0.55 0.06 60 / 0.05);
-  --cat-competitors-soft: oklch(0.55 0.06 160 / 0.05);
-
-  --metric-bg: #FFFFFF;
-  --metric-glow: none;
-
-  --glass-bg: #FFFFFF;
-  --glass-border: rgba(0, 0, 0, 0.07);
-  --glass-highlight: none;
-  --glass-sheen: none;
-  --shadow-glass: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-glow: none;
-
-  /* Flat ground — no ambient gradients (see §7) */
-  --tertiary-foreground: #6B6B6B;
-
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -118,9 +57,7 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
-}
 
-.dark {
   /* ── Black + White + Red accent system ─────────────────────────────
      Black = structure and seriousness. White = clarity and readability.
      Red = focus, urgency, and brand punctuation ONLY.

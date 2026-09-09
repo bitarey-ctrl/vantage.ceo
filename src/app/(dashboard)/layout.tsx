@@ -12,7 +12,6 @@ import { CommandBar } from "@/components/layout/CommandBar";
 import { PlanProvider } from "@/components/plan/PlanContext";
 import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
 import { getPlanAccess, type PlanAccess } from "@/lib/plan";
-import { applyTheme, getStoredTheme } from '@/lib/theme';
 
 export default function DashboardLayout({
   children,
@@ -77,7 +76,6 @@ export default function DashboardLayout({
         profile?.trial_ends_at ?? null
       );
       setPlanAccess(access);
-      applyTheme(getStoredTheme());
       setLoading(false);
     };
 

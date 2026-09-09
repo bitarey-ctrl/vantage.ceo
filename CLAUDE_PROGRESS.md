@@ -1033,3 +1033,17 @@ All seven dashboard pages are now rebuilt against the prototype. Every API call,
 **Verification:** npx tsc --noEmit clean; npm run build clean. In Chrome against real data — sidebar hover-expands with correct spacing and active state, and the mobile drawer at 430px shows all nine items; advisor thread scrolls independently, opens a session at the newest message, and a live streamed answer did not pull the view back after scrolling up mid-stream; analysed rows are unmistakable across a 10-signal list; the analysis renders as four separate blocks; no ONLINE badge; settings loads and persists.
 
 **Observation, not fixed (out of scope):** light mode has poor contrast against the vx design, which is built dark-only. Say the word and I'll look at it.
+
+---
+
+## 2026-09-09 (3) — Dark-only, advisor composer sizing, production deploy
+**Files changed:** src/app/globals.css, src/app/layout.tsx, src/app/(dashboard)/layout.tsx, src/components/layout/DashboardNav.tsx, src/components/redesign/app-additions.css
+**Deleted:** src/lib/theme.ts
+
+**1. LIGHT MODE REMOVED — one mode, no option.** Not just the toggle: the whole mechanism is gone. globals.css had a light palette on `:root` and a `.dark` block overriding it; the dark values now live on `:root` and the light palette is deleted, so there is no class the app can be in the wrong state of. Also removed: `@custom-variant dark`, the pre-paint localStorage script in the root layout (nothing left to decide, so nothing left to flash), the `applyTheme(getStoredTheme())` call in the dashboard layout, the Sun/Moon toggle button in the sidebar, and src/lib/theme.ts. Safe because there are ZERO `dark:` Tailwind variants anywhere in src — the class only ever swapped tokens. Fifteen structural tokens declared only on the light side (--radius, --nav-width, the unused shadcn --chart-*/--sidebar-* aliases) were carried over unchanged.
+
+**2. ADVISOR COMPOSER now belongs to the conversation.** The page is 820px but answers are 700px centred inside it, so the composer sat visibly wider than everything it belonged to. It is now 700px, centred on the same axis, with a 92px min-height textarea at 16px/1.6 instead of 15px in a 76px box. Added `scrollbar-gutter: stable` to the thread so the answer column and the composer do not drift apart when the scrollbar appears. Mobile keeps 16px deliberately — below that iOS zooms the viewport on focus.
+
+**3. LANDING -> APP.** No change needed: siteConfig.appUrl was already '/signup', Landing.tsx renders it as a same-tab anchor, and /signup returns 200. Verified on production after deploy.
+
+**Verification:** npx tsc --noEmit clean; npm run build clean; no reference to applyTheme / getStoredTheme / lib/theme / nocturne-theme / Sun / Moon left anywhere in src. Rendered locally: dashboard is dark with no toggle in the sidebar, advisor composer matches the answer column.

@@ -50,12 +50,9 @@ export default function RootLayout({
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning={true}
     >
+      {/* No pre-paint theme script: VANTAGE is dark-only, and the palette
+          lives on :root, so there is no class to set and nothing to flash. */}
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('nocturne-theme');if(!t){t='dark';}if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){document.documentElement.classList.add('dark');}})();`
-          }}
-        />
         <link rel="icon" href="/logo-transparent.png" type="image/png" />
       </head>
       <body className="min-h-full" suppressHydrationWarning={true}>
