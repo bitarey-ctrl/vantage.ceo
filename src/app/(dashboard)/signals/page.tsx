@@ -509,7 +509,15 @@ function SignalDocument({
     const msg =
       "I'm looking at a signal: '" + toPlainText(signal.title) + "'. Why it matters: " +
       (signal.why_it_matters ?? "") + " What am I missing, and what would you prioritise?";
-    router.push("/advisor?q=" + encodeURIComponent(msg));
+    // Hand-off contract: sessionStorage, the same one strategies, blind-spots
+    // and the CommandBar use. This used to push "?q=" instead, which the
+    // advisor never reads — so the click just landed you in whatever session
+    // happened to load last, with the signal context silently dropped.
+    sessionStorage.setItem(
+      "advisor_prefill",
+      JSON.stringify({ message: msg, source: "signal" })
+    );
+    router.push("/advisor");
   };
 
   return (

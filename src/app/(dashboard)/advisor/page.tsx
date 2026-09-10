@@ -309,21 +309,54 @@ function AdvisorChat() {
     init();
   }, []);
 
-  // Prefill from sessionStorage — waits for init to finish so the prefilled
-  // user message isn't overwritten by the session-load setMessages.
+  /*
+   * Hand-off from a signal, strategy, blind spot or the command bar.
+   *
+   * Contract: the caller leaves a message behind, we open a FRESH thread and
+   * send it. A fresh thread on purpose — the seeded question would otherwise
+   * be appended to whatever session happened to load last, which reads as the
+   * advisor replying to the wrong conversation.
+   *
+   * Two accepted forms. sessionStorage is what four of the five callers use.
+   * `?q=` is honoured too because signals used to send that and nothing read
+   * it — accepting both here means a caller can never silently drop context
+   * again by picking the wrong one. Both funnel through one code path.
+   *
+   * Waits for initComplete so the seeded message is not overwritten by the
+   * session-load setMessages, and consumes the source before doing any async
+   * work so a re-render (or React's double-invoke in dev) cannot send twice.
+   */
   useEffect(() => {
     if (!initComplete) return;
-    const prefill = sessionStorage.getItem("advisor_prefill");
-    if (!prefill) return;
-    try {
-      const parsed = JSON.parse(prefill) as { message: string; source: string };
+
+    let message: string | null = null;
+
+    const stored = sessionStorage.getItem("advisor_prefill");
+    if (stored) {
       sessionStorage.removeItem("advisor_prefill");
-      // Start a fresh chat for the prefilled question so it doesn't pollute
-      // the currently selected session.
-      handleNewChat().then(() => {
-        send(parsed.message);
-      });
-    } catch {}
+      try {
+        message = (JSON.parse(stored) as { message?: string }).message ?? null;
+      } catch {
+        message = null;
+      }
+    }
+
+    if (!message) {
+      // Read the URL directly rather than useSearchParams: this is a
+      // client-only effect and it avoids dragging in a Suspense boundary.
+      const q = new URLSearchParams(window.location.search).get("q");
+      if (q) {
+        message = q;
+        // Drop it from the URL so a refresh does not re-send the question.
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+
+    if (!message) return;
+
+    const seeded = message;
+    stickToBottom.current = true;
+    handleNewChat().then(() => send(seeded));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initComplete]);
 

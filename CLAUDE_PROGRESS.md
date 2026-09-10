@@ -1322,3 +1322,38 @@ These were the last surface still on the OLD BLUE accent (#1b7ff0, 25 uses) — 
 
 ### Verified
 tsc clean, build clean, zero occurrences of the old blues left. Rendered /login, /signup and /forgot-password — single mark, red accent, dark ground, consistent with the dashboard. Escape hatch tested end to end on a real account: onboarding renders with the control, clicking it lands on /login, the auth cookie is gone, and /command bounces back to /login.
+
+---
+
+## 2026-09-10 — Signal → Advisor hand-off fixed
+**Files changed:** src/app/(dashboard)/signals/page.tsx, src/app/(dashboard)/advisor/page.tsx
+
+### Intended design
+A hand-off opens a FRESH thread and auto-sends the seeded message. That is the established contract: strategies, blind-spots and the CommandBar all write `advisor_prefill` to sessionStorage, and the advisor's prefill effect calls handleNewChat() then send(). A fresh thread on purpose — seeding into the current session reads as the advisor answering the wrong conversation.
+
+### Root cause — a contract mismatch, not a race
+signals/page.tsx was the ONLY caller that handed off via a query param: `router.push("/advisor?q=" + encodeURIComponent(msg))`. The advisor page never read `?q` — it only reads sessionStorage. So the context was dropped on the floor at every click, and the advisor simply did what it does with no prefill: loaded the most recent session. That is exactly the reported "lands in the last existing chat thread".
+
+No race condition, and no missing first-render state update. The prefill effect is correctly gated on initComplete and consumes its source before any async work, so it cannot double-fire.
+
+On "only works on the second click": could not reproduce that pattern, and there is no mechanism in the code that would make the query-param path start working on a later click. The likeliest explanation is that the second attempt came from a different surface (a strategy, a blind spot, or the command bar) — all three of which use the working contract.
+
+Ruled out along the way: a brief sighting of the PREVIOUS thread's title right after a hand-off is not a bug. Polling the visible title across a clean run gives (none) -> last session -> "New conversation": the init effect loads the most recent session before the prefill effect fires, which is correct intermediate state.
+
+### Fix
+- signals now uses the sessionStorage contract like every other caller.
+- The advisor honours BOTH forms through ONE code path — sessionStorage first, then `?q` (consumed from the URL via history.replaceState so a refresh cannot re-send). Accepting both means a caller can never silently drop context again by picking the wrong mechanism.
+
+### Verified end to end
+Fresh account, 27 signals, plus a deliberately pre-existing decoy thread so "lands in the last thread" was reproducible. ONE click on Ask Advisor, twice from different signals:
+  decoy thread          msgs=0   (untouched)
+  "I'm looking at a signal: 'DeepSeek's…"   msgs=2
+  "I'm looking at a signal: 'Vercel…"       msgs=2
+Each click created its own new session carrying the signal context, first time, every time.
+
+### Confirmed for the record: what a new account's signals actually are
+The ~20-27 signals at signup are backfilled from the shared GLOBAL pool and are gated GENERICALLY. Nothing is personalised at backfill time — not Competition, not anything. The backfill's only per-profile input is the profile_id it writes on the join row; selection is "most recent gated signals, category not null, last 7 days, cap 40, minus hedged openers", identical for every account.
+
+The gate itself takes no user context at all (buildGatePrompt(candidates) with a static ICP_DESCRIPTION), which is the deliberate decision recorded earlier and is what keeps the shared pool safe to share.
+
+Competitors DO personalise something, but earlier in the chain and not at backfill: sources.ts buildQueryFeeds(competitors) builds up to 3 Google News feeds per profile at FETCH time during a full ingest (onboarding stage 2, refresh, cron). Those candidates still pass through the generic gate and still land in the global pool. And because the 7-day dedupe is global, competitor-driven candidates are frequently discarded as already-seen — measured on a real onboarding run: stage 1 linked 25 signals, stage 2 fetched 121 candidates and surfaced 0. So in practice a new signup's first feed is 100% generic.
