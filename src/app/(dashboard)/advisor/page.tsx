@@ -244,22 +244,80 @@ function AdvisorChat() {
   messagesRef.current = messages;
   currentSessionIdRef.current = currentSessionId;
 
+  /*
+   * Follow-the-stream, and why the first attempt at this did not work.
+   *
+   * The old version inferred "has the reader scrolled away?" purely from
+   * scroll position, inside the onScroll handler. That cannot work while a
+   * response is streaming, because our OWN scrollTo fires scroll events too,
+   * and the stream flushes on every animation frame — so roughly 60 times a
+   * second we scrolled to the bottom, the browser queued a scroll event for
+   * it, and that event re-measured the position as "at the bottom" and
+   * re-armed the lock. Scroll events are dispatched asynchronously, so
+   * whichever of the user's scroll and ours was processed last won. In
+   * practice ours did, and the reader was dragged back mid-answer.
+   *
+   * Two changes make it hold:
+   *   1. Programmatic scrolls are marked, and the scroll events they cause
+   *      are ignored — only genuine user scrolling moves the lock.
+   *   2. A wheel/touch gesture upward releases the lock immediately, without
+   *      waiting for a scroll event to be measured at all.
+   *
+   * Re-engagement is unchanged: scroll back to within 80px of the end and
+   * following resumes.
+   */
+  const AT_BOTTOM_PX = 80;
+
+  /*
+   * The auto-follow records exactly where it put the scroll position. Any
+   * scroll event that lands somewhere else came from the reader.
+   *
+   * A time-based guard does not work here, which is what the first attempt
+   * got wrong: the stream flushes on every animation frame, so a "we are
+   * scrolling programmatically" flag is re-armed ~60 times a second and is
+   * true for most of the wall clock. The reader's scroll events land inside
+   * that window and get ignored, so the lock never releases. Comparing
+   * against the last position we set has no timing component at all.
+   */
+  const lastAutoTop = useRef(-1);
+
+  const isAtBottom = (el: HTMLElement) =>
+    el.scrollHeight - el.scrollTop - el.clientHeight < AT_BOTTOM_PX;
+
   const handleThreadScroll = useCallback(() => {
     const el = threadRef.current;
     if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    // Within a pixel or two of where we last parked it: that was us.
+    if (Math.abs(el.scrollTop - lastAutoTop.current) <= 2) return;
+    stickToBottom.current = isAtBottom(el);
   }, []);
 
-  // Scroll to bottom — instant during streaming (much cheaper), smooth
-  // otherwise. Driving the container's own scrollTop rather than
-  // scrollIntoView: the thread is its own scroll box now, and
-  // scrollIntoView would not reliably land on the end when a whole
-  // conversation mounts at once (opening a session from History).
+  // Gesture handlers release on intent, before any position is measured.
+  // Belt and braces — the check above is what actually carries this.
+  const handleThreadWheel = useCallback((e: React.WheelEvent) => {
+    if (e.deltaY < 0) stickToBottom.current = false;
+  }, []);
+
+  const touchY = useRef(0);
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchY.current = e.touches[0]?.clientY ?? 0;
+  }, []);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const y = e.touches[0]?.clientY ?? 0;
+    if (y > touchY.current + 2) stickToBottom.current = false;
+    touchY.current = y;
+  }, []);
+
   useEffect(() => {
     if (!stickToBottom.current) return;
     const el = threadRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: sending ? "instant" : "smooth" });
+
+    // Instant, not smooth: a smooth animation keeps emitting scroll events
+    // long after the call returns, and each one would read as a user scroll.
+    el.scrollTop = el.scrollHeight;
+    // Read back rather than reusing scrollHeight — the browser clamps it.
+    lastAutoTop.current = el.scrollTop;
   }, [messages, sending, thinking]);
 
   // Load sessions on mount — silent failure if table is not yet created
@@ -671,6 +729,9 @@ function AdvisorChat() {
   // Every handler, fetch, stream and piece of state below is untouched.
 
   const currentSession = sessions.find((x) => x.id === currentSessionId) ?? null;
+  // Drives the collapsed heading. `sending` is included so the switch happens
+  // the instant a question is sent, not after the first token lands.
+  const hasMessages = messages.length > 0 || sending;
   const visibleSessions = sessions.filter(
     (x) =>
       !sessionSearch.trim() ||
@@ -679,10 +740,17 @@ function AdvisorChat() {
 
   return (
     <div className="vx-advisor-page">
-      <div className="vx-page-heading">
+      {/*
+        * The heading is a welcome mat, not a permanent fixture. At full size
+        * it costs ~120px of a laptop viewport, which is real reading area
+        * once there is a conversation to read. Full size while the thread is
+        * empty (it is the only thing on screen then); collapsed to a single
+        * small line the moment there are messages.
+        */}
+      <div className={"vx-page-heading" + (hasMessages ? " vx-advisor-heading-compact" : "")}>
         <div>
           <h1>Advisor</h1>
-          <p>Work through the decision. Keep the context.</p>
+          {!hasMessages && <p>Work through the decision. Keep the context.</p>}
         </div>
         <div className="vx-advisor-tools">
           <button
@@ -796,6 +864,9 @@ function AdvisorChat() {
         aria-label="Conversation"
         ref={threadRef}
         onScroll={handleThreadScroll}
+        onWheel={handleThreadWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
       >
         {!messages.length && !sending ? (
           <div className="vx-advisor-welcome">

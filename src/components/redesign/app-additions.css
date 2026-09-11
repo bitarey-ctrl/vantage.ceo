@@ -229,3 +229,45 @@
     font-size: 16px; /* below 16px iOS zooms the viewport on focus */
   }
 }
+
+/* ── Advisor: give the conversation the viewport ─────────────────────────
+   The full heading — 32px title, subtitle, 38px of margin — is worth its
+   space on an empty thread, where it is the only thing on screen. Once
+   there are messages it is pure furniture at the top of a reading surface,
+   and on a laptop it was pushing the conversation into a small band. This
+   collapses it to one quiet line, in the spirit of ChatGPT and Claude:
+   the thread is the viewport minus the composer. */
+.vx-app .vx-page-heading.vx-advisor-heading-compact {
+  margin-bottom: 12px;
+  align-items: center;
+}
+.vx-app .vx-page-heading.vx-advisor-heading-compact h1 {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  color: #9a9aa4;
+}
+/* The tools stay reachable, just smaller. */
+.vx-app .vx-advisor-heading-compact .vx-btn {
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.vx-app .vx-advisor-heading-compact .vx-btn svg { width: 14px; height: 14px; }
+
+/* Reclaimed space goes to the thread, not to padding. Collapsing the heading
+   alone only took the thread to 43% of a 779px viewport — the rest of the
+   gain has to come from the chrome between it and the first message. */
+.vx-app .vx-route-advisor .vx-content:has(.vx-advisor-heading-compact) {
+  padding-top: 16px;
+}
+
+/* The thread title row carried 24px of margin top AND bottom. */
+.vx-app .vx-route-advisor .vx-content:has(.vx-advisor-heading-compact) .vx-chat-title {
+  margin: 4px 0 8px;
+}
+
+/* The composer keeps its roomy textarea — that was asked for — but the note
+   under it does not need its own band of space. */
+.vx-app .vx-route-advisor .vx-advisor-composer { margin-bottom: 10px; }
+.vx-app .vx-route-advisor .vx-advisor-note { margin: 6px 0 0; }

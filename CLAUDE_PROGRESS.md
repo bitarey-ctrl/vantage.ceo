@@ -1357,3 +1357,24 @@ The ~20-27 signals at signup are backfilled from the shared GLOBAL pool and are 
 The gate itself takes no user context at all (buildGatePrompt(candidates) with a static ICP_DESCRIPTION), which is the deliberate decision recorded earlier and is what keeps the shared pool safe to share.
 
 Competitors DO personalise something, but earlier in the chain and not at backfill: sources.ts buildQueryFeeds(competitors) builds up to 3 Google News feeds per profile at FETCH time during a full ingest (onboarding stage 2, refresh, cron). Those candidates still pass through the generic gate and still land in the global pool. And because the 7-day dedupe is global, competitor-driven candidates are frequently discarded as already-seen — measured on a real onboarding run: stage 1 linked 25 signals, stage 2 fetched 121 candidates and surfaced 0. So in practice a new signup's first feed is 100% generic.
+
+---
+
+## 2026-09-11 — Advisor: scroll lock during streaming, and reclaimed reading area
+**Files changed:** src/app/(dashboard)/advisor/page.tsx, src/components/redesign/app-additions.css
+
+### 1. The scroll lock was real, and the earlier fix (9c00075) never worked
+Reproduced with a real streaming response and a scroll-position recorder: the reader scrolled up to 1000px from the bottom, and 600ms later was pinned back at the bottom for the rest of the stream.
+
+The original fix inferred "has the reader scrolled away?" purely from scroll position inside onScroll. That cannot work during streaming, because our OWN scrollTo fires scroll events too and the stream flushes on every animation frame — so ~60 times a second we scrolled to the bottom, the browser queued a scroll event for it, and that event re-measured as "at the bottom" and re-armed the lock. Scroll events are async, so whichever of the two was processed last won; in practice ours did.
+
+First attempt at a fix was a "programmatic scroll in progress" flag cleared on the next animation frame. That ALSO failed, and the measurement caught it: because the flush happens every frame, the flag is re-armed every frame and is true for most of the wall clock, so genuine user scrolls land inside the guard window and are ignored. Recorded the same yank at 10.6s.
+
+What works is position-based, with no timing component: the auto-follow records exactly where it parked the scroll (read back after assignment, since the browser clamps it), and any scroll event landing more than 2px away came from the reader. Wheel and touch handlers release on intent as a fast path, but the position check is what carries it. Also switched from scrollTo({behavior}) to direct scrollTop — a smooth animation emits scroll events for hundreds of ms after the call returns, which would outlive any guard.
+
+**Verified:** reader scrolled up mid-stream, position held at top=2442 for 11+ seconds while content grew 3780 -> 5322px. Scrolled back to the bottom, following re-engaged and tracked a new response to the end.
+
+### 2. Reading area
+The heading only earns its space on an empty thread. Once there are messages it collapses to one quiet 15px line with no subtitle, and the chat-title row's 24px/24px margins and the composer note's band were tightened too. Thread went from 338px to 386px on a 779px viewport — 43% -> 50%, and proportionally better on a taller laptop screen since the chrome above is fixed.
+
+The composer is now the largest remaining consumer at ~190px. Left alone deliberately: its roomy textarea was specifically requested earlier, and shrinking it would trade one complaint for the other.
