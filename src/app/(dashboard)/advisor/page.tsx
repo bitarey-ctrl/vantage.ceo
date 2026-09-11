@@ -180,6 +180,73 @@ function renderMarkdown(text: string): React.ReactNode {
 // ~60/sec, which is cheap for chat-sized strings. Markdown renders live during
 // streaming so the user never sees raw ** syntax.
 
+
+/*
+ * The advisor can propose one profile update per reply, as a marker on the
+ * final line. It is machine-read and must never reach the screen — including
+ * mid-stream, when only half of it has arrived, so the pattern also matches a
+ * partial marker and hides it until it is complete or abandoned.
+ */
+const MEMORY_MARKER = /\[\[VANTAGE_MEMORY\]\]\s*(\{[\s\S]*?\})\s*$/;
+const PARTIAL_MARKER = /\[?\[?V?A?N?T?A?G?E?_?M?E?M?O?R?Y?\]?\]?\s*\{?[^}]*$/;
+
+export interface MemorySuggestion {
+  field: string;
+  value: string;
+  label: string;
+}
+
+const MEMORY_FIELDS = new Set([
+  "competitors",
+  "top_priority",
+  "product_description",
+  "target_customer",
+  "arr_band",
+]);
+
+/** Split an assistant reply into what to show and what to offer saving. */
+function splitMemory(content: string): { visible: string; memory: MemorySuggestion | null } {
+  const full = content.match(MEMORY_MARKER);
+  if (full) {
+    const visible = content.slice(0, full.index).trimEnd();
+    try {
+      const parsed = JSON.parse(full[1]) as Partial<MemorySuggestion>;
+      if (
+        parsed.field &&
+        MEMORY_FIELDS.has(parsed.field) &&
+        typeof parsed.value === "string" &&
+        parsed.value.trim()
+      ) {
+        return {
+          visible,
+          memory: {
+            field: parsed.field,
+            value: parsed.value.trim(),
+            label: (parsed.label ?? parsed.value).toString().trim(),
+          },
+        };
+      }
+    } catch {
+      /* malformed marker — drop it, never render it */
+    }
+    return { visible, memory: null };
+  }
+  // Mid-stream: hide anything that looks like the start of a marker.
+  const idx = content.lastIndexOf("[[");
+  if (idx !== -1 && PARTIAL_MARKER.test(content.slice(idx))) {
+    return { visible: content.slice(0, idx).trimEnd(), memory: null };
+  }
+  return { visible: content, memory: null };
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  competitors: "Competitors",
+  top_priority: "#1 priority",
+  product_description: "What you build",
+  target_customer: "Target customer",
+  arr_band: "ARR band",
+};
+
 const MessageBubble = React.memo(function MessageBubble({
   role,
   content,
@@ -188,7 +255,7 @@ const MessageBubble = React.memo(function MessageBubble({
   content: string;
 }) {
   const rendered = useMemo(
-    () => (role === "assistant" ? renderMarkdown(content) : null),
+    () => (role === "assistant" ? renderMarkdown(splitMemory(content).visible) : null),
     [role, content]
   );
 
@@ -220,6 +287,11 @@ function AdvisorChat() {
   const [renameDraft, setRenameDraft] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showMemoryHint, setShowMemoryHint] = useState(false);
+  // One pending profile suggestion from the latest reply. Never auto-applied.
+  const [memory, setMemory] = useState<MemorySuggestion | null>(null);
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [memorySaved, setMemorySaved] = useState<string | null>(null);
+  const [memoryError, setMemoryError] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
 
   // One-time, per-session note that the memory engine is always-on. Shown under
@@ -549,6 +621,10 @@ function AdvisorChat() {
     setSending(true);
     setThinking(true);
     setError("");
+    // A suggestion belongs to the reply that produced it.
+    setMemory(null);
+    setMemorySaved(null);
+    setMemoryError("");
 
     // First interaction — retire the memory hint for the rest of the session.
     if (showMemoryHint) {
@@ -671,6 +747,11 @@ function AdvisorChat() {
       }
       flushPending();
 
+      // Marker only after the stream is complete — a partially-arrived one is
+      // not valid JSON, and splitMemory hides it from the screen until then.
+      const proposed = splitMemory(fullReply).memory;
+      if (proposed) setMemory(proposed);
+
       // Persist the completed conversation — fire and forget, never block on failures
       if (sid && fullReply) {
         const finalMessages: Message[] = [
@@ -710,6 +791,27 @@ function AdvisorChat() {
   };
 
   // Anything the user sends is theirs to watch — re-anchor on send.
+  const saveMemory = async () => {
+    if (!memory || memorySaving) return;
+    setMemorySaving(true);
+    setMemoryError("");
+    try {
+      const res = await fetch("/api/advisor/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: memory.field, value: memory.value }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "Could not save");
+      setMemorySaved(memory.label);
+      setMemory(null);
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setMemorySaving(false);
+    }
+  };
+
   const sendAnchored = (text: string) => {
     stickToBottom.current = true;
     send(text);
@@ -902,6 +1004,39 @@ function AdvisorChat() {
         )}
 
         {error && <p className="vx-quiet-note">{error}</p>}
+
+        {/*
+          * Proposal, not an action. The field it would change is named on the
+          * chip so nothing is saved that the reader has not actually read.
+          */}
+        {memory && !sending && (
+          <div className="vx-memory-offer" role="status">
+            <div className="vx-memory-offer-text">
+              <span className="vx-section-label">REMEMBER THIS?</span>
+              <p>{memory.label}</p>
+              <small>
+                Updates <strong>{FIELD_LABEL[memory.field] ?? memory.field}</strong> in your profile
+                {memory.field === "competitors" ? " (added to the list)" : ""} — future
+                conversations will know.
+              </small>
+              {memoryError && <small className="vx-red">{memoryError}</small>}
+            </div>
+            <div className="vx-memory-offer-actions">
+              <button className="vx-btn vx-primary" onClick={saveMemory} disabled={memorySaving}>
+                {memorySaving ? "Saving…" : "Save to profile"}
+              </button>
+              <button className="vx-text-btn" onClick={() => setMemory(null)} disabled={memorySaving}>
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
+        {memorySaved && (
+          <p className="vx-quiet-note" role="status">
+            Saved to your profile — {memorySaved}.
+          </p>
+        )}
 
         <div ref={bottomRef} />
       </section>

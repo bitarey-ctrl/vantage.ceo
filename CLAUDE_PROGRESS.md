@@ -1378,3 +1378,33 @@ What works is position-based, with no timing component: the auto-follow records 
 The heading only earns its space on an empty thread. Once there are messages it collapses to one quiet 15px line with no subtitle, and the chat-title row's 24px/24px margins and the composer note's band were tightened too. Thread went from 338px to 386px on a 779px viewport — 43% -> 50%, and proportionally better on a taller laptop screen since the chrome above is fixed.
 
 The composer is now the largest remaining consumer at ~190px. Left alone deliberately: its roomy textarea was specifically requested earlier, and shrinking it would trade one complaint for the other.
+
+---
+
+## 2026-09-11 (2) — Admin analytics + advisor profile memory
+**New files:** src/app/api/admin/analytics/route.ts, src/app/admin/analytics/page.tsx, src/app/api/advisor/memory/route.ts
+**Files changed:** src/app/(dashboard)/advisor/page.tsx, src/app/api/advisor/chat/route.ts (protected — the user specified "the advisor's system prompt handles the detection"), src/components/redesign/app-additions.css
+
+### 1. /admin/analytics
+Auth reuses the existing mechanism unchanged: X-Admin-Password against ADMIN_PASSWORD, password held in sessionStorage under the same `admin_pw` key /admin/invites uses, so one sign-in covers both. Middleware additionally requires a Supabase session for anything under /admin, exactly as the existing admin pages already behave. Verified: no password 401, wrong password 401.
+
+Four sections, tables and counters only, no charts. Users (signups all-time/week/today + a sortable table with email, company, product_description, top_priority, ARR band, signup, last login, last active), Activity 30d with a per-user table and a weekly leaderboard, Feature adoption as four percentages, API usage.
+
+Two things are DERIVED rather than newly logged, on purpose:
+  - advisor messages: counted from advisor_sessions.messages (user turns only), so the number is correct retroactively instead of starting at zero today.
+  - last active: max(feature_events.created_at) per profile, also taking advisor_sessions.updated_at into account.
+Only one new event was added anywhere: `advisor_memory_saved`. Everything else already existed.
+
+ceo_context is selected with `*` deliberately — naming the migration-031 columns explicitly would 400 the whole request on a database where it had not been run, instead of degrading to blank cells.
+
+**Dollar cost is NOT shown, and that is a deliberate refusal.** Nothing in the codebase records token counts or spend, so any figure would be invented. The section instead reports billable CALL counts by kind — gate runs, analyses, advisor messages — which is the honest proxy, with a note saying so. A manual-entry field was offered but would need its own table and a fourth unrun migration; say the word and it is small.
+
+### 2. Advisor profile memory
+The advisor may PROPOSE one profile update per reply and can never perform one. It ends a reply with a marker line, [[VANTAGE_MEMORY]]{"field","value","label"}, which is machine-read and stripped before display — including mid-stream, where a partial marker is also hidden so half of it never flashes on screen. The suggestion is only parsed once the stream completes (a partial marker is not valid JSON), is cleared whenever a new question is sent, and is never re-offered when an old session is reopened.
+
+Writes go through POST /api/advisor/memory behind a closed allow-list: competitors (appended, deduped, capped at 10), top_priority, product_description, target_customer, arr_band. Enum fields are validated against the same values as the database CHECK constraints, so a model proposing "Series A" for arr_band gets a 400 rather than a constraint violation. Risks and decision style are deliberately unreachable.
+
+**Verified end to end:** told the advisor "we just started losing deals to Brex as well". The reply rendered clean with no marker visible, the offer appeared reading "Brex as a competitor — updates Competitors in your profile (added to the list)", one click wrote it, and ceo_context went from [Ramp] to [Ramp, Brex] with an advisor_memory_saved event recorded.
+
+### Noted while building
+Migrations 030 and 031 are both applied — the analytics table shows real product descriptions and top priorities, and the two May-era orphaned accounts now have profile rows.

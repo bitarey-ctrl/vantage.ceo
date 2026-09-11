@@ -271,3 +271,43 @@
    under it does not need its own band of space. */
 .vx-app .vx-route-advisor .vx-advisor-composer { margin-bottom: 10px; }
 .vx-app .vx-route-advisor .vx-advisor-note { margin: 6px 0 0; }
+
+/* ── Advisor: profile memory offer ───────────────────────────────────────
+   A proposal the reader accepts, never something that has already happened.
+   Quiet enough to ignore, explicit about which field it would change. */
+.vx-app .vx-memory-offer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  max-width: 700px;
+  margin: 4px auto 18px;
+  padding: 16px 18px;
+  border: 1px solid #ff321f2e;
+  background: #ff321f08;
+  border-radius: 8px;
+}
+.vx-app .vx-memory-offer-text { flex: 1; min-width: 240px; }
+.vx-app .vx-memory-offer p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #dcdce2;
+  margin: 2px 0 6px;
+}
+.vx-app .vx-memory-offer small {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #9a9aa4;
+}
+.vx-app .vx-memory-offer small strong { color: #c9c9d1; font-weight: 500; }
+.vx-app .vx-memory-offer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+@media (max-width: 680px) {
+  .vx-app .vx-memory-offer-actions { width: 100%; }
+}
