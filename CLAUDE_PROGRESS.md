@@ -1408,3 +1408,93 @@ Writes go through POST /api/advisor/memory behind a closed allow-list: competito
 
 ### Noted while building
 Migrations 030 and 031 are both applied — the analytics table shows real product descriptions and top priorities, and the two May-era orphaned accounts now have profile rows.
+
+---
+## 2026-09-15 — Advisor memory: direct writes, and a free-text notes field
+**Files changed:** src/lib/advisor/apply-memory.ts (new), supabase/migrations/032_ceo_context_additional_context.sql (new), src/app/api/advisor/chat/route.ts, src/app/(dashboard)/advisor/page.tsx, src/app/(dashboard)/profile/page.tsx, src/components/redesign/app-additions.css, src/app/api/advisor/memory/route.ts (deleted)
+**Status:** Done. Migration 032 applied. Verified end to end against the running app with a real session.
+
+### 1. The suggestion card is gone
+The advisor now applies profile updates itself, mid-reply, and says so in prose —
+"Noted — I've added Brex to your competitors." No card, no Save button, no
+"Not now". The transparency moved from the UI into the sentence.
+
+The marker mechanism survives unchanged because it is how the server learns what
+to write: the model ends its reply with [[VANTAGE_MEMORY]]{"field","value","label"},
+the chat route reads it off the *finished* message (a partial one mid-stream is
+not valid JSON), applies it, and pushes the outcome down the same SSE stream as a
+final `memory` event. splitMemory still strips the marker before render, including
+the partial-marker case, so none of it ever reaches the screen.
+
+**The prose is written before the write is attempted, which is the one real
+hazard here.** If the write fails, the user has already read a sentence claiming
+it succeeded. So the client surfaces the `memory` event *only on failure*, as a
+walk-back line under the thread ("One thing — that didn't make it into your
+profile…"). On success it stays silent, because the reply already said it. A
+thrown error in the write path is caught and never takes the answer down with it.
+
+Validation is unchanged and still closed: competitors (appended, deduped, capped
+at 10), top_priority, product_description, target_customer, arr_band, plus the
+new additional_context. Enum fields are still checked against the same values as
+the database CHECK constraints. Risks and decision style remain unreachable.
+
+**Deleted POST /api/advisor/memory.** It existed only to service the confirm
+click. With the click gone it was dead code that still accepted profile writes,
+so it went; its logic moved to `src/lib/advisor/apply-memory.ts`, which the chat
+route now calls directly. Removed the `.vx-memory-offer` CSS with it.
+
+**Fixed a latent data-loss bug while moving that code.** `competitors` is jsonb,
+but the Profile page saves it as a comma-separated *string*, so both shapes are
+live in the table (bitarey.ai@gmail.com holds "Metronome, Orb, Togai"). The old
+array-only read treated a string as empty, so the first advisor-added competitor
+would have silently wiped the entire existing list. `normaliseCompetitors` now
+reads both shapes. This was reachable before this change, via the Save button.
+
+### 2. additional_context — the free-text notes field
+Migration 032 adds one nullable `text` column. Everything durable that fits none
+of the structured fields goes here.
+
+Two writers. The user edits it as "Additional context", a textarea last in
+Profile → Strategic context (no API change needed — PATCH /api/profile already
+passes context keys through). The advisor **appends** to it, never overwrites:
+one dated line per note, capped at 300 chars a note and 4000 chars total, with a
+substring check so a repeated conversation does not write the same note twice.
+Append-only is the point — the user's own words have to survive the advisor
+writing underneath them.
+
+It is read on every conversation, in the system prompt beside the structured
+fields. The model is told to reach for it only as a last resort: if a fact is a
+competitor, a priority, what they build, who they sell to, or their revenue
+band, it belongs in that field instead.
+
+### Two prompt fixes found by testing, not by reading
+- The model wrote "renews March 2025" when the user had only said "March". It is
+  now told not to add a year, figure, name or date the user did not state. Retested: "renews March".
+- It declined to record "our head of engineering is on parental leave January
+  through April" — every example in the prompt was commercial, so people and ops
+  facts did not read as durable. Added commitments, constraints and who-is-in-
+  which-seat to the examples. Retested: recorded, as was a first US customer.
+
+### Verified end to end
+Throwaway account, real password session, real cookies, against the dev server
+and the live database (account deleted afterwards; no residue).
+- "losing deals to Brex" → reply said "Noted — I've added Brex to your
+  competitors", `{"ok":true}`, and competitors went "Numeric, Fluence" (string
+  shape) → [Numeric, Fluence, Brex]. Confirms the append AND the string fix.
+- "biggest customer is 31% of ARR, renewal lands in March" → routed to
+  additional_context, `{"ok":true}`, stored as "2026-09-15 — Biggest customer is
+  31% of ARR, renews March".
+- Before 032 was applied, that same turn returned
+  `{"ok":false,"error":"This profile field does not exist yet — run migration
+  032."}` — the failure path and the walk-back line, confirmed for real.
+- **New** conversation, no history: "remind me what you know about our customer
+  concentration" → "Your biggest customer is 31% of ARR and renews in March —
+  that's the only concentration number you've given me", and no marker, because
+  nothing was new. Confirms it is read as context and does not re-save.
+- Profile GET/PATCH round-trips the field; a user-typed line then survived two
+  further advisor appends intact.
+
+### Noted while building
+The Profile page still saves `competitors` as a plain string into a jsonb column,
+which is why the fix above was needed. Worth normalising that write too, but it
+is the Profile save path, not this task — say the word.

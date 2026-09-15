@@ -182,10 +182,11 @@ function renderMarkdown(text: string): React.ReactNode {
 
 
 /*
- * The advisor can propose one profile update per reply, as a marker on the
- * final line. It is machine-read and must never reach the screen — including
- * mid-stream, when only half of it has arrived, so the pattern also matches a
- * partial marker and hides it until it is complete or abandoned.
+ * The advisor applies one profile update per reply and says so in its prose;
+ * the marker on the final line is how the server knows what to write. It is
+ * machine-read and must never reach the screen — including mid-stream, when
+ * only half of it has arrived, so the pattern also matches a partial marker
+ * and hides it until it is complete or abandoned.
  */
 const MEMORY_MARKER = /\[\[VANTAGE_MEMORY\]\]\s*(\{[\s\S]*?\})\s*$/;
 const PARTIAL_MARKER = /\[?\[?V?A?N?T?A?G?E?_?M?E?M?O?R?Y?\]?\]?\s*\{?[^}]*$/;
@@ -196,15 +197,25 @@ export interface MemorySuggestion {
   label: string;
 }
 
+/** What the server reports back after applying (or refusing) one update. */
+interface MemoryResult {
+  ok: boolean;
+  field?: string;
+  value?: string;
+  label?: string;
+  error?: string;
+}
+
 const MEMORY_FIELDS = new Set([
   "competitors",
   "top_priority",
   "product_description",
   "target_customer",
   "arr_band",
+  "additional_context",
 ]);
 
-/** Split an assistant reply into what to show and what to offer saving. */
+/** Split an assistant reply into what to show and the marker behind it. */
 function splitMemory(content: string): { visible: string; memory: MemorySuggestion | null } {
   const full = content.match(MEMORY_MARKER);
   if (full) {
@@ -238,14 +249,6 @@ function splitMemory(content: string): { visible: string; memory: MemorySuggesti
   }
   return { visible: content, memory: null };
 }
-
-const FIELD_LABEL: Record<string, string> = {
-  competitors: "Competitors",
-  top_priority: "#1 priority",
-  product_description: "What you build",
-  target_customer: "Target customer",
-  arr_band: "ARR band",
-};
 
 const MessageBubble = React.memo(function MessageBubble({
   role,
@@ -287,10 +290,12 @@ function AdvisorChat() {
   const [renameDraft, setRenameDraft] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showMemoryHint, setShowMemoryHint] = useState(false);
-  // One pending profile suggestion from the latest reply. Never auto-applied.
-  const [memory, setMemory] = useState<MemorySuggestion | null>(null);
-  const [memorySaving, setMemorySaving] = useState(false);
-  const [memorySaved, setMemorySaved] = useState<string | null>(null);
+  /*
+   * Profile updates are applied by the server as the reply is written, and the
+   * reply says so in its own words — there is nothing to confirm here. The only
+   * thing this page still shows is a correction: if the write failed, the
+   * sentence the user just read is wrong and has to be walked back.
+   */
   const [memoryError, setMemoryError] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
 
@@ -621,9 +626,7 @@ function AdvisorChat() {
     setSending(true);
     setThinking(true);
     setError("");
-    // A suggestion belongs to the reply that produced it.
-    setMemory(null);
-    setMemorySaved(null);
+    // A memory correction belongs to the reply that produced it.
     setMemoryError("");
 
     // First interaction — retire the memory hint for the rest of the session.
@@ -719,14 +722,24 @@ function AdvisorChat() {
           const data = line.slice(6).trim();
           if (data === "[DONE]") continue;
 
-          let parsed: { delta?: string; error?: string };
+          let parsed: { delta?: string; error?: string; memory?: MemoryResult };
           try {
-            parsed = JSON.parse(data) as { delta?: string; error?: string };
+            parsed = JSON.parse(data) as {
+              delta?: string;
+              error?: string;
+              memory?: MemoryResult;
+            };
           } catch {
             continue;
           }
 
           if (parsed.error) throw new Error(parsed.error);
+
+          // The server already wrote it. Silence on success — the reply said
+          // it. On failure, say so, because the reply said it anyway.
+          if (parsed.memory && !parsed.memory.ok) {
+            setMemoryError(parsed.memory.error ?? "Could not save that to your profile.");
+          }
 
           if (parsed.delta) {
             fullReply += parsed.delta;
@@ -746,11 +759,6 @@ function AdvisorChat() {
         rafId = null;
       }
       flushPending();
-
-      // Marker only after the stream is complete — a partially-arrived one is
-      // not valid JSON, and splitMemory hides it from the screen until then.
-      const proposed = splitMemory(fullReply).memory;
-      if (proposed) setMemory(proposed);
 
       // Persist the completed conversation — fire and forget, never block on failures
       if (sid && fullReply) {
@@ -791,27 +799,6 @@ function AdvisorChat() {
   };
 
   // Anything the user sends is theirs to watch — re-anchor on send.
-  const saveMemory = async () => {
-    if (!memory || memorySaving) return;
-    setMemorySaving(true);
-    setMemoryError("");
-    try {
-      const res = await fetch("/api/advisor/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ field: memory.field, value: memory.value }),
-      });
-      const body = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(body.error ?? "Could not save");
-      setMemorySaved(memory.label);
-      setMemory(null);
-    } catch (err) {
-      setMemoryError(err instanceof Error ? err.message : "Could not save");
-    } finally {
-      setMemorySaving(false);
-    }
-  };
-
   const sendAnchored = (text: string) => {
     stickToBottom.current = true;
     send(text);
@@ -1006,35 +993,14 @@ function AdvisorChat() {
         {error && <p className="vx-quiet-note">{error}</p>}
 
         {/*
-          * Proposal, not an action. The field it would change is named on the
-          * chip so nothing is saved that the reader has not actually read.
+          * Only ever a correction. A successful update is announced by the
+          * advisor in its own reply; this line exists for the case where it
+          * said so and the write did not land.
           */}
-        {memory && !sending && (
-          <div className="vx-memory-offer" role="status">
-            <div className="vx-memory-offer-text">
-              <span className="vx-section-label">REMEMBER THIS?</span>
-              <p>{memory.label}</p>
-              <small>
-                Updates <strong>{FIELD_LABEL[memory.field] ?? memory.field}</strong> in your profile
-                {memory.field === "competitors" ? " (added to the list)" : ""} — future
-                conversations will know.
-              </small>
-              {memoryError && <small className="vx-red">{memoryError}</small>}
-            </div>
-            <div className="vx-memory-offer-actions">
-              <button className="vx-btn vx-primary" onClick={saveMemory} disabled={memorySaving}>
-                {memorySaving ? "Saving…" : "Save to profile"}
-              </button>
-              <button className="vx-text-btn" onClick={() => setMemory(null)} disabled={memorySaving}>
-                Not now
-              </button>
-            </div>
-          </div>
-        )}
-
-        {memorySaved && (
+        {memoryError && !sending && (
           <p className="vx-quiet-note" role="status">
-            Saved to your profile — {memorySaved}.
+            One thing — that didn&apos;t make it into your profile. {memoryError} You
+            can add it yourself in Profile.
           </p>
         )}
 

@@ -36,6 +36,7 @@ interface ContextData {
   competitors?: unknown;
   avoided_decision?: string;
   sector?: string;
+  additional_context?: string;
 }
 
 interface ProfileResponse {
@@ -88,6 +89,19 @@ const CONTEXT_FIELDS: {
     dbKey: 'sector',
     label: 'Sector & geography',
     placeholder: 'B2B SaaS · UK and US',
+  },
+  /*
+   * The catch-all. Anything durable that fits none of the fields above goes
+   * here, and the advisor reads it on every conversation — it also appends its
+   * own dated lines when it hears something that maps to no structured field.
+   * Last in the list because it is the catch-all, not a headline.
+   */
+  {
+    dbKey: 'additional_context',
+    label: 'Additional context',
+    placeholder:
+      "Anything else worth remembering — a big renewal coming up, a board dynamic, why last year's plan changed. Your advisor reads this every time.",
+    multiline: true,
   },
 ];
 

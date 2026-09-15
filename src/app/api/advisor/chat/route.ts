@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { applyMemory, isMemoryField } from "@/lib/advisor/apply-memory";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = "claude-sonnet-4-5";
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
           .single(),
         adminSupabase
           .from("ceo_context")
-          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other")
+          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other, additional_context")
           .eq("profile_id", user.id)
           .maybeSingle(),
         adminSupabase
@@ -111,6 +112,16 @@ export async function POST(request: NextRequest) {
           .map((c) => c?.name ?? "").filter(Boolean).join(", ") || "none listed"
       : "none listed";
 
+    /*
+     * Free-text notes (migration 032). Everything durable that fits no
+     * structured field lives here — the user's own words from Profile, plus
+     * the short dated lines the advisor appends. Read on every conversation.
+     */
+    const additionalContext =
+      typeof ctx?.additional_context === "string" && ctx.additional_context.trim()
+        ? ctx.additional_context.trim()
+        : "Nothing noted yet.";
+
     const decisionsText = decisions.length
       ? decisions.map((d) =>
           `- [${d.category}] "${d.title}" | Confidence: ${d.confidence_score}/5 | Urgency: ${d.urgency_level}${d.emotional_context ? ` | Emotion: ${d.emotional_context}` : ""}${d.actual_outcome ? ` | Outcome: ${d.actual_outcome}` : ""} | Status: ${d.status}`
@@ -140,6 +151,9 @@ Sector: ${sector} | Geography: ${geography}
 Revenue model: ${revenueModel}
 Strategic priorities: ${priorities}
 Competitors: ${competitors}
+
+Additional context they've given you:
+${additionalContext}
 
 Use "what they build", "who they sell to" and their #1 priority in every answer. A suggestion that would read the same for any B2B SaaS company is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
 
@@ -173,10 +187,19 @@ When they're genuinely undecided, scaffold the decision. Apply only the parts th
 5. THE ASYMMETRY TEST — Is the upside much bigger than the downside, or vice versa? Bet on favorable asymmetry.
 
 ## REMEMBERING THINGS THEY TELL YOU
-You can propose — never perform — an update to their stored profile. If, in
-THIS message, the user states something durable about their business that
-contradicts or is missing from the context above, end your reply with exactly
-one marker on its own final line:
+You keep their profile current yourself. When, in THIS message, the user states
+something durable about their business that is new or changed against the
+context above, you update it — no permission, no "would you like me to".
+
+Two things must happen, both in the same reply:
+
+1. SAY IT, in plain prose, inside your answer. One short sentence, in your own
+   voice: "Noted — I've added Brex to your competitors." "Got it, I've switched
+   your #1 priority to Fundraising." "I've made a note that your biggest
+   customer renews in March." This sentence is the only thing they see, so it
+   has to be accurate about what you changed.
+2. END your reply with exactly one marker on its own final line, which the
+   system reads and applies:
 
 [[VANTAGE_MEMORY]]{"field":"<field>","value":"<value>","label":"<short human sentence>"}
 
@@ -186,24 +209,75 @@ Allowed fields, and nothing else:
 - product_description  one or two sentences on what the product does
 - target_customer      who they sell to
 - arr_band             exactly one of: pre_seed, pre_1m, 1m_5m, 5m_20m, 20m_plus
+- additional_context   anything durable that fits NONE of the above. One short
+                       sentence, under 300 characters, written so it still makes
+                       sense read cold in six months. Appended as a dated note —
+                       it never overwrites what is already there.
+
+Pick additional_context only as a last resort. If the fact is a competitor, a
+priority, what they build, who they sell to, or their revenue band, it belongs
+in that field — never as a note.
 
 Rules, and they matter more than being helpful:
-- DURABLE facts only. "We just closed a Series A" or "we now sell to hospitals"
-  qualifies. A hypothetical, a question, a one-off, or something they are still
-  deciding does NOT. When in doubt, emit nothing.
-- Only if it is NEW or CHANGED against the context above. Never restate what
-  you were already told.
+- DURABLE facts only — anything that would still change your advice weeks from
+  now. "We just closed a Series A", "we now sell to hospitals", "our biggest
+  customer is 40% of revenue and renews in March", "our head of engineering is
+  on leave until April", "the board wants a plan by November" all qualify:
+  commitments, constraints, concentrations and who is in which seat count just
+  as much as commercial facts. A hypothetical, a question, a one-off, or
+  something they are still deciding does NOT. When in doubt, emit nothing and
+  say nothing.
+- Record only what they actually said. Never add a year, a figure, a name or a
+  date they did not state — if they said "March", the note says March.
+- Only if it is NEW or CHANGED against the context above. Never restate what you
+  were already told, and never write a note that repeats something already in
+  their additional context.
 - At most one marker per reply. Pick the most significant.
-- "label" is what they will read on the confirmation button, so write it as a
-  plain sentence: "Ramp as a competitor", "your #1 priority is Fundraising".
-- The marker is machine-read and stripped before display. Do not mention it,
-  do not describe it, do not ask permission in your prose — the interface asks
-  for you. If nothing qualifies, simply end your reply normally.
+- No marker means no sentence. Never claim to have saved something you did not
+  emit a marker for, and never emit a marker for something you did not say.
+- "label" is a plain sentence naming what changed: "Ramp as a competitor",
+  "your #1 priority is Fundraising".
+- The marker itself is machine-read and stripped before display. Do not mention
+  it, do not describe it, do not paste it into your prose.
 
 ## STYLE
 Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be honest that you don't have their actual financials. When it helps, distinguish (a) what most VCs would say, (b) the harder/smaller path, and (c) what you actually think they should do. Don't sit on the fence — pick a side, and be willing to be wrong.`;
 
     const encoder = new TextEncoder();
+
+    /*
+     * The advisor states the update in its reply as it writes it, so the write
+     * has to actually happen — and if it does not, the reader has already been
+     * told it did. The marker is parsed off the finished message (a partial one
+     * mid-stream is not valid JSON), applied, and the outcome is pushed down
+     * the same stream as a final `memory` event. The client stays silent on
+     * success — the prose already said it — and corrects the record on failure.
+     */
+    const MEMORY_MARKER = /\[\[VANTAGE_MEMORY\]\]\s*(\{[\s\S]*?\})\s*$/;
+
+    async function applyFromReply(reply: string) {
+      const match = reply.match(MEMORY_MARKER);
+      if (!match) return null;
+
+      let field: unknown;
+      let value: unknown;
+      let label: unknown;
+      try {
+        ({ field, value, label } = JSON.parse(match[1]) as Record<string, unknown>);
+      } catch {
+        return null; // malformed marker — nothing was promised we can honour
+      }
+      if (!isMemoryField(field) || typeof value !== "string" || !value.trim()) return null;
+
+      const result = await applyMemory(user!.id, field, value);
+      return {
+        ok: result.ok,
+        field,
+        value: result.saved ?? value,
+        label: typeof label === "string" ? label : value,
+        error: result.error,
+      };
+    }
 
     const readable = new ReadableStream({
       async start(controller) {
@@ -224,7 +298,29 @@ Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be
             );
           });
 
-          await messageStream.finalMessage();
+          const final = await messageStream.finalMessage();
+
+          const replyText = final.content
+            .map((block) => (block.type === "text" ? block.text : ""))
+            .join("");
+
+          try {
+            const memory = await applyFromReply(replyText);
+            if (memory) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ memory })}\n\n`)
+              );
+            }
+          } catch (err) {
+            // A failed write must never take the answer down with it.
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error("[POST /api/advisor/chat] Memory write failed:", msg);
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ memory: { ok: false, error: "Could not save that to your profile." } })}\n\n`
+              )
+            );
+          }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
