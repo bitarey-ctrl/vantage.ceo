@@ -10,6 +10,11 @@ import { useCallback, useEffect, useState } from "react";
  * signing in to one signs you in to both), and sent as X-Admin-Password.
  *
  * Tables and counters only, no charts. Dense on purpose.
+ *
+ * The users table carries only what you scan for — who, what they build, what
+ * they care about, and whether they are still here. Everything else lives one
+ * click deep, in the row detail, so the default view stays readable at a
+ * glance instead of scrolling sideways.
  */
 
 interface UserRow {
@@ -28,6 +33,16 @@ interface UserRow {
   analyses_30d: number;
   decisions_total: number;
   advisor_msgs_total: number;
+  // Drill-down only — not shown in the main table.
+  top_priority_other: string | null;
+  competitors: string[];
+  strategic_priorities: string[];
+  sector: string | null;
+  geography_detail: string | null;
+  revenue_model: string | null;
+  monthly_revenue_range: string | null;
+  avoided_decision: string | null;
+  additional_context: string | null;
 }
 
 interface Analytics {
@@ -109,6 +124,123 @@ const td: React.CSSProperties = {
   verticalAlign: "top",
 };
 
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + "…";
+}
+
+/** One label/value line in the detail panel. Blank values stay visibly blank. */
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  const empty = value === null || value === undefined || value === "" ||
+    (Array.isArray(value) && value.length === 0);
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 12, padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ fontSize: 10, letterSpacing: 0.8, textTransform: "uppercase", color: C.dim, paddingTop: 2 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 12.5, color: empty ? C.dim : C.text, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {empty ? "—" : value}
+      </div>
+    </div>
+  );
+}
+
+function DetailGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h3 style={{ fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase", color: C.accent, margin: "0 0 4px" }}>
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Row detail. Everything known about one account, including the advisor's
+ * free-text notes, which is often the most useful thing on the screen.
+ */
+function UserDetail({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const priority = user.top_priority
+    ? user.top_priority === "Other" && user.top_priority_other
+      ? `Other — ${user.top_priority_other}`
+      : user.top_priority
+    : null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 100, overflow: "auto", padding: "40px 20px" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Detail for ${user.email ?? user.profile_id}`}
+        style={{ maxWidth: 720, margin: "0 auto", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 26px 28px", boxShadow: "0 30px 100px #000" }}
+      >
+        <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 500, color: C.text }}>
+              {user.company_name ?? "No company name"}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>{user.email ?? "—"}</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", color: C.muted, border: `1px solid ${C.line}`, borderRadius: 6, padding: "5px 11px", fontSize: 11, cursor: "pointer", flexShrink: 0 }}
+          >
+            Close
+          </button>
+        </header>
+
+        <DetailGroup title="Activity">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 8, marginTop: 8 }}>
+            <Metric label="Refreshes 30d" value={user.refreshes_30d} />
+            <Metric label="Analyses 30d" value={user.analyses_30d} />
+            <Metric label="Decisions" value={user.decisions_total} sub="all-time" />
+            <Metric label="Advisor msgs" value={user.advisor_msgs_total} sub="user turns" />
+          </div>
+        </DetailGroup>
+
+        <DetailGroup title="Dates">
+          <Field label="Signed up" value={day(user.signed_up)} />
+          <Field label="Last login" value={user.last_login ? `${day(user.last_login)} (${ago(user.last_login)} ago)` : null} />
+          <Field label="Last active" value={user.last_active ? `${day(user.last_active)} (${ago(user.last_active)} ago)` : null} />
+          <Field label="Onboarding" value={user.onboarding_completed ? "complete" : "incomplete"} />
+        </DetailGroup>
+
+        <DetailGroup title="Onboarding answers">
+          <Field label="Product" value={user.product_description} />
+          <Field label="Target customer" value={user.target_customer} />
+          <Field label="#1 priority" value={priority} />
+          <Field label="ARR band" value={user.arr_band} />
+          <Field label="Competitors" value={user.competitors.join(", ")} />
+          <Field label="Strategic priorities" value={user.strategic_priorities.join(", ")} />
+          <Field label="Sector" value={user.sector} />
+          <Field label="Geography" value={user.geography_detail} />
+          <Field label="Revenue model" value={user.revenue_model} />
+          <Field label="Monthly revenue" value={user.monthly_revenue_range} />
+          <Field label="Avoided decision" value={user.avoided_decision} />
+        </DetailGroup>
+
+        <DetailGroup title="Additional context">
+          <Field label="Notes" value={user.additional_context} />
+        </DetailGroup>
+
+        <div style={{ fontSize: 10, color: C.dim, marginTop: 16, fontFamily: "ui-monospace, monospace" }}>
+          {user.profile_id}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAnalyticsPage() {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -117,6 +249,7 @@ export default function AdminAnalyticsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<SortKey>("last_active");
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async (pw: string) => {
     setLoading(true);
@@ -223,8 +356,13 @@ export default function AdminAnalyticsPage() {
           ))}
         </div>
 
+        <p style={{ fontSize: 11, color: C.dim, margin: "0 0 8px" }}>
+          Click a row for everything else — full onboarding answers, dates,
+          activity counts and advisor notes.
+        </p>
+
         <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: C.panel }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
             <thead>
               <tr>
                 <th style={th}>Email</th>
@@ -232,24 +370,35 @@ export default function AdminAnalyticsPage() {
                 <th style={th}>Product</th>
                 <th style={th}>Priority</th>
                 <th style={th}>ARR</th>
-                <th style={th}>Signed up</th>
-                <th style={th}>Last login</th>
                 <th style={th}>Last active</th>
                 <th style={th}>Onb.</th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.profile_id}>
+                <tr
+                  key={u.profile_id}
+                  onClick={() => setOpenId(u.profile_id)}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenId(u.profile_id);
+                    }
+                  }}
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#ffffff06")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
                   <td style={td}>{u.email ?? "—"}</td>
                   <td style={td}>{u.company_name ?? <span style={{ color: C.dim }}>—</span>}</td>
-                  <td style={{ ...td, maxWidth: 280, color: C.muted }}>
-                    {u.product_description ?? <span style={{ color: C.dim }}>—</span>}
+                  <td style={{ ...td, maxWidth: 300, color: C.muted }} title={u.product_description ?? undefined}>
+                    {u.product_description
+                      ? truncate(u.product_description, 64)
+                      : <span style={{ color: C.dim }}>—</span>}
                   </td>
                   <td style={td}>{u.top_priority ?? <span style={{ color: C.dim }}>—</span>}</td>
                   <td style={td}>{u.arr_band ?? <span style={{ color: C.dim }}>—</span>}</td>
-                  <td style={{ ...td, color: C.muted }}>{day(u.signed_up)}</td>
-                  <td style={{ ...td, color: C.muted }}>{ago(u.last_login)}</td>
                   <td style={{ ...td, color: u.last_active ? C.text : C.dim }}>{ago(u.last_active)}</td>
                   <td style={{ ...td, color: u.onboarding_completed ? "#7cc47c" : C.dim }}>
                     {u.onboarding_completed ? "yes" : "no"}
@@ -265,33 +414,8 @@ export default function AdminAnalyticsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
           <Metric label="Signals refreshed" value={data.activity.signals_refreshed} />
           <Metric label="Decisions created" value={data.activity.decisions_created} />
-          <Metric label="Advisor messages" value={data.activity.advisor_messages} sub="user turns, all-time" />
+          <Metric label="Advisor messages" value={data.activity.advisor_messages} sub="user turns" />
           <Metric label="Analyse impact" value={data.activity.analyse_clicks} />
-        </div>
-
-        <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: C.panel }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-            <thead>
-              <tr>
-                <th style={th}>User</th>
-                <th style={th}>Refreshes 30d</th>
-                <th style={th}>Analyses 30d</th>
-                <th style={th}>Decisions</th>
-                <th style={th}>Advisor msgs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.profile_id}>
-                  <td style={td}>{u.company_name ?? u.email ?? u.profile_id.slice(0, 8)}</td>
-                  <td style={td}>{u.refreshes_30d}</td>
-                  <td style={td}>{u.analyses_30d}</td>
-                  <td style={td}>{u.decisions_total}</td>
-                  <td style={td}>{u.advisor_msgs_total}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
 
         <h3 style={{ fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", color: C.dim, margin: "18px 0 8px" }}>
@@ -355,6 +479,11 @@ export default function AdminAnalyticsPage() {
           </table>
         </div>
       </Section>
+
+      {openId && (() => {
+        const u = users.find((x) => x.profile_id === openId);
+        return u ? <UserDetail user={u} onClose={() => setOpenId(null)} /> : null;
+      })()}
     </div>
   );
 }

@@ -112,6 +112,18 @@ const ACCOUNT_FIELDS: { key: keyof ProfileData; label: string; type?: string }[]
   { key: 'timezone', label: 'Timezone' },
 ];
 
+/*
+ * competitors is a jsonb column, and the advisor writes it as [{name}]. This
+ * form used to save it as the raw comma-separated string the user typed, so
+ * the column held two different shapes depending on who wrote last — and any
+ * reader expecting the array shape saw a string as empty. Serialise on the
+ * way out so there is only ever one shape in the column.
+ */
+const CONTEXT_SERIALISERS: Partial<Record<keyof ContextData, (raw: string) => unknown>> = {
+  competitors: (raw) =>
+    raw.split(",").map((n) => n.trim()).filter(Boolean).map((name) => ({ name })),
+};
+
 // Context columns are jsonb — arrays of strings or of {name}-ish objects.
 function toDisplayString(val: unknown): string {
   if (!val) return '';
@@ -180,7 +192,15 @@ export default function ProfilePage() {
     setSaveError('');
     const body =
       tab === 'context'
-        ? { context: Object.fromEntries(CONTEXT_FIELDS.map((f) => [f.dbKey, draft[f.dbKey] ?? ''])) }
+        ? {
+            context: Object.fromEntries(
+              CONTEXT_FIELDS.map((f) => {
+                const raw = draft[f.dbKey] ?? '';
+                const serialise = CONTEXT_SERIALISERS[f.dbKey];
+                return [f.dbKey, serialise ? serialise(raw) : raw];
+              })
+            ),
+          }
         : { profile: Object.fromEntries(ACCOUNT_FIELDS.map((f) => [f.key, draft[f.key] ?? ''])) };
     try {
       const res = await fetch('/api/profile', {

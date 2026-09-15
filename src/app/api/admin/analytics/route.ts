@@ -14,7 +14,9 @@ import { createAdminClient } from "@/lib/supabase/server";
  *   - advisor messages: counted from advisor_sessions.messages rather than a
  *     new event, so the numbers are correct retroactively instead of starting
  *     at zero today.
- *   - last active: max(feature_events.created_at) per profile.
+ *   - last active: max(created_at) over feature_events rows whose event is a
+ *     REAL USER ACTION (see USER_ACTION_EVENTS), plus advisor_sessions.
+ *     updated_at. Explicitly NOT every feature_events row — see below.
  *
  * ceo_context is selected with `*` deliberately. Migration 031 adds
  * product_description / target_customer / top_priority and may not be applied
@@ -29,6 +31,49 @@ interface AdvisorSessionRow {
   messages: unknown;
   updated_at: string;
 }
+
+/*
+ * WHAT COUNTS AS "ACTIVE".
+ *
+ * feature_events is not a log of user actions. It is a log of things that
+ * happened, and some of them happen TO a user rather than because of one:
+ *
+ *   profile_ingested     written by the daily ingest cron for every onboarded
+ *                        profile (lib/ingest-queue/order.ts). Nobody clicked.
+ *   profile_row_repaired  a self-heal, written by the system.
+ *   signal_refreshed      written by the refresh pipeline. On the button path a
+ *                        user did click — but signal_refresh_attempt already
+ *                        records that click, and the same route fans out over
+ *                        EVERY profile when called with the ingest secret, so
+ *                        this event cannot distinguish the two.
+ *
+ * Counting those as activity means a CEO who signed up and never came back
+ * shows as "active 2h ago" every single day, forever, because the cron keeps
+ * writing rows under their id. That is the same failure as treating an open
+ * browser tab as presence, and it is worse, because it never stops.
+ *
+ * So this is an ALLOW-LIST, not a deny-list: only events a human deliberately
+ * caused count. A new system event added later is excluded by default, which
+ * is the safe direction to be wrong in. A new USER event must be added here —
+ * that is the trade, and it is the right way round for a "who is actually
+ * using this" metric.
+ */
+const USER_ACTION_EVENTS = new Set([
+  "signal_refresh_attempt",  // the Refresh Signals button
+  "signal_analysed",         // analyse-impact click
+  "decision_logged",
+  "decision_create_rejected", // they tried; the attempt is real engagement
+  "decision_create_failed",
+  "strategy_generated",
+  "strategy_accepted",
+  "strategy_rejected",
+  "assessment_generated",
+  "report_generated",
+  "blind_spot_scan",
+  "briefing_viewed",
+  "digital_twin_viewed",
+  "advisor_memory_saved",
+]);
 
 const DAY_MS = 86_400_000;
 
@@ -56,7 +101,7 @@ export async function GET(request: NextRequest) {
     const since30 = new Date(now - 30 * DAY_MS).toISOString();
     const since7 = new Date(now - 7 * DAY_MS).toISOString();
 
-    const [profilesRes, contextRes, eventsRes, sessionsRes, decisionsRes, signalsRes, usersRes] =
+    const [profilesRes, contextRes, eventsRes, actionsRes, sessionsRes, decisionsRes, signalsRes, usersRes] =
       await Promise.all([
         admin.from("profiles").select("id, email, company_name, created_at, onboarding_completed"),
         admin.from("ceo_context").select("*"),
@@ -64,6 +109,18 @@ export async function GET(request: NextRequest) {
           .from("feature_events")
           .select("profile_id, event, created_at")
           .gte("created_at", since30),
+        /*
+         * Last-active is NOT bounded to 30 days. The 30-day window above is
+         * right for the activity tallies, but reusing it here would report a
+         * CEO whose last real action was 40 days ago as never-active at all —
+         * and dormant accounts are exactly the ones this column exists to
+         * find. Allow-listed events only, so the window change cannot let a
+         * cron row back in.
+         */
+        admin
+          .from("feature_events")
+          .select("profile_id, created_at")
+          .in("event", [...USER_ACTION_EVENTS]),
         admin.from("advisor_sessions").select("profile_id, messages, updated_at"),
         admin.from("decisions").select("profile_id, created_at"),
         admin.from("signals").select("created_at").gte("created_at", since30),
@@ -104,21 +161,29 @@ export async function GET(request: NextRequest) {
     // ── per-profile event tallies ────────────────────────────────────────────
     const tally = new Map<string, Record<string, number>>();
     const lastActive = new Map<string, string>();
-    const bump = (pid: string, key: string, at: string) => {
+    const bump = (pid: string, key: string) => {
       const row = tally.get(pid) ?? {};
       row[key] = (row[key] ?? 0) + 1;
       tally.set(pid, row);
-      const prev = lastActive.get(pid);
-      if (!prev || at > prev) lastActive.set(pid, at);
     };
 
     for (const e of events) {
       if (!e.profile_id) continue;
-      bump(String(e.profile_id), String(e.event), String(e.created_at));
+      bump(String(e.profile_id), String(e.event));
+    }
+
+    // Last-active, all-time, from deliberate actions only.
+    for (const a of (actionsRes.data ?? []) as { profile_id: string | null; created_at: string }[]) {
+      if (!a.profile_id) continue;
+      const pid = String(a.profile_id);
+      const prev = lastActive.get(pid);
+      if (!prev || a.created_at > prev) lastActive.set(pid, a.created_at);
     }
 
     // Advisor messages: user turns only, so a long answer is not counted as
-    // engagement. `updated_at` also counts toward last-active.
+    // engagement. `updated_at` also counts toward last-active, and legitimately
+    // so — advisor_sessions is only ever written when the user sends a message
+    // or renames a thread. Nothing writes it on page load or on a timer.
     const advisorMsgs = new Map<string, number>();
     const advisorMsgsByDay = new Map<string, number>();
     for (const s of sessions) {
@@ -134,11 +199,66 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    /*
+     * COUNTING A REFRESH ONCE.
+     *
+     * One manual refresh can write TWO rows: signal_refresh_attempt (always,
+     * from the rate limiter) and signal_refreshed (only when something
+     * actually surfaced). Adding them together double-counts every refresh
+     * since the rate limiter shipped. Counting attempts alone would instead
+     * discard all history, because that event only exists from Sept 2026 —
+     * every refresh before then is a bare signal_refreshed.
+     *
+     * So: every attempt, plus any signal_refreshed that has no attempt beside
+     * it. Verified against the table — exactly one row pairs, the rest are
+     * pre-rate-limiter history.
+     */
+    const PAIR_WINDOW_MS = 120_000;
+    const attemptTimes = new Map<string, number[]>();
+    for (const e of events) {
+      if (e.event !== "signal_refresh_attempt" || !e.profile_id) continue;
+      const pid = String(e.profile_id);
+      const at = new Date(String(e.created_at)).getTime();
+      attemptTimes.set(pid, [...(attemptTimes.get(pid) ?? []), at]);
+    }
+    const refreshRuns = events.filter((e) => {
+      if (e.event === "signal_refresh_attempt") return true;
+      if (e.event !== "signal_refreshed") return false;
+      const t = new Date(String(e.created_at)).getTime();
+      return !(attemptTimes.get(String(e.profile_id)) ?? []).some(
+        (a) => Math.abs(a - t) < PAIR_WINDOW_MS
+      );
+    });
+    const refreshesByProfile = new Map<string, number>();
+    for (const e of refreshRuns) {
+      const pid = String(e.profile_id);
+      refreshesByProfile.set(pid, (refreshesByProfile.get(pid) ?? 0) + 1);
+    }
+
     const decisionsByProfile = new Map<string, number>();
     for (const d of decisions) {
       const pid = String(d.profile_id);
       decisionsByProfile.set(pid, (decisionsByProfile.get(pid) ?? 0) + 1);
     }
+
+    /* competitors and strategic_priorities are jsonb that has been written in
+     * two shapes over time — an array of {name}/{title} objects, and a plain
+     * comma-separated string from the Profile form. Read both. */
+    const asList = (raw: unknown): string[] => {
+      if (Array.isArray(raw)) {
+        return raw
+          .map((i) =>
+            typeof i === "string"
+              ? i
+              : String((i as { name?: string; title?: string })?.name ??
+                       (i as { title?: string })?.title ?? "")
+          )
+          .map((v) => v.trim())
+          .filter(Boolean);
+      }
+      if (typeof raw === "string") return raw.split(",").map((v) => v.trim()).filter(Boolean);
+      return [];
+    };
 
     // ── USERS ────────────────────────────────────────────────────────────────
     const users = profiles.map((p) => {
@@ -158,10 +278,20 @@ export async function GET(request: NextRequest) {
         signed_up: p.created_at as string,
         last_login: auth?.lastSignIn ?? null,
         last_active: lastActive.get(pid) ?? null,
-        refreshes_30d: (t.signal_refresh_attempt ?? 0) + (t.signal_refreshed ?? 0),
+        refreshes_30d: refreshesByProfile.get(pid) ?? 0,
         analyses_30d: t.signal_analysed ?? 0,
         decisions_total: decisionsByProfile.get(pid) ?? 0,
         advisor_msgs_total: advisorMsgs.get(pid) ?? 0,
+        // ── drill-down only: the rest of the onboarding picture ──
+        top_priority_other: (ctx.top_priority_other as string | null) ?? null,
+        competitors: asList(ctx.competitors),
+        strategic_priorities: asList(ctx.strategic_priorities),
+        sector: (ctx.sector as string | null) ?? null,
+        geography_detail: (ctx.geography_detail as string | null) ?? null,
+        revenue_model: (ctx.revenue_model as string | null) ?? null,
+        monthly_revenue_range: (ctx.monthly_revenue_range as string | null) ?? null,
+        avoided_decision: (ctx.avoided_decision as string | null) ?? null,
+        additional_context: (ctx.additional_context as string | null) ?? null,
       };
     });
 
@@ -176,16 +306,18 @@ export async function GET(request: NextRequest) {
     // ── ACTIVITY (30d) ───────────────────────────────────────────────────────
     const countEvent = (key: string) => events.filter((e) => e.event === key).length;
     const activity = {
-      signals_refreshed: countEvent("signal_refresh_attempt") + countEvent("signal_refreshed"),
+      signals_refreshed: refreshRuns.length,
       decisions_created: countEvent("decision_logged"),
       analyse_clicks: countEvent("signal_analysed"),
       advisor_messages: [...advisorMsgsByDay.values()].reduce((a, b) => a + b, 0),
     };
 
-    // Leaderboard: this week only, weighted equally across the four actions.
+    // Leaderboard: this week only, deliberate actions only — otherwise the
+    // daily cron marker alone would put a dormant account on the board.
     const weekTally = new Map<string, number>();
     for (const e of events) {
       if (!e.profile_id || (e.created_at as string) < since7) continue;
+      if (!USER_ACTION_EVENTS.has(String(e.event))) continue;
       weekTally.set(String(e.profile_id), (weekTally.get(String(e.profile_id)) ?? 0) + 1);
     }
     const leaderboard = [...weekTally.entries()]
@@ -233,7 +365,11 @@ export async function GET(request: NextRequest) {
       }
       return m;
     };
-    const gateRuns = byDay((e) => e.event === "signal_refresh_attempt" || e.event === "signal_refreshed");
+    // Gate runs: one Claude call per refresh RUN, so the same reconciliation.
+    const refreshRunKeys = new Set(refreshRuns.map((e) => `${e.profile_id}|${e.created_at}`));
+    const gateRuns = byDay(
+      (e) => refreshRunKeys.has(`${(e as { profile_id?: string }).profile_id}|${(e as { created_at?: string }).created_at}`)
+    );
     const analyses = byDay((e) => e.event === "signal_analysed");
 
     const signalsByDay = new Map<string, number>();

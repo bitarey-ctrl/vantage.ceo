@@ -1498,3 +1498,103 @@ and the live database (account deleted afterwards; no residue).
 The Profile page still saves `competitors` as a plain string into a jsonb column,
 which is why the fix above was needed. Worth normalising that write too, but it
 is the Profile save path, not this task — say the word.
+
+---
+## 2026-09-15 — Profile writes competitors as an array; analytics last-active fixed and table simplified
+**Files changed:** src/app/(dashboard)/profile/page.tsx, src/app/api/admin/analytics/route.ts, src/app/admin/analytics/page.tsx
+**Status:** Done. No migration. Verified against the live database.
+
+### 1. Profile now writes competitors in the shape everything else reads
+The form saved the raw comma-separated string the user typed straight into a
+jsonb column, so `competitors` held two different shapes depending on who wrote
+last. A `CONTEXT_SERIALISERS` map now serialises on the way out, so the column
+only ever holds `[{name}]` — the same shape the advisor writes.
+
+`toDisplayString` already read both shapes, so the field round-trips unchanged.
+Verified: typing "Metronome, Orb, Togai" now stores
+`[{"name":"Metronome"},{"name":"Orb"},{"name":"Togai"}]`.
+
+**strategic_priorities has the identical bug** and is deliberately NOT fixed
+here — it was not in scope, and the advisor reads it as `[{title}]`, so it needs
+a different serialiser and its own check. Worth doing next.
+
+### 2. "Last active" was structurally wrong. Now it is not.
+**Asked to confirm it tracks real actions. It did not, and here is why.**
+
+`feature_events` is not a log of user actions — it is a log of things that
+happened, and some happen TO a user rather than because of one:
+
+  - `profile_ingested` — written by the DAILY INGEST CRON for every onboarded
+    profile (lib/ingest-queue/order.ts:34, called from cron/ingest:119).
+  - `profile_row_repaired` — a system self-heal.
+  - `signal_refreshed` — written by the refresh pipeline, which fans out over
+    EVERY profile when called with the ingest secret.
+
+Last-active was `max(created_at)` over ALL of those. So a CEO who signed up and
+never came back would read as "active 2h ago" every morning, forever, because
+the cron keeps writing rows under their id. Same failure as counting an open
+browser tab as presence, and worse, because it never stops.
+
+It had NOT yet produced a wrong number — checked every user, and each one
+happened to have a real action after their latest system event, because the
+cron markers cluster around the session that created them. Correct by luck.
+
+Fixed with an ALLOW-LIST (`USER_ACTION_EVENTS`), not a deny-list, so a system
+event added later is excluded by default. A new USER event has to be added
+there — the right way round for a "who is actually using this" metric.
+
+`advisor_sessions.updated_at` stays a last-active source and is legitimate:
+both writers are user actions (sending a message, renaming a thread). Nothing
+writes it on page load or on a timer — checked.
+
+**Also fixed while in there, both the same class of bug:**
+- Last-active was bounded to the 30-day events window, so a user whose last
+  real action was 40 days ago read as never-active — and dormant accounts are
+  exactly what the column is for. It is now all-time, allow-listed events only.
+  bit.rey7@gmail.com went from blank to 2026-07-19.
+- The "most active this week" leaderboard counted system events too, so the
+  cron alone could put a dormant account on the board.
+- One manual refresh writes up to TWO rows (`signal_refresh_attempt` from the
+  rate limiter, plus `signal_refreshed` if anything surfaced), and the counts
+  added both — double-counting every refresh since the rate limiter shipped.
+  Counting attempts alone would discard all pre-Sept history. Now: every
+  attempt, plus any `signal_refreshed` with no attempt within 120s. Verified
+  against the table — exactly one row pairs, the rest are legacy.
+
+### 3. Users table simplified, with a drill-down
+Main table is now Email · Company · Product (truncated to 64 chars, full text
+on hover) · Priority · ARR · Last active · Onb. Signed-up and last-login moved
+into the detail.
+
+Clicking a row (or Enter/Space on it) opens a modal: activity counters, dates,
+every onboarding answer including competitors, strategic priorities, sector,
+geography, revenue model, monthly revenue and avoided decision, plus the
+advisor's `additional_context` notes. Esc or backdrop closes it.
+
+**Removed the per-user activity table** from the Activity section — it showed
+exactly the four counters the drill-down now shows, for every user at once.
+The four aggregate metrics and the leaderboard stay.
+
+### Verified against real data
+- API last-active matched a SQL ground-truth query (allow-listed events ∪
+  advisor_sessions) for all 12 accounts, exactly.
+- Direct proof the filter works: throwaway profile, inserted
+  `profile_ingested` + `signal_refreshed` + `profile_row_repaired` → last_active
+  stayed null; inserted one `decision_logged` → it populated. Account deleted.
+- Drill-down payload checked against a real account (Northline Metrics): all
+  fields populated, competitors correctly read out of the legacy string shape.
+- Page/API contract diffed field-by-field: no field the page expects is missing,
+  none sent is ignored.
+
+**NOT visually verified.** The Chrome extension is not connected in this
+session, so the table and modal were checked by build, type-check and data
+contract, not by looking at them. Worth a glance.
+
+### Noted while building
+`/api/signals/refresh` fans out over every profile and calls `logEvent` per
+profile when called with `X-VANTAGE-SECRET`. It is not on a schedule
+(vercel.json runs only cron/ingest and cron/brief, neither of which logs
+events), so nothing is polluted today — but anything that starts calling it
+with the secret would write a `signal_refreshed` row for every user at once.
+The analytics allow-list now ignores that event, so the blast radius is
+contained. The route itself is on the do-not-touch list, so it was left alone.
