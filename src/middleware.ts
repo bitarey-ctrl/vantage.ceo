@@ -47,8 +47,14 @@ export async function middleware(request: NextRequest) {
     "/reset-password",
     "/request-access",
   ];
+  // Exact marketing pages only. Similar prefixes and private workspace routes
+  // must still pass the existing authentication check.
+  const websiteRoutes = new Set([
+    "/", "/product", "/use-cases", "/pilot", "/about", "/trust", "/contact", "/book",
+  ]);
+  const websitePath = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
   const isPublicRoute =
-    pathname === "/" || publicRoutes.some((r) => pathname.startsWith(r));
+    websiteRoutes.has(websitePath) || publicRoutes.some((r) => pathname.startsWith(r));
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

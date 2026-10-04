@@ -1,36 +1,27 @@
-import type { Metadata } from "next";
-import { Cormorant_Garamond } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter_Tight } from "next/font/google";
+import { MarketingShell } from "@/components/marketing/MarketingShell";
+import "./website.css";
 
-const cormorant = Cormorant_Garamond({
+const display = Inter_Tight({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-display",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "VANTAGE — Command the signal. Eliminate the noise.",
+  metadataBase: new URL("https://www.vantage.ceo"),
+  title: { default: "VANTAGE — Strategic intelligence for operating CEOs", template: "%s | VANTAGE" },
   description:
-    "Strategic intelligence for operating CEOs. Your daily briefing, consequence map, and strategic advisor — in one place.",
+    "Connect market and competitor signals to your business. Weigh your options and keep the reasoning behind your next decision. Explore a free 14-day founder-led pilot.",
 };
 
-/*
- * Marketing layout — deliberately minimal.
- *
- * The landing page (Landing) is fully self-contained: it brings
- * its own background, scroll behaviour, and chrome via
- * vantage-landing.css, scoped under `.vlp`. So this layout does NOT wrap
- * children in SmoothScroll
- * (Lenis) or LoadingScreen — those belong to the OLD full marketing site and
- * would fight the landing's own scroll + intro. If/when the old marketing
- * stack is restored as the front door, bring those wrappers back with it.
- *
- * The Cormorant display font var is kept for the old marketing components,
- * which are still in the repo and may be re-mounted on a /product route.
- */
+export const viewport: Viewport = { themeColor: "#fbfbfb" };
+
+// Public-site typography and colors are scoped separately from the workspace.
 export default function MarketingLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <div className={`dark ${cormorant.variable}`}>{children}</div>;
+  return <div className={display.variable}><MarketingShell>{children}</MarketingShell></div>;
 }

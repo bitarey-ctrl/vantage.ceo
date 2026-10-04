@@ -24,6 +24,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.vantage.ceo"),
   title: "VANTAGE — Strategic Intelligence Platform",
   description:
     "Strategic second brain for founders and CEOs. Consequence-mapped executive intelligence.",
@@ -61,8 +62,7 @@ export default function RootLayout({
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning={true}
     >
-      {/* No pre-paint theme script: VANTAGE is dark-only, and the palette
-          lives on :root, so there is no class to set and nothing to flash. */}
+      {/* The workspace uses root tokens; the public site scopes its own palette. */}
       <body className="min-h-full" suppressHydrationWarning={true}>
         {children}
       </body>

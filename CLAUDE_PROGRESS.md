@@ -1598,3 +1598,15 @@ events), so nothing is polluted today — but anything that starts calling it
 with the secret would write a `signal_refreshed` row for every user at once.
 The analytics allow-list now ignores that event, so the blast radius is
 contained. The route itself is on the do-not-touch list, so it was left alone.
+
+
+---
+## 2026-10-04 — Public website release and headline color reveal
+**Files changed:** src/components/marketing/HeadlineReveal.tsx (new), src/components/marketing/MarketingShell.tsx, src/components/marketing/Landing.tsx, src/components/marketing/ProductDemo.tsx, src/components/marketing/MeetingBooking.tsx, src/app/(marketing)/layout.tsx, src/app/(marketing)/website.css, src/app/(marketing)/[page]/page.tsx, src/app/layout.tsx, src/middleware.ts, CLAUDE_PROGRESS.md.
+**Status:** Website release prepared and locally verified; production publication follows this commit.
+
+**What was done:** Replaced the old public landing with the reviewed red, black and white design, day/night modes, alternating dot/grid fields, a compact interactive fictional workspace and Advisor phone. Added product, use-cases, pilot, about, trust, contact and book pages. Public routing uses an explicitly authorized exact allowlist; dashboard/account authentication remains protected. Integrated the existing public 30-minute Calendly event at https://calendly.com/bita-vantage/30min, including the founder introduction, intake guidance and Eastern-time availability information. No booking was created during validation.
+
+Removed the pointer smoke and its comparison UI at Bita's request. Large website h1/h2 headings now reveal grey → red → black in day mode and grey → red → white at night. Hero headings play on entry; section headings follow normal scrolling. The original story effect is retained. GSAP SplitText uses the already installed dependency, keeps accessible full-text labels and reverts cleanly when motion is paused or reduced. Product preview headings remain unchanged. No scroll hijacking, new package, migrations or external assets.
+
+**Verification:** Local TypeScript and targeted lint passed. The exact website-only production build passed with 69 pages after an authorized font-download retry; only the existing middleware-convention warning remains. This release was built separately from the dirty working tree, preserving unrelated product fixes and private operational records. All 39 public-route regression checks passed, confirming exact allowlisting and private-route protection. Browser checks cover the color progression, day/night change, pause/restart, supporting-page navigation, zero smoke/comparison elements, intact demo typography, booking entry and no horizontal overflow at actual desktop width. Reduced-motion behavior is handled by media-query defaults; system preferences were not changed. Screenshot-file export remains unavailable under browser policy; the local and production pages are visual review artifacts.
