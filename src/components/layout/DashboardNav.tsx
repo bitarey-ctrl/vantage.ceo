@@ -128,6 +128,9 @@ export function DashboardNav({ companyName, open, onClose }: DashboardNavProps) 
 
       <nav className="vx-account-nav" aria-label="Account">
         {BOTTOM_ITEMS.map(renderItem)}
+        <a href="/test" onClick={onClose} title="Try new design" aria-label="Try new design">
+          <span className="vx-nav-text">Try new design ↗</span>
+        </a>
         <button type="button" onClick={handleSignOut} title="Sign out" aria-label="Sign out">
           <LogOut size={17} />
           <span className="vx-nav-text">Sign out</span>
