@@ -1626,3 +1626,11 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **What was done:** Founder explicitly requested the updated design with Signals visible and allowed a simpler sample if useful for testing. Restored the primary menu to Today / Signals / My decisions plus Ask Advisor, matching the Signals-visible sample variant. Signals list/detail now mark Signals active. Existing working backend and original app preserved; no additional pages, data migration or engine change. This is a direct navigation correction, not a new architecture choice.
 **Verification:** `node --check`, `npx tsc --noEmit` and `npm run build -- --webpack` clean. The prior staged/production account-isolation and functional checks apply to unchanged backend code. Publication and final visual confirmation recorded in the root release record.
 **Status:** VERIFIED NAVIGATION CORRECTION; DEPLOYING TO /test.
+
+
+## 2026-10-25 — Refresh cached comparison navigation assets
+**New files:** None.
+**Files changed:** `src/app/test/route.ts`; `CLAUDE_PROGRESS.md`.
+**What was done:** Fresh canonical browser confirmed the new Signals menu and actual account signals, but retained an earlier client script that marked Today active. Incremented comparison CSS/JS asset versions to fetch the current navigation logic immediately. No backend or user-data change.
+**Verification:** `npx tsc --noEmit`, `npm run build -- --webpack` and scoped whitespace checks pass. Final deployed visual/active-state confirmation is recorded in the root release evidence.
+**Status:** VERIFIED CACHE REFRESH; DEPLOYING TO /test.
