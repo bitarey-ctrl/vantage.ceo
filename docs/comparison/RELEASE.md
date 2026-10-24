@@ -6,6 +6,7 @@ The founder authorized a working comparison at the main site, using existing acc
 
 - Add `/test` to the existing VANTAGE project. Same login, company context and backend records. A notice explains that writes appear in both designs.
 - Keep the current app, auth, middleware, tuned Advisor, ingestion and prompts unchanged. The sole current-app change is a plain link to “Try new design.”
+- Main menu: Today · Signals · My decisions, plus Ask Advisor. Signals stays visible in response to the founder's explicit clarification.
 - New design has its own standalone layout and workflow. Today → ask freely → develop an open decision → compare options → record a choice → review the outcome. Strategies retain their actual saved timelines and inaction tradeoffs.
 - No fictional runtime records or prepared advice. Honest empty/partial/error states. Chat uses the real existing Advisor stream, context/memory behavior and account history.
 - Existing login returns to the current app; select “Try new design” there. No protected auth file is changed to force a different destination.
