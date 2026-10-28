@@ -45,13 +45,14 @@ export async function GET() {
     const { supabase, user, profile, access } = await account();
     if (!user) return json({ error: 'Please sign in again.' }, 401);
     if (!profile) return json({ error: 'Your company profile could not be loaded. Open the current design to finish setup.' }, 409);
-    const [context, decisions, strategies, sessions, triages] = await Promise.all([
+    const [context, decisions, strategies, sessions, triages, analyses] = await Promise.all([
       supabase.from('ceo_context').select('*').eq('profile_id', user.id).maybeSingle<CeoContext>(),
       supabase.from('decisions').select('*').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(150),
       supabase.from('strategies').select('*').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('advisor_sessions').select('id,title,created_at,updated_at').eq('profile_id', user.id).order('updated_at', { ascending: false }).limit(50),
       // Never fall back to the global signal table when this account's links fail.
       supabase.from('signal_triages').select('signal:signals(id,title,content,source,url,published_at,urgency,category,what_happened,why_it_matters,what_to_consider,created_at)').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('consequences').select('id,signal_id,so_what,primary_impact,secondary_impact,tertiary_risk,action_recommendation,status,created_at').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
     ]);
     const signals = new Map<string, Signal>();
     for (const row of triages.data ?? []) {
@@ -59,10 +60,14 @@ export async function GET() {
       if (value?.id) signals.set(value.id, value);
     }
     const errors: Record<string, string> = {};
-    for (const [key, result] of Object.entries({ context, decisions, strategies, sessions, signals: triages })) {
+    for (const [key, result] of Object.entries({ context, decisions, strategies, sessions, signals: triages, analysis: analyses })) {
       if (result.error) errors[key] = `Could not load ${key}. Please try again.`;
     }
-    return json({ userId: user.id, profile, context: context.data, decisions: (decisions.data ?? []) as Decision[], strategies: (strategies.data ?? []) as Strategy[], sessions: sessions.data ?? [], signals: [...signals.values()], access, errors });
+    const analysis: Record<string, unknown> = {};
+    for (const row of analyses.data ?? []) {
+      if (row.signal_id && signals.has(row.signal_id) && !analysis[row.signal_id]) analysis[row.signal_id] = { consequenceId: row.id, soWhat: row.so_what || row.primary_impact, ifYouAct: row.secondary_impact, ifYouDont: row.tertiary_risk, immediateAction: row.action_recommendation, status: row.status, createdAt: row.created_at };
+    }
+    return json({ analysis, userId: user.id, profile, context: context.data, decisions: (decisions.data ?? []) as Decision[], strategies: (strategies.data ?? []) as Strategy[], sessions: sessions.data ?? [], signals: [...signals.values()], access, errors });
   } catch (error) {
     console.error('[comparison GET]', error instanceof Error ? error.message : 'Unknown error');
     return json({ error: 'Your workspace could not be loaded. Please try again.' }, 500);
