@@ -29,9 +29,23 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Redirect root to dashboard (middleware handles auth)
+  // The main app is /app (one maintained implementation; /test is an alias). Existing entry points and deep links
+  // land on the same records there. Temporary (307) so a rollback restores the previous pages immediately.
+  // Other existing pages (report, briefing, digital twin, blind spots, assessment, onboarding, admin) are unchanged.
   async redirects() {
-    return [];
+    const app = (go: string) => `/app?go=${go}`;
+    return [
+      { source: "/command", destination: "/app", permanent: false },
+      { source: "/signals", has: [{ type: "query", key: "focus", value: "(?<focus>[0-9a-fA-F-]{36})" }], destination: app("signals/:focus"), permanent: false },
+      { source: "/signals", destination: app("signals"), permanent: false },
+      { source: "/decisions", destination: app("decisions"), permanent: false },
+      { source: "/decisions/:id([0-9a-fA-F-]{36})", destination: app("decisions/:id"), permanent: false },
+      { source: "/strategies", destination: app("strategies"), permanent: false },
+      { source: "/strategies/:id([0-9a-fA-F-]{36})", destination: app("strategies/:id"), permanent: false },
+      { source: "/advisor", destination: app("advisor"), permanent: false },
+      { source: "/profile", destination: app("company"), permanent: false },
+      { source: "/settings", destination: app("settings"), permanent: false },
+    ];
   },
 };
 
