@@ -88,7 +88,7 @@ export async function GET() {
       supabase.from('advisor_sessions').select('id,title,created_at,updated_at').eq('profile_id', user.id).order('updated_at', { ascending: false }).limit(50),
       // Never fall back to the global signal table when this account's links fail.
       supabase.from('signal_triages').select('relevance_reason,signal:signals(id,title,content,source,url,published_at,urgency,category,what_happened,why_it_matters,what_to_consider,created_at)').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
-      supabase.from('consequences').select('id,signal_id,so_what,primary_impact,secondary_impact,tertiary_risk,action_recommendation,status,created_at').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('consequences').select('*').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('decision_workspaces').select('decision_id,version,support,parent_decision_id,provenance,updated_at').eq('profile_id', user.id).limit(300),
       supabase.from('advisor_context_links').select('session_id,context_kind,context_id,updated_at').eq('profile_id', user.id).limit(500),
       supabase.from('signal_preferences').select('signal_id,watching,watch_baseline,acknowledged_revision,dismissed,version,provenance,updated_at').eq('profile_id', user.id).limit(1000),
@@ -113,9 +113,23 @@ export async function GET() {
     const eventOf = new Map<string, string>();
     for (const c of clusters) for (const id of c.memberIds) eventOf.set(id, c.canonicalId);
     const analysis: Record<string, unknown> = {};
+    // An analysis is current only for the details and evidence it was made with. Older ones stay as history and are
+    // marked for reassessment instead of being silently reused.
+    const contextUpdated = Date.parse(String((context.data as { updated_at?: string } | null)?.updated_at ?? '')) || 0;
+    const historyCount = new Map<string, number>();
+    for (const row of analyses.data ?? []) if (row.signal_id) historyCount.set(row.signal_id, (historyCount.get(row.signal_id) ?? 0) + 1);
     for (const row of analyses.data ?? []) {
       if (!row.signal_id || !signals.has(row.signal_id)) continue;
-      const value = { consequenceId: row.id, soWhat: row.so_what || row.primary_impact, ifYouAct: row.secondary_impact, ifYouDont: row.tertiary_risk, immediateAction: row.action_recommendation, status: row.status, createdAt: row.created_at };
+      const stored = parseStoredConnection(storedReason.get(row.signal_id));
+      const madeAt = Date.parse(row.created_at) || 0;
+      const contextChanged = row.context_version ? row.context_version !== company.version : contextUpdated > madeAt + 1000;
+      const evidenceChanged = Boolean(stored?.checked && Date.parse(stored.assessedAt) > madeAt && row.evidence?.assessment !== stored.text);
+      const value = {
+        consequenceId: row.id, soWhat: row.so_what || row.primary_impact, ifYouAct: row.secondary_impact, ifYouDont: row.tertiary_risk, immediateAction: row.action_recommendation, status: row.status, createdAt: row.created_at,
+        contextVersion: row.context_version ?? null, calculation: row.calculation ?? null, evidence: row.evidence ?? null,
+        stale: contextChanged || evidenceChanged, staleReason: contextChanged ? 'Your company details changed after this analysis.' : evidenceChanged ? 'The evidence for this signal was reassessed after this analysis.' : null,
+        history: historyCount.get(row.signal_id) ?? 1,
+      };
       if (!analysis[row.signal_id]) analysis[row.signal_id] = value;
       // An analysis of any report of an event belongs to the event.
       const event = eventOf.get(row.signal_id);
@@ -124,21 +138,30 @@ export async function GET() {
     // Every signal states its connection to THIS company (or is marked monitor); connected ones come first.
     // The checked connection stored for this account wins while your details are unchanged; otherwise the keyword
     // match is shown and labelled "not yet checked" (the next refresh checks it again).
-    const judged = [...signals.values()].map((s) => {
+    // Rejected items are not shown. "Watch" needs a stated trigger. Anything never assessed is labelled as such.
+    let hiddenRejected = 0;
+    const judged = [...signals.values()].flatMap((s) => {
       const connection = connectionFor(s, company);
       const stored = parseStoredConnection(storedReason.get(s.id));
-      const view = stored && stored.contextVersion === company.version
-        ? { status: 'connected' as const, checked: stored.checked, score: connection.score + (stored.checked ? 50 : 0), text: stored.text, basis: stored.basis, matched: stored.matched }
-        : connection.status === 'connected'
-          ? (() => { const u = storedConnection(connection, null); return { status: 'connected' as const, checked: false, score: connection.score, text: u.text, basis: u.basis, matched: connection.matched }; })()
-          : { status: 'monitor' as const, checked: false, score: 0, text: connection.text, basis: connection.basis, matched: [] };
-      return { ...s, eventId: eventOf.get(s.id) ?? s.id, connection: view };
+      if (stored?.status === 'rejected' && stored.contextVersion === company.version) { hiddenRejected++; return []; }
+      const assessed = stored && (stored.status === 'relevant' || stored.status === 'watch') ? stored : null;
+      const view = assessed
+        ? { ...assessed, needsReassessment: assessed.contextVersion !== company.version, score: connection.score + (assessed.status === 'relevant' ? 200 : 100) }
+        : { ...storedConnection(connection, null, 'stored-signal'), text: connection.status === 'connected' ? storedConnection(connection, null).text : 'Not yet assessed for your business.', needsReassessment: true, score: connection.score };
+      return [{ ...s, eventId: eventOf.get(s.id) ?? s.id, connection: view }];
     });
     const eventScore = new Map<string, number>();
-    for (const s of judged) eventScore.set(s.eventId, Math.max(eventScore.get(s.eventId) ?? -1, s.connection.status === 'connected' ? 100 + s.connection.score : 0));
+    for (const s of judged) eventScore.set(s.eventId, Math.max(eventScore.get(s.eventId) ?? -1, s.connection.score));
     const time = (x: { published_at?: string | null; created_at?: string | null }) => Date.parse(x.published_at ?? x.created_at ?? '') || 0;
     judged.sort((a, b) => (eventScore.get(b.eventId)! - eventScore.get(a.eventId)!) || (a.eventId === b.eventId ? Number(b.id === b.eventId) - Number(a.id === a.eventId) : time(b) - time(a)));
     const plan = buildSourcePlan(company);
+    // Verified coverage and the last persisted run (migration 040). Missing tables simply mean "not reported".
+    const [sourceRows, lastRun] = await Promise.all([
+      supabase.from('company_sources').select('id,url,final_url,title,kind,why,claims,jurisdiction,collection_method,status,last_checked_at,last_ok_at,last_error,discovered_by').eq('profile_id', user.id).neq('status', 'retired').order('kind').limit(60),
+      supabase.from('source_collection_runs').select('id,trigger,started_at,finished_at,status,report').eq('profile_id', user.id).order('started_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const verified = (sourceRows.data ?? []) as { url: string; final_url: string | null; title: string | null; kind: string; why: string | null; claims: string | null; jurisdiction: string | null; status: string; last_checked_at: string | null; last_ok_at: string | null; last_error: string | null }[];
+    const run = lastRun.data as { finished_at: string | null; started_at: string; status: string; report: { sources?: { id: string; label: string; ok: boolean; items: number; error?: string }[] } } | null;
     const workspaceMap: Record<string, ReturnType<typeof workspaceView>> = {};
     for (const row of workspaces.data ?? []) workspaceMap[row.decision_id] = workspaceView(row);
     const sessionLinks: Record<string, { kind: string; id: string }> = {};
@@ -150,7 +173,16 @@ export async function GET() {
       sessions: sessions.data ?? [], signals: judged, access, errors,
       companyContext: companyContextForClient(company),
       sourcePlan: { version: plan.version, gaps: plan.gaps, sources: plan.sources.map(({ id, label, query, url, language, reason, coverage, limitations }) => ({ id, label, query, url, language, reason, coverage, limitations })) },
-      coverage: { attemptedAt: null, sources: plan.sources.map((s) => ({ label: s.label, state: 'planned', note: `${s.reason} ${s.coverage} ${s.limitations}` })) },
+      coverage: {
+        attemptedAt: run?.finished_at ?? run?.started_at ?? null,
+        sources: [
+          // Original sources we opened ourselves.
+          ...verified.map((v) => ({ label: `${v.title || v.url} · ${v.kind}${v.jurisdiction ? ` · ${v.jurisdiction}` : ''}`, state: v.status === 'verified' ? 'available' : v.status === 'failed' ? 'failed' : 'planned', checkedAt: v.last_ok_at, note: `${v.why ?? ''} Can support: ${v.claims ?? 'not stated'}. ${v.status === 'verified' ? 'Opened and read by VANTAGE; individual claims are not verified.' : v.status === 'failed' ? `Last attempt failed: ${v.last_error ?? 'unknown'}. Retried automatically.` : 'Proposed by research; not opened yet.'}`, url: v.final_url ?? v.url })),
+          // News-search discovery: leads, not sources.
+          ...plan.sources.map((s) => { const r = run?.report?.sources?.find((x) => x.id === s.id); return { label: `Search: ${s.label}`, state: r ? (r.ok ? 'available' : 'failed') : 'planned', checkedAt: r?.ok ? run?.finished_at ?? null : null, note: `${s.reason} Search query, not a source: results are headlines to trace to the original. ${s.limitations}` }; }),
+        ],
+      },
+      hiddenRejected,
       durable: { ready: !durableMissing && !durableFailed, message: durableMissing ? SCHEMA_MESSAGE : durableFailed ? errors.durable : null },
       workspaces: workspaceMap, sessionLinks, signalPreferences,
     });

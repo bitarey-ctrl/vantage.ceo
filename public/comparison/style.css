@@ -52,3 +52,6 @@ main:focus{outline:none}
 
 /* Tablets and touch screens: 16px inputs so iOS/iPadOS do not zoom while typing. */
 @media (max-width:1024px),(pointer:coarse){.form-stack input,.form-stack textarea,.question-entry input,.guidance-composer textarea,.general-composer textarea,.list-search input,.form-stack select{font-size:16px}}
+
+/* Company intake and signal assessment (Phase 2): layout only, existing tokens. */
+.check-row{display:flex;gap:10px;align-items:flex-start;margin:8px 0}.check-row input{width:auto;margin-top:4px;flex:none}.intake-question{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}.assessment-row{margin-top:12px}.assessment-row h3{font-size:12px;color:var(--muted-foreground);font-weight:550;margin-bottom:2px}

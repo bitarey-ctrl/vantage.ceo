@@ -15,7 +15,7 @@ export interface Connection {
   score: number;
   text: string;
   basis: string;
-  matched: { kind: 'company' | 'competitor' | 'product' | 'buyers' | 'priority' | 'market'; term: string }[];
+  matched: { kind: 'company' | 'competitor' | 'product' | 'buyers' | 'priority' | 'market' | 'dependency'; term: string }[];
   contextVersion: string;
   /** Loose match worth sending to the check in verify.ts (company or competitor named, or a phrase of yours used). */
   candidate: boolean;
@@ -109,6 +109,12 @@ export function exposureTerms(c: CompanyContext) {
     priorityPhrases: phrases(priorityText).filter((p) => !p.split(' ').some((w) => VERBS.has(w) || MONTHS.has(w))),
     productWords, buyerWords, priorityWords,
     markets: geoTerms(c.geography),
+    // Suppliers, platforms and inputs: a name ("AWS", "Stripe") or a distinctive word ("aluminium", "barley").
+    dependencies: c.dependencies.map((d) => {
+      const name = d.text.match(/\b[A-Z][A-Za-z0-9&.-]{1,}(?:\s+[A-Z][A-Za-z0-9&.-]+)*\b/)?.[0] ?? null;
+      const ws = [...new Set(words(d.text).map(stem))].filter((w) => w.length >= 5 && !GENERIC.has(w) && !geoWords.has(w));
+      return { text: d.text, name: name && name.length >= 3 ? name : null, words: ws, public: d.origin === 'research_accepted' };
+    }),
   };
 }
 
@@ -141,6 +147,7 @@ export function connectionFor(signal: { title?: string | null; content?: string 
   for (const w of buyerHits) { matched.push({ kind: 'buyers', term: w }); score += 1.5; }
   for (const w of priorityHits.slice(0, 2)) { matched.push({ kind: 'priority', term: w }); score += 1; }
   const marketHits = t.markets.filter((m) => m.aliases.some((a) => has(hay, a.startsWith(' ') ? a : a)));
+  const dependencyHits = t.dependencies.filter((d) => (d.name && has(hay, norm(d.name).trim())) || d.words.some((w) => hayStems.has(w)));
   const businessHits = matched.length;
   // A specific term: a two-word phrase from your details, or a word that is not common business vocabulary.
   const specificHits = matched.filter((m) => m.term.includes(' ') || !GENERIC.has(m.term)).length;
@@ -171,7 +178,9 @@ export function connectionFor(signal: { title?: string | null; content?: string 
   // Loose candidates for the check: your company or a competitor is named (even without a business term), or one of
   // your own phrases appears with anything else of yours. The check decides; the strict rule above stands alone.
   const anyPhrase = matched.some((m) => (m.kind === 'product' || m.kind === 'priority') && m.term.includes(' '));
-  const candidate = connected || Boolean(companyHit) || competitorHits.length > 0 || (anyPhrase && (matched.length >= 2 || marketHits.length > 0));
+  // Something you depend on (a supplier, platform or input) changing is a candidate even with no other match.
+  for (const d of dependencyHits) matched.push({ kind: 'dependency', term: d.name ?? d.words.find((w) => hayStems.has(w)) ?? d.text });
+  const candidate = connected || Boolean(companyHit) || competitorHits.length > 0 || dependencyHits.length > 0 || specificHits >= 1 || (anyPhrase && (matched.length >= 2 || marketHits.length > 0));
   if (!connected && candidate) {
     if (companyHit && !matched.some((m) => m.kind === 'company')) matched.unshift({ kind: 'company', term: companyHit });
     for (const name of competitorHits) if (!matched.some((m) => m.term === name)) matched.unshift({ kind: 'competitor', term: name });
@@ -192,6 +201,7 @@ function describe(matched: Connection['matched']): string {
   if (list('product').length) parts.push(`touches what you sell (${list('product').slice(0, 3).join(', ')})`);
   if (list('buyers').length) parts.push(`touches your buyers (${list('buyers').slice(0, 3).join(', ')})`);
   if (list('priority').length) parts.push(`relates to your stated priority (${list('priority').join(', ')})`);
+  if (list('dependency').length) parts.push(`touches something you depend on (${list('dependency').join(', ')})`);
   if (list('market').length) parts.push(`concerns ${list('market').join(' and ')}, where you said you operate or sell`);
   return `Why this may matter to you: it ${parts.join('; it ')}. Possible relevance from your stated details — not a confirmed effect.`;
 }

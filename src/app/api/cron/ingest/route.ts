@@ -17,6 +17,12 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { processSignalsForProfile } from '@/lib/signals/signal-processor';
 import { backfillTriagesForProfile } from '@/lib/signal-linking/backfill';
 import { orderByLeastRecentlyServed, markProfileIngested } from '@/lib/ingest-queue/order';
+import { normaliseCompanyContext } from '@/lib/company-context/context';
+import { runSourcePlan } from '@/lib/company-context/ingest';
+
+// The per-company collection (verified sources + news discovery + one batched assessment) needs roughly 15–25s.
+// Start it only when that much budget is left; otherwise the profile keeps its place at the front of the queue.
+const COLLECTION_MS = 25_000;
 
 // Vercel Hobby caps a function at 60s. Declaring 300 did not buy time — it
 // meant the loop was killed mid-flight with nothing written and no report.
@@ -64,7 +70,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ── Run pipeline per profile ─────────────────────────────────────────
-    const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; error?: string }[] = [];
+    const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; collected?: number; collection?: string; error?: string }[] = [];
 
     // Least-recently-served first, so a profile cut off by the budget leads
     // tomorrow's queue instead of being starved every morning. Never-served
@@ -109,11 +115,26 @@ export async function POST(request: NextRequest) {
           .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: false });
 
+        // Same relevance rules as a manual refresh: the gate's survivors are linked only after the company assessment.
+        const company = normaliseCompanyContext(profile.id, profile, context);
         const result = await processSignalsForProfile(
           profile,
           context,
-          recentDecisions ?? []
+          recentDecisions ?? [],
+          company
         );
+
+        let collected: number | undefined, collection: string | undefined;
+        if (Date.now() - startedAt < BUDGET_MS - COLLECTION_MS) {
+          try {
+            const run = await runSourcePlan(supabase, company, { maxNew: 8, trigger: 'scheduled' });
+            collected = run.inserted + run.linkedExisting;
+            collection = run.status;
+          } catch (err) {
+            collection = 'failed';
+            console.error(`[cron/ingest] Collection failed for ${profile.id}:`, err);
+          }
+        } else collection = 'skipped (budget)';
 
         // Served — go to the back of the queue.
         await markProfileIngested(profile.id);
@@ -122,6 +143,8 @@ export async function POST(request: NextRequest) {
           profileId: profile.id,
           signalsProcessed: result.signalsProcessed,
           consequencesGenerated: result.consequencesGenerated,
+          collected,
+          collection,
         });
       } catch (err) {
         console.error(`[cron/ingest] Failed for profile ${profile.id}:`, err);

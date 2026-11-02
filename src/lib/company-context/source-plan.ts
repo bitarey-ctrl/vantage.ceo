@@ -2,9 +2,9 @@
  * A per-company source plan: what to search, where, in which language, and why — derived only from the company's
  * stated context. Versioned by the context version, so a corrected profile produces a new plan.
  *
- * Phase 1 uses Google News search feeds (public RSS, no key) as the collection method. Each entry records its exact
- * address, publisher, reason, coverage and limitations. Results are leads, not verified facts; the per-company
- * relevance check (relevance.ts) still decides whether anything is shown.
+ * These are SEARCH QUERIES for discovery (Google News RSS), not verified sources. Verified coverage — the actual
+ * company, competitor, supplier, government and regulator sources, opened by us — lives in company_sources
+ * (sources.ts). A search result is a lead to an original source, not a verified claim.
  */
 import type { CompanyContext } from './context';
 import { exposureTerms } from './relevance';
@@ -29,8 +29,6 @@ const LANG: Record<string, { hl: string; gl: string; lang: string }> = {
   netherlands: { hl: 'nl', gl: 'NL', lang: 'nl' }, italy: { hl: 'it', gl: 'IT', lang: 'it' }, spain: { hl: 'es', gl: 'ES', lang: 'es' }, poland: { hl: 'pl', gl: 'PL', lang: 'pl' },
 };
 const TRADE_WORDS = /\b(export|import|manufactur|supplier|wholesale|marketplace|cross-border|customs|logistic|freight|sourcing|factory|retailer)/i;
-/** Goal words too broad to search on ("growth" news about anything). */
-const GENERIC_GOALS = new Set(['growth', 'margin', 'revenue', 'profit', 'other']);
 const LIMITS = 'Google News search results: headlines from publishers Google indexes, last 30 days. Not a complete record; repeated coverage is not independent confirmation; publisher text is a claim, not a verified fact.';
 
 export function newsSearchUrl(query: string, locale = { hl: 'en-US', gl: 'US', lang: 'en' }): string {
@@ -68,13 +66,16 @@ export function buildSourcePlan(c: CompanyContext): SourcePlan {
   if (!topics.length && c.product) add('topic-product', 'Your market', `${t.productWords.slice(0, 3).join(' ')}${marketClause}`, 'Built from your product description.', 'Broad match.');
   if (!c.product) gaps.push('Your product description is missing, so market searches cannot be targeted.');
 
-  // A product phrase plus a priority term targets the work you said matters now (e.g. "strategic intelligence" CEOs).
-  const priorityWord = t.priorityWords.find((w) => w.length >= 3 && !GENERIC_GOALS.has(w));
-  for (const p of t.priorityPhrases.slice(0, 2)) add(`priority-${p.replace(/\W+/g, '-')}`, `Your priority: ${p}`, `${quote(p)}${marketClause}`, `"${p}" comes from a priority you stated.`, markets.length ? `News mentioning ${markets.join(', ')}.` : 'Any geography.');
-  if (!t.priorityPhrases.length && topics[0] && priorityWord) add('topic-priority', `Your priority: ${topics[0]}`, `${quote(topics[0])} ${priorityWord}`, 'Combines what you sell with your stated priority.', 'Any geography.');
+  // Dependencies are searched only when research found them in public sources and the founder accepted them;
+  // a supplier the founder typed privately is used for matching only.
+  for (const d of t.dependencies.filter((x) => x.public && x.name).slice(0, 2)) {
+    add(`dependency-${d.name!.toLowerCase().replace(/\W+/g, '-')}`, `You depend on: ${d.name}`, `${quote(d.name!)} (price OR prices OR pricing OR outage OR terms OR shortage)`, `${d.name} is a public dependency of your business.`, 'Any geography.');
+  }
+  // Privacy: priorities, notes, constraints, estimates and the avoided decision never go into a public search.
+  // Queries use only public identifiers (names, websites, named competitors, markets) and category words.
   if (c.buyers && t.buyerWords.length) add('buyers', `Your buyers: ${c.buyers.slice(0, 60)}`, `${t.buyerWords.slice(0, 3).join(' ')}${marketClause}`, 'Changes affecting the buyers you named.', 'Broad match on buyer terms.');
 
-  const tradeText = `${c.product ?? ''} ${c.buyers ?? ''} ${c.notes ?? ''} ${c.revenueModel ?? ''}`;
+  const tradeText = `${c.product ?? ''} ${c.buyers ?? ''} ${c.revenueModel ?? ''}`;
   if (markets.length >= 2 && TRADE_WORDS.test(tradeText)) {
     const goods = t.productWords.filter((w) => !/marketplace|platform|online|order/.test(w)).slice(0, 2).join(' ');
     add('trade-rules', `Trade rules: ${markets.join(' ↔ ')}`, `(tariff OR customs OR "import duty" OR "trade agreement" OR regulation) ${markets.map(quote).join(' ')}${goods ? ` ${goods}` : ''}`,

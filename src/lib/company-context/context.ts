@@ -10,7 +10,11 @@
  */
 import { createHash } from 'node:crypto';
 
-export type FactOrigin = 'founder' | 'founder_profile' | 'advisor_noted';
+export type FactOrigin = 'founder' | 'founder_profile' | 'advisor_noted' | 'research_accepted';
+
+/** A business fact beyond the fixed columns (ceo_context.business_facts). Estimates stay labelled as estimates. */
+export interface BusinessFact { id: string; text: string; origin: FactOrigin; evidence?: string | null }
+export interface Estimate { id: string; label: string; value: number; unit: '%' | 'currency' | 'count'; basis: 'estimate' | 'actual'; origin: FactOrigin }
 export interface ContextFact { value: string; origin: FactOrigin; field: string }
 
 export interface CompanyContext {
@@ -30,6 +34,14 @@ export interface CompanyContext {
   competitors: string[];
   avoidedDecision: string | null;
   notes: string | null;
+  /** Suppliers, platforms, channels or inputs the business depends on. */
+  dependencies: BusinessFact[];
+  /** Limits on what the founder can do (cash, team, time, contracts, rules). */
+  constraints: BusinessFact[];
+  /** Public facts from research that the founder accepted (identity, history). */
+  publicFacts: BusinessFact[];
+  /** Founder-supplied numbers; used only in deterministic calculations, never invented. */
+  estimates: Estimate[];
   /** Field → where the value came from. */
   provenance: Record<string, ContextFact>;
   /** Plain-language list of what is not known (and must not be assumed). */
@@ -58,6 +70,27 @@ export function normaliseList(raw: unknown, key: 'title' | 'name', splitOnCommas
     return '';
   }).map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter((s) => s.length > 1);
   return [...new Set(out)];
+}
+
+function factList(raw: unknown, origin: FactOrigin): BusinessFact[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((f, i) => {
+    const o = (f && typeof f === 'object' ? f : { text: f }) as Record<string, unknown>;
+    const text = str(o.text);
+    const fact: BusinessFact | null = text ? { id: str(o.id) ?? `f${i}`, text, origin: (str(o.origin) as FactOrigin) ?? origin, evidence: str(o.evidence) } : null;
+    return fact;
+  }).filter((x): x is BusinessFact => x !== null);
+}
+function estimateList(raw: unknown): Estimate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((e, i) => {
+    const o = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>;
+    const value = typeof o.value === 'number' && Number.isFinite(o.value) ? o.value : null;
+    const label = str(o.label);
+    const unit = o.unit === '%' || o.unit === 'currency' || o.unit === 'count' ? o.unit : null;
+    const est: Estimate | null = label && value !== null && unit ? { id: str(o.id) ?? `e${i}`, label, value, unit, basis: o.basis === 'actual' ? 'actual' : 'estimate', origin: (str(o.origin) as FactOrigin) ?? 'founder' } : null;
+    return est;
+  }).filter((x): x is Estimate => x !== null);
 }
 
 const ARR_BANDS: Record<string, string> = {
@@ -94,6 +127,11 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (competitors.length) take('competitors', competitors.join(', '), 'founder');
   const avoidedDecision = take('avoidedDecision', str(field(ctx, 'avoided_decision')), 'founder');
   const website = take('website', firstUrl(notes) ?? firstUrl(product), 'founder');
+  const bf = (field(ctx, 'business_facts') ?? {}) as Record<string, unknown>;
+  const dependencies = factList(bf.dependencies, 'founder');
+  const constraints = factList(bf.constraints, 'founder');
+  const estimates = estimateList(bf.estimates);
+  const publicFacts = factList(bf.public_facts, 'research_accepted');
 
   const unknowns: string[] = [];
   if (!product) unknowns.push('what the company sells');
@@ -102,9 +140,11 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (!geography.length) unknowns.push('where it operates and sells');
   if (!competitors.length) unknowns.push('which competitors matter');
   if (!priorities.length && !topPriority) unknowns.push('current priorities');
+  if (!dependencies.length) unknowns.push('key suppliers, platforms or channels it depends on');
+  if (!constraints.length) unknowns.push('limits on what it can do now (cash, team, time)');
   unknowns.push('margins, costs, cash and payment terms (never inferred)');
 
-  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes };
+  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts };
   const version = createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 16);
   return { profileId, version, ...facts, provenance, unknowns };
 }
@@ -128,6 +168,10 @@ export function companyContextBlock(c: CompanyContext): string {
     line('Strategic priorities', c.priorities.join('; ')),
     line('Competitors they named', c.competitors.join(', ')),
     line('Decision they have been avoiding', c.avoidedDecision),
+    line('Public facts they confirmed', c.publicFacts.map((d) => d.text).join('; ')),
+    line('Depends on', c.dependencies.map((d) => d.text).join('; ')),
+    line('Constraints they stated', c.constraints.map((d) => d.text).join('; ')),
+    line('Numbers they gave', c.estimates.map((e) => `${e.label}: ${e.value}${e.unit === '%' ? '%' : e.unit === 'currency' ? ' (currency)' : ''} (${e.basis})`).join('; ')),
     line('Notes they gave', c.notes),
     `Not known — do not assume or invent: ${c.unknowns.join('; ')}.`,
     'All values above are founder-reported unless stated otherwise; they are not independently verified.',

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 /** Bump when the client assets change so browsers fetch the matching files. */
-export const ASSET_VERSION = '20261103-phase1';
+export const ASSET_VERSION = '20261103-phase2';
 
 /**
  * The maintained main app: one HTML shell for /app (main entry) and /test (alias). Old paths redirect here
