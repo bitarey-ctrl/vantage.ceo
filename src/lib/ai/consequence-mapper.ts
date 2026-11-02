@@ -44,14 +44,16 @@ export async function mapConsequences(
   signalContent: string,
   profile: Profile,
   context: CeoContext,
-  recentDecisions: Decision[]
+  recentDecisions: Decision[],
+  companyBlock?: string
 ): Promise<ConsequenceResult> {
   const prompt = buildConsequencePrompt(
     signalTitle,
     signalContent,
     profile,
     context,
-    recentDecisions
+    recentDecisions,
+    companyBlock
   );
   return callClaude<ConsequenceResult>(prompt, { maxTokens: 2048 });
 }
@@ -62,14 +64,15 @@ export async function runConsequencePipeline(
   signalContent: string,
   profile: Profile,
   context: CeoContext,
-  recentDecisions: Decision[]
+  recentDecisions: Decision[],
+  companyBlock?: string
 ): Promise<{
   triageResult: TriageResult;
   consequenceResult: ConsequenceResult | null;
 }> {
   const [triageResult, consequenceAttempt] = await Promise.all([
     triageSignal(),
-    mapConsequences(signalTitle, signalContent, profile, context, recentDecisions)
+    mapConsequences(signalTitle, signalContent, profile, context, recentDecisions, companyBlock)
       .catch((err) => {
         console.error("[pipeline] Consequence mapping failed:", err);
         return null;

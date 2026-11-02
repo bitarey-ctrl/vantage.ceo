@@ -36,7 +36,9 @@ export function buildConsequencePrompt(
   signalContent: string,
   profile: Profile,
   context: CeoContext,
-  recentDecisions: Decision[]
+  recentDecisions: Decision[],
+  /** Canonical company context (src/lib/company-context). When given, it replaces the SaaS-only framing below. */
+  companyBlock?: string
 ): string {
   const decisionHistory =
     recentDecisions.length > 0
@@ -49,11 +51,7 @@ export function buildConsequencePrompt(
           .join("\n")
       : "No recent decisions logged yet.";
 
-  return `You are the consequence-mapping engine for VANTAGE.
-
-Your job is to map the consequences of a news signal for THIS specific company. The output must be honest, sourced, and free of invented numbers.
-
-## WHO YOU ARE WRITING FOR
+  const legacySection = `## WHO YOU ARE WRITING FOR
 
 ${ICP_DESCRIPTION}
 
@@ -78,8 +76,13 @@ Revenue range: ${context?.monthly_revenue_range ?? 'Not specified'} | Business M
 Strategic Priorities:
 ${normalizePriorities(context?.strategic_priorities)}
 
-Top Competitors: ${normalizeCompetitors(context?.competitors)}
+Top Competitors: ${normalizeCompetitors(context?.competitors)}`;
 
+  return `You are the consequence-mapping engine for VANTAGE.
+
+Your job is to map the consequences of a news signal for THIS specific company. The output must be honest, sourced, and free of invented numbers.
+
+${companyBlock ? canonicalSection(companyBlock) : legacySection}
 Recent Decision History:
 ${decisionHistory}
 
@@ -181,4 +184,22 @@ Respond with ONLY valid JSON:
     }
   ]
 }`;
+}
+
+
+/**
+ * The company section used with the canonical context. Works for any kind of business: it does not assume software,
+ * a geography or a revenue model, and tells the model to treat missing facts as unknown.
+ */
+function canonicalSection(companyBlock: string): string {
+  return `## WHO YOU ARE WRITING FOR
+
+The founder or CEO of the company below. Take the business as described — do not assume it is a software company, and do not assume a country, size or revenue model that is not stated.
+
+If your analysis would read the same for a different company, it is too generic. Tie the consequence to what they sell, who buys, where they operate, or a priority they stated. If this signal does not touch any of those, say so plainly instead of inventing a connection.
+
+## COMPANY CONTEXT (founder-reported)
+${companyBlock}
+
+`;
 }

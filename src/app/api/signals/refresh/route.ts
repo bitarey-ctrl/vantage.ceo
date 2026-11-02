@@ -10,6 +10,8 @@ import {
 import { PIPELINE_ENV, requireEnv } from "@/lib/env";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 import type { Profile, CeoContext, Decision } from "@/types/database";
+import { loadCompanyContext } from "@/lib/company-context/load";
+import { runSourcePlan, type PlanRunReport } from "@/lib/company-context/ingest";
 
 /**
  * POST /api/signals/refresh — the "Refresh Signals" button on /signals.
@@ -94,6 +96,7 @@ export async function POST(request: NextRequest) {
     }
 
     let totalSignalsAdded = 0;
+    let planReport: PlanRunReport | null = null;
     let totalSignalsLinked = 0;
     let totalCandidates = 0;
     let profilesProcessed = 0;
@@ -154,6 +157,21 @@ export async function POST(request: NextRequest) {
           .from("decisions").select("*").eq("profile_id", profile.id)
           .order("created_at", { ascending: false }).limit(5);
 
+        // The company's own source plan (user-initiated refresh only): targeted public searches built from its
+        // stated context, linked only when they connect to the company. Its per-source report is returned as is.
+        const company = await loadCompanyContext(adminSupabase, profile.id);
+        if (profileIds) {
+          try {
+            planReport = await runSourcePlan(adminSupabase, company, { maxNew: 12 });
+            totalSignalsAdded += planReport.inserted + planReport.linkedExisting;
+            totalCandidates += planReport.fetched;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[refresh] Source plan failed for ${profile.id}:`, msg);
+            failures.push(`Company source plan: ${msg}`);
+          }
+        }
+
         console.log(`[refresh] Running pipeline for ${profile.company_name}...`);
         profilesAttempted++;
 
@@ -163,7 +181,8 @@ export async function POST(request: NextRequest) {
         const result = await processSignalsForProfile(
           profile,
           context,
-          (recentDecisions ?? []) as Decision[]
+          (recentDecisions ?? []) as Decision[],
+          company
         );
 
         totalCandidates += result.candidatesFetched;
@@ -220,6 +239,7 @@ export async function POST(request: NextRequest) {
       signalsLinked: totalSignalsLinked,
       candidatesFetched: totalCandidates,
       profilesProcessed,
+      ...(planReport ? { sourcePlan: planReport, message: describePlanRun(planReport, totalSignalsLinked) } : {}),
       ...(failures.length > 0 ? { partialFailures: failures.length } : {}),
     });
   } catch (error) {
@@ -227,4 +247,18 @@ export async function POST(request: NextRequest) {
     console.error("[POST /api/signals/refresh]", msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+}
+
+/** What actually happened, in one or two sentences — never a generic "done". */
+function describePlanRun(r: PlanRunReport, linkedShared: number): string {
+  const ok = r.sources.filter((s) => s.ok).length;
+  const failed = r.sources.length - ok;
+  const found = r.inserted + r.linkedExisting;
+  const parts = [`Checked ${ok} of ${r.sources.length} sources for your company${failed ? ` (${failed} could not be reached)` : ''}.`];
+  parts.push(found ? `${found} new ${found === 1 ? 'item connects' : 'items connect'} to your business` : 'Nothing material found in the checked scope (last 30 days)');
+  parts[1] += r.notConnected ? `; ${r.notConnected} unrelated ${r.notConnected === 1 ? 'result was' : 'results were'} left out.` : '.';
+  if (!r.checked) parts.push('The relevance check could not run, so matches are shown as "not yet checked".');
+  if (linkedShared) parts.push(`${linkedShared} shared ${linkedShared === 1 ? 'signal' : 'signals'} also matched your details.`);
+  if (r.gaps.length) parts.push(r.gaps[0]);
+  return parts.join(' ');
 }

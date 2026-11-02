@@ -7,6 +7,11 @@ import {
   forClient, importDecisionVerdict, importPayload, isRealDate, lifecycleProblem, nextSignalPreference, normaliseSupport,
   signalAction, workspaceSupport, type CoreChange, type CoreState, type WorkspaceSupport,
 } from '@/lib/workspace/contract';
+import { companyContextForClient, normaliseCompanyContext } from '@/lib/company-context/context';
+import { connectionFor } from '@/lib/company-context/relevance';
+import { parseStoredConnection, storedConnection } from '@/lib/company-context/verify';
+import { clusterEvents } from '@/lib/company-context/events';
+import { buildSourcePlan } from '@/lib/company-context/source-plan';
 
 /*
  * The main app's account API (also served at /api/test/workspace). Every read and write is scoped to the signed-in
@@ -82,16 +87,17 @@ export async function GET() {
       supabase.from('strategies').select('*').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('advisor_sessions').select('id,title,created_at,updated_at').eq('profile_id', user.id).order('updated_at', { ascending: false }).limit(50),
       // Never fall back to the global signal table when this account's links fail.
-      supabase.from('signal_triages').select('signal:signals(id,title,content,source,url,published_at,urgency,category,what_happened,why_it_matters,what_to_consider,created_at)').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('signal_triages').select('relevance_reason,signal:signals(id,title,content,source,url,published_at,urgency,category,what_happened,why_it_matters,what_to_consider,created_at)').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('consequences').select('id,signal_id,so_what,primary_impact,secondary_impact,tertiary_risk,action_recommendation,status,created_at').eq('profile_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('decision_workspaces').select('decision_id,version,support,parent_decision_id,provenance,updated_at').eq('profile_id', user.id).limit(300),
       supabase.from('advisor_context_links').select('session_id,context_kind,context_id,updated_at').eq('profile_id', user.id).limit(500),
       supabase.from('signal_preferences').select('signal_id,watching,watch_baseline,acknowledged_revision,dismissed,version,provenance,updated_at').eq('profile_id', user.id).limit(1000),
     ]);
     const signals = new Map<string, Signal>();
+    const storedReason = new Map<string, string | null>();
     for (const row of triages.data ?? []) {
       const value = row.signal as unknown as Signal | null;
-      if (value?.id) signals.set(value.id, value);
+      if (value?.id) { signals.set(value.id, value); storedReason.set(value.id, (row as { relevance_reason?: string | null }).relevance_reason ?? null); }
     }
     const errors: Record<string, string> = {};
     for (const [key, result] of Object.entries({ context, decisions, strategies, sessions, signals: triages, analysis: analyses })) {
@@ -100,10 +106,39 @@ export async function GET() {
     const durableMissing = [workspaces, links, preferences].some((r) => missingSchema(r.error));
     const durableFailed = !durableMissing && [workspaces, links, preferences].some((r) => r.error);
     if (durableFailed) errors.durable = 'Could not load your decision notes. Please try again before editing them.';
+    // One canonical company context for every view (Advisor, Signals, analysis and the Company page read the same).
+    const company = normaliseCompanyContext(user.id, profile, context.data);
+    // One entry per underlying event: duplicate reports share the earliest report's id as their event id.
+    const clusters = clusterEvents([...signals.values()].map((s) => ({ id: s.id, title: s.title, url: s.url, published_at: s.published_at, created_at: s.created_at })));
+    const eventOf = new Map<string, string>();
+    for (const c of clusters) for (const id of c.memberIds) eventOf.set(id, c.canonicalId);
     const analysis: Record<string, unknown> = {};
     for (const row of analyses.data ?? []) {
-      if (row.signal_id && signals.has(row.signal_id) && !analysis[row.signal_id]) analysis[row.signal_id] = { consequenceId: row.id, soWhat: row.so_what || row.primary_impact, ifYouAct: row.secondary_impact, ifYouDont: row.tertiary_risk, immediateAction: row.action_recommendation, status: row.status, createdAt: row.created_at };
+      if (!row.signal_id || !signals.has(row.signal_id)) continue;
+      const value = { consequenceId: row.id, soWhat: row.so_what || row.primary_impact, ifYouAct: row.secondary_impact, ifYouDont: row.tertiary_risk, immediateAction: row.action_recommendation, status: row.status, createdAt: row.created_at };
+      if (!analysis[row.signal_id]) analysis[row.signal_id] = value;
+      // An analysis of any report of an event belongs to the event.
+      const event = eventOf.get(row.signal_id);
+      if (event && !analysis[event]) analysis[event] = value;
     }
+    // Every signal states its connection to THIS company (or is marked monitor); connected ones come first.
+    // The checked connection stored for this account wins while your details are unchanged; otherwise the keyword
+    // match is shown and labelled "not yet checked" (the next refresh checks it again).
+    const judged = [...signals.values()].map((s) => {
+      const connection = connectionFor(s, company);
+      const stored = parseStoredConnection(storedReason.get(s.id));
+      const view = stored && stored.contextVersion === company.version
+        ? { status: 'connected' as const, checked: stored.checked, score: connection.score + (stored.checked ? 50 : 0), text: stored.text, basis: stored.basis, matched: stored.matched }
+        : connection.status === 'connected'
+          ? (() => { const u = storedConnection(connection, null); return { status: 'connected' as const, checked: false, score: connection.score, text: u.text, basis: u.basis, matched: connection.matched }; })()
+          : { status: 'monitor' as const, checked: false, score: 0, text: connection.text, basis: connection.basis, matched: [] };
+      return { ...s, eventId: eventOf.get(s.id) ?? s.id, connection: view };
+    });
+    const eventScore = new Map<string, number>();
+    for (const s of judged) eventScore.set(s.eventId, Math.max(eventScore.get(s.eventId) ?? -1, s.connection.status === 'connected' ? 100 + s.connection.score : 0));
+    const time = (x: { published_at?: string | null; created_at?: string | null }) => Date.parse(x.published_at ?? x.created_at ?? '') || 0;
+    judged.sort((a, b) => (eventScore.get(b.eventId)! - eventScore.get(a.eventId)!) || (a.eventId === b.eventId ? Number(b.id === b.eventId) - Number(a.id === a.eventId) : time(b) - time(a)));
+    const plan = buildSourcePlan(company);
     const workspaceMap: Record<string, ReturnType<typeof workspaceView>> = {};
     for (const row of workspaces.data ?? []) workspaceMap[row.decision_id] = workspaceView(row);
     const sessionLinks: Record<string, { kind: string; id: string }> = {};
@@ -112,7 +147,10 @@ export async function GET() {
     for (const row of preferences.data ?? []) signalPreferences[row.signal_id] = row;
     return json({
       analysis, userId: user.id, profile, context: context.data, decisions: (decisions.data ?? []) as Decision[], strategies: (strategies.data ?? []) as Strategy[],
-      sessions: sessions.data ?? [], signals: [...signals.values()], access, errors,
+      sessions: sessions.data ?? [], signals: judged, access, errors,
+      companyContext: companyContextForClient(company),
+      sourcePlan: { version: plan.version, gaps: plan.gaps, sources: plan.sources.map(({ id, label, query, url, language, reason, coverage, limitations }) => ({ id, label, query, url, language, reason, coverage, limitations })) },
+      coverage: { attemptedAt: null, sources: plan.sources.map((s) => ({ label: s.label, state: 'planned', note: `${s.reason} ${s.coverage} ${s.limitations}` })) },
       durable: { ready: !durableMissing && !durableFailed, message: durableMissing ? SCHEMA_MESSAGE : durableFailed ? errors.durable : null },
       workspaces: workspaceMap, sessionLinks, signalPreferences,
     });

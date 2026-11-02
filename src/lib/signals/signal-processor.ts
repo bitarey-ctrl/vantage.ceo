@@ -4,6 +4,9 @@ import { fetchRssSignals } from "./rss-ingestion";
 import { gateSignals, type RawCandidate } from "./gate";
 import { PIPELINE_ENV, requireEnv } from "@/lib/env";
 import type { Profile, CeoContext, Decision } from "@/types/database";
+import type { CompanyContext } from "@/lib/company-context/context";
+import { connectionFor } from "@/lib/company-context/relevance";
+import { connectAndCheck, type StoredConnection } from "@/lib/company-context/verify";
 
 /**
  * `signalsProcessed` and `consequencesGenerated` are legacy aliases kept so
@@ -36,7 +39,9 @@ function result(candidatesFetched: number, signalsSurfaced: number): PipelineRes
 export async function processSignalsForProfile(
   profile: Profile,
   context: CeoContext,
-  _recentDecisions: Decision[]
+  _recentDecisions: Decision[],
+  /** When given, survivors are linked to this account only if they connect to its stated details (with the reason). */
+  company?: CompanyContext
 ): Promise<PipelineResult> {
   // Assert before any fetching, so a misconfigured deploy fails on the first
   // cron run with a clear error instead of quietly writing nothing.
@@ -118,7 +123,7 @@ export async function processSignalsForProfile(
         // provenance is not persisted. Add a migration if it is wanted.
       }))
     )
-    .select("id");
+    .select("id, title, content, what_happened");
 
   if (signalError || !insertedSignals) {
     // Throw rather than returning 0. Returning 0 made a failed insert look
@@ -142,21 +147,30 @@ export async function processSignalsForProfile(
   // because the gate does not score, it discards. They are still written
   // only because the columns are NOT NULL and two protected routes read
   // them. Do not treat these values as a measurement.
-  const { error: triageError } = await supabase.from("signal_triages").upsert(
-    insertedSignals.map((s) => ({
-      signal_id: s.id,
-      profile_id: profile.id,
-      relevant: true,
-      relevance_score: 100,
-      relevance_reason: "Passed the five-category gate.",
-    }))
-  );
+  // With the company context (user refresh), only signals connected to this company and passing the check are linked,
+  // and the stored reason says how. Without it (cron), behaviour is unchanged.
+  const links: { s: { id: string }; stored: StoredConnection | null; score: number }[] = company
+    ? (await connectAndCheck(company, insertedSignals.map((s) => ({ ...s, key: s.id })), { connectionFor }))
+        .map(({ item, stored, score }) => ({ s: item, stored, score }))
+    : insertedSignals.map((s) => ({ s, stored: null, score: 10 }));
+  const { error: triageError } = links.length
+    ? await supabase.from("signal_triages").upsert(
+        links.map(({ s, stored, score }) => ({
+          signal_id: s.id,
+          profile_id: profile.id,
+          relevant: true,
+          relevance_score: Math.min(100, Math.round(score * 10)),
+          relevance_reason: stored ? JSON.stringify(stored) : "Passed the five-category gate.",
+        })),
+        { onConflict: "signal_id,profile_id" }
+      )
+    : { error: null };
 
   if (triageError) {
     console.error("[Pipeline] Failed to link signals to profile:", triageError);
   }
 
-  return result(allCandidates.length, insertedSignals.length);
+  return result(allCandidates.length, links.length);
 }
 
 async function getRecentSignalTitles(

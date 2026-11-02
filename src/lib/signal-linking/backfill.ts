@@ -1,4 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { loadCompanyContext } from "@/lib/company-context/load";
+import { connectionFor } from "@/lib/company-context/relevance";
+import { connectAndCheck } from "@/lib/company-context/verify";
 
 /*
  * Back-link already-ingested signals to a profile.
@@ -36,7 +39,7 @@ import { createAdminClient } from "@/lib/supabase/server";
  */
 
 /** Only link signals that actually made it through the five-category gate. */
-const GATED_COLUMNS = "id, why_it_matters";
+const GATED_COLUMNS = "id, why_it_matters, title, content, what_happened";
 
 /*
  * Hedged openers, rejected at LINK time.
@@ -71,6 +74,8 @@ export interface BackfillResult {
   candidates: number;
   /** Gated signals skipped because they open with a hedge. */
   rejectedHedged: number;
+  /** Shared signals not linked because nothing connects them to this company's stated details. */
+  notConnected?: number;
 }
 
 export async function backfillTriagesForProfile(
@@ -123,7 +128,14 @@ export async function backfillTriagesForProfile(
   }
 
   const linkedAlready = new Set((existing ?? []).map((r) => r.signal_id as string));
-  const missing = ids.filter((id) => !linkedAlready.has(id));
+  // Link a shared signal only when it connects to THIS company's stated details, and store that connection as the
+  // reason. Unconnected shared news is not pushed into every account's feed.
+  const company = await loadCompanyContext(supabase, profileId);
+  const pending = usable.filter((s) => !linkedAlready.has(s.id as string))
+    .map((s) => ({ key: s.id as string, title: String(s.title ?? ""), content: (s.content as string | null) ?? null, what_happened: (s.what_happened as string | null) ?? null }));
+  const connected = (await connectAndCheck(company, pending, { connectionFor })).map(({ item, stored, score }) => ({ id: item.key, stored, score }));
+  const notConnected = pending.length - connected.length;
+  const missing = connected.map((j) => j.id);
 
   if (missing.length === 0) {
     return {
@@ -131,19 +143,18 @@ export async function backfillTriagesForProfile(
       alreadyLinked: linkedAlready.size,
       candidates: ids.length,
       rejectedHedged,
+      notConnected,
     };
   }
 
-  // relevant / relevance_score / relevance_reason are deprecated constants
-  // (see the note in signal-processor). They are written only because the
-  // columns are NOT NULL. They are not a measurement.
+  // relevance_reason holds this account's stored connection (JSON, see company-context/verify.ts).
   const { error: insertError } = await supabase.from("signal_triages").upsert(
-    missing.map((signal_id) => ({
+    connected.map(({ id: signal_id, stored, score }) => ({
       signal_id,
       profile_id: profileId,
       relevant: true,
-      relevance_score: 100,
-      relevance_reason: "Passed the five-category gate.",
+      relevance_score: Math.min(100, Math.round(score * 10)),
+      relevance_reason: JSON.stringify(stored),
     })),
     { onConflict: "signal_id,profile_id", ignoreDuplicates: true }
   );
@@ -157,5 +168,6 @@ export async function backfillTriagesForProfile(
     alreadyLinked: linkedAlready.size,
     candidates: ids.length,
     rejectedHedged,
+    notConnected,
   };
 }

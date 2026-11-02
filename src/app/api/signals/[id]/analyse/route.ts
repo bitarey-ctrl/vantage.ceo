@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { runConsequencePipeline } from "@/lib/ai/consequence-mapper";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 import type { Profile, CeoContext, Decision, Consequence } from "@/types/database";
+import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 
 export async function POST(
   _request: NextRequest,
@@ -32,8 +33,8 @@ export async function POST(
       return NextResponse.json({
         consequenceId: existing.id,
         soWhat: existing.so_what ?? existing.primary_impact,
-        ifYouAct: existing.secondary_impact ?? "Position ahead of this market shift.",
-        ifYouDont: existing.tertiary_risk ?? "Risk falling behind as the market evolves.",
+        ifYouAct: existing.secondary_impact ?? null,
+        ifYouDont: existing.tertiary_risk ?? null,
         immediateAction: existing.action_recommendation,
         status: existing.status,
         confidence_score: existing.confidence_score,
@@ -73,18 +74,21 @@ export async function POST(
       .eq("profile_id", user.id)
       .maybeSingle();
 
+    // One canonical context for the analysis (no invented "B2B SaaS" / "Turkey" defaults).
+    const company = normaliseCompanyContext(user.id, profile, contextRow);
+
     const context: CeoContext = {
       id: contextRow?.id ?? "",
       profile_id: user.id,
       strategic_priorities: contextRow?.strategic_priorities ?? [],
-      revenue_model: contextRow?.revenue_model ?? profile.business_model ?? "B2B SaaS",
-      monthly_revenue_range: contextRow?.monthly_revenue_range ?? profile.revenue_range ?? "undisclosed",
+      revenue_model: contextRow?.revenue_model ?? profile.business_model ?? "",
+      monthly_revenue_range: contextRow?.monthly_revenue_range ?? profile.revenue_range ?? "",
       competitors: contextRow?.competitors ?? [],
       avoided_decision: contextRow?.avoided_decision ?? null,
       avoided_decision_stated_reason: contextRow?.avoided_decision_stated_reason ?? null,
-      sector: contextRow?.sector ?? profile.industry ?? "technology",
+      sector: contextRow?.sector ?? profile.industry ?? "",
       sector_tags: contextRow?.sector_tags ?? [],
-      geography_detail: contextRow?.geography_detail ?? profile.geography ?? "Turkey",
+      geography_detail: contextRow?.geography_detail ?? profile.geography ?? "",
       past_decision_regrets: contextRow?.past_decision_regrets ?? [],
       created_at: contextRow?.created_at ?? new Date().toISOString(),
       updated_at: contextRow?.updated_at ?? new Date().toISOString(),
@@ -120,7 +124,8 @@ export async function POST(
         signal.content,
         profile as Profile,
         context,
-        (recentDecisions ?? []) as Decision[]
+        (recentDecisions ?? []) as Decision[],
+        companyContextBlock(company)
       );
       triageResult = result.triageResult;
       consequenceResult = result.consequenceResult;
@@ -133,14 +138,14 @@ export async function POST(
       );
     }
 
-    // Save triage
+    // Make sure the signal stays linked, but never overwrite the stored "why this matters to you" connection.
     await adminSupabase.from("signal_triages").upsert({
       signal_id: signal.id,
       profile_id: user.id,
       relevant: triageResult.relevant,
       relevance_score: triageResult.relevance_score,
       relevance_reason: triageResult.relevance_reason,
-    });
+    }, { onConflict: "signal_id,profile_id", ignoreDuplicates: true });
 
     if (!consequenceResult) {
       // This branch means the consequence-mapping call itself failed — it is
@@ -190,8 +195,8 @@ export async function POST(
     return NextResponse.json({
       consequenceId: saved.id,
       soWhat: consequenceResult.primary_impact,
-      ifYouAct: consequenceResult.secondary_impact ?? "Position ahead of this shift.",
-      ifYouDont: consequenceResult.tertiary_risk ?? "Risk falling behind competitors.",
+      ifYouAct: consequenceResult.secondary_impact ?? null,
+      ifYouDont: consequenceResult.tertiary_risk ?? null,
       immediateAction: consequenceResult.action_recommendation,
       status: "pending",
       confidence_score: consequenceResult.confidence_score,

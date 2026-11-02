@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { applyMemory, isMemoryField } from "@/lib/advisor/apply-memory";
@@ -40,12 +41,12 @@ export async function POST(request: NextRequest) {
       await Promise.all([
         adminSupabase
           .from("profiles")
-          .select("company_name, industry, company_stage, geography")
+          .select("company_name, industry, company_stage, geography, business_model, revenue_range")
           .eq("id", user.id)
           .single(),
         adminSupabase
           .from("ceo_context")
-          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other, additional_context")
+          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other, additional_context, monthly_revenue_range, arr_band, avoided_decision")
           .eq("profile_id", user.id)
           .maybeSingle(),
         adminSupabase
@@ -75,52 +76,11 @@ export async function POST(request: NextRequest) {
     const strategies = strategiesRes.data ?? [];
     const consequences = consequencesRes.data ?? [];
 
+    // One canonical company context (same contract as Signals, analysis and the Company page). It reads priorities
+    // and competitors in every stored shape, so string-stored priorities are no longer dropped.
+    const company = normaliseCompanyContext(user.id, profile, ctx);
     const companyName = profile?.company_name ?? "your company";
     const stage = profile?.company_stage ?? "unknown stage";
-
-    /*
-     * Onboarding step 1 no longer asks for an Industry (migration 031). It
-     * asks what the product does, who it is sold to, and the single priority
-     * that matters right now. Those are far better advisor context than a
-     * dropdown value, so they lead here.
-     *
-     * `industry` is kept only as a fallback for accounts that onboarded
-     * before the change — without it their prompt would lose the descriptor
-     * entirely. New accounts have product_description instead.
-     */
-    const productDescription = ctx?.product_description ?? null;
-    const targetCustomer = ctx?.target_customer ?? null;
-    const topPriority =
-      ctx?.top_priority === "Other"
-        ? ctx?.top_priority_other || "Other"
-        : ctx?.top_priority ?? null;
-
-    const industry = profile?.industry ?? null;
-    // What the company IS, in one clause, for the opening line.
-    const descriptor = productDescription ?? industry ?? "a B2B SaaS";
-    const sector = ctx?.sector ?? industry ?? "B2B SaaS";
-    const geography = ctx?.geography_detail ?? profile?.geography ?? "unknown geography";
-    const revenueModel = ctx?.revenue_model ?? "unknown";
-
-    const priorities = Array.isArray(ctx?.strategic_priorities)
-      ? (ctx.strategic_priorities as Array<{ title?: string }>)
-          .map((p) => p?.title ?? "").filter(Boolean).join(", ") || "none listed"
-      : "none listed";
-
-    const competitors = Array.isArray(ctx?.competitors)
-      ? (ctx.competitors as Array<{ name?: string }>)
-          .map((c) => c?.name ?? "").filter(Boolean).join(", ") || "none listed"
-      : "none listed";
-
-    /*
-     * Free-text notes (migration 032). Everything durable that fits no
-     * structured field lives here — the user's own words from Profile, plus
-     * the short dated lines the advisor appends. Read on every conversation.
-     */
-    const additionalContext =
-      typeof ctx?.additional_context === "string" && ctx.additional_context.trim()
-        ? ctx.additional_context.trim()
-        : "Nothing noted yet.";
 
     const decisionsText = decisions.length
       ? decisions.map((d) =>
@@ -142,20 +102,11 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are VANTAGE Advisor — the Honest Advisor for ${companyName}, at ${stage} stage.
 
-You have full access to the CEO's strategic context:
+The CEO's company context (what they told VANTAGE):
 
-What they build: ${descriptor}
-Who they sell to: ${targetCustomer ?? "not specified"}
-Their #1 priority right now: ${topPriority ?? "not specified"}
-Sector: ${sector} | Geography: ${geography}
-Revenue model: ${revenueModel}
-Strategic priorities: ${priorities}
-Competitors: ${competitors}
+${companyContextBlock(company)}
 
-Additional context they've given you:
-${additionalContext}
-
-Use "what they build", "who they sell to" and their #1 priority in every answer. A suggestion that would read the same for any B2B SaaS company is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
+Use what they sell, who buys and their priorities in every answer. When asked about their priorities or competitors, state the ones above exactly; never invent ones that are not listed. A suggestion that would read the same for any company like theirs is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
 
 Recent signals analysed:
 ${consequencesText}
