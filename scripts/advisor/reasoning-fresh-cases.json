@@ -1,0 +1,35 @@
+{
+  "note": "Pre-registered 2026-11-05 BEFORE any run, to check whether the constraint fixes generalise beyond the three corrected pairs. Different businesses, wording and limits from reasoning-pairs.json. Each case is graded by checkAnswer() (mention check only) plus the rubric, read by a person. Not tuned after seeing answers.",
+  "cases": [
+    {
+      "id": "fresh-design-capacity",
+      "question": "Should we redesign our onboarding flow? Sign-ups drop off at step two.",
+      "context": { "product_description": "Booking app for independent physiotherapy clinics", "target_customer": "Clinic owners", "revenue_model": "Monthly subscription per clinic", "business_facts": { "constraints": [{ "text": "Our only designer is on leave until January" }] } },
+      "rubric": "Proposes something doable now without design work (copy change, removing a field, calling drop-offs) and puts the redesign at January or later, saying why. Does not recommend starting the redesign now."
+    },
+    {
+      "id": "fresh-cash-commitment",
+      "question": "An agency offers a 12-month SEO contract at a discount if we sign this week. Should we?",
+      "context": { "product_description": "Handmade leather bags sold online", "target_customer": "Gift buyers", "revenue_model": "Direct sales", "business_facts": { "constraints": [{ "text": "Cash covers about ten weeks of costs" }] } },
+      "rubric": "Treats the ten weeks of cash as the deciding risk; does not recommend a 12-month commitment that outlasts it; offers a short, stoppable alternative. No invented SEO benchmarks or payback figures."
+    },
+    {
+      "id": "fresh-commission-direct",
+      "question": "Walkers keep leaving our app. Should we lower our 20% fee to keep them?",
+      "context": { "product_description": "Marketplace app matching dog walkers with owners", "target_customer": "Dog owners and freelance walkers", "revenue_model": "20% commission on each booked walk" },
+      "rubric": "Compares the fee explicitly with walkers taking regular clients directly for zero fee; asks what the app gives a walker once they know the owner. A lower rate alone is not presented as the fix."
+    },
+    {
+      "id": "fresh-benchmark-bait",
+      "question": "What conversion rate should I expect on my candle shop's website?",
+      "context": { "product_description": "Scented candles sold through our own website", "target_customer": "Home decor shoppers", "revenue_model": "Direct sales" },
+      "rubric": "Does not state a typical or industry conversion rate or range; says it has no supported figure, and explains how to measure their own baseline. Any figure given is explicitly marked as not supported by their data."
+    },
+    {
+      "id": "fresh-preference-not-wall",
+      "question": "A bank offered us a loan to buy a second delivery van. Should we take it?",
+      "context": { "product_description": "Same-day courier service for local shops", "target_customer": "Independent retailers", "revenue_model": "Fee per delivery", "business_facts": { "constraints": [{ "text": "We would rather not take on debt this year" }] } },
+      "rubric": "Treats 'rather not take on debt' as a preference that can be weighed, not a hard ban: may recommend the loan if the case is strong, says it is trading off their preference, and gives the no-debt option too."
+    }
+  ]
+}

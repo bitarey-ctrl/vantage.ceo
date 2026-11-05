@@ -22,7 +22,9 @@ const DOLLARS = { advisor: 0.5, candidate: 2.0, combined: 2.5 };
 // Conservative maximum cost of ONE request of each kind, used to refuse a step that could cross a dollar ceiling.
 const MAX_COST = { advisor: 0.06, research: 0.7, gate: 0.12, assessment: 0.18, analysis: 0.1 };
 const NEED = { candidateBeforeReasoning: 14, reasoning: 12 };
-const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [4, 20] }; // $ per million input/output tokens
+// $ per million input/output tokens. Opus is priced conservatively ($5/$25): the earlier $4/$20 assumption understated
+// the 2026-11-05 total ($1.317 vs $1.508 on the same usage).
+const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [5, 25] };
 const SEARCH_PRICE = 0.01; // $ per web search request
 
 const PLAN = [
@@ -321,6 +323,39 @@ if (mode === 'reasoning') {
     }
     report.reasoning.push(out); saveReport();
     console.log(`\n=== ${p.id}\nRubric: ${p.rubric}\n--- A: ${out.answers.a.text}\n--- B: ${out.answers.b.text}`);
+  }
+  process.exit(0);
+}
+
+if (mode === 'regression') {
+  // Correction pass: the corrected B sides of the failed pairs, the tone check, and pre-registered fresh cases.
+  // Exact call ceiling and a hard dollar stop (REGRESSION_DOLLARS). Results go to report.regression; the original
+  // reasoning outputs (report.reasoning, reasoning-baseline-2026-11-05.json) are never overwritten.
+  const { checkAnswer } = await import('../../src/lib/company-context/constraints.ts');
+  const { normaliseCompanyContext, companyContextBlock } = await import('../../src/lib/company-context/context.ts');
+  const { pairs } = JSON.parse(readFileSync(new URL('../advisor/reasoning-pairs.json', import.meta.url), 'utf8'));
+  const { cases } = JSON.parse(readFileSync(new URL('../advisor/reasoning-fresh-cases.json', import.meta.url), 'utf8'));
+  const IDS = ['subscription-vs-commission', 'contribution-vs-cash', 'future-vs-feasible', 'bypass-vs-churn'];
+  const runs = [
+    ...IDS.map((id) => pairs.find((p) => p.id === id)).map((p) => { const ctx = { business_facts: {}, ...p.base }; if (p.differ.field.startsWith('business_facts.')) ctx.business_facts = { [p.differ.field.split('.')[1]]: p.differ.b }; else ctx[p.differ.field] = p.differ.b; return { id: `${p.id}:b`, kind: 'regression', question: p.question, ctx, rubric: p.rubric }; }),
+    ...cases.map((c) => ({ id: c.id, kind: 'fresh', question: c.question, ctx: { business_facts: {}, ...c.context }, rubric: c.rubric })),
+  ];
+  const dollars = Number(process.env.REGRESSION_DOLLARS ?? 0);
+  if (!dollars) { console.error('Set REGRESSION_DOLLARS (the approved hard ceiling).'); process.exit(3); }
+  phaseStart = ledger().calls.length; phaseDollars = dollars;
+  setCeiling(ledger().calls.length + runs.length);
+  report.regression = report.regression ?? [];
+  for (const r of runs) {
+    const ctx = { product_description: null, target_customer: null, revenue_model: null, additional_context: null, ...r.ctx };
+    await admin.from('ceo_context').update(ctx).eq('profile_id', R.id);
+    const s = await newSession('R', `regression ${r.id}`);
+    const q = await addQuestion('R', s, r.question);
+    const a = await step(`R ${r.id}`, () => ask('R', q.session, q.turnId), MAX_COST.advisor);
+    const text = a.text.split('[[VANTAGE_MEMORY]]')[0].trim();
+    const company = normaliseCompanyContext(R.id, {}, ctx);
+    const out = { id: r.id, kind: r.kind, rubric: r.rubric, status: statusOf(a), text, error: a.error, check: checkAnswer(text, company, `${companyContextBlock(company)}\n${r.question}`) };
+    report.regression.push(out); saveReport();
+    console.log(`\n=== ${r.id} (${r.kind})\nRubric: ${r.rubric}\nCheck: ${JSON.stringify(out.check)}\n--- ${text}`);
   }
   process.exit(0);
 }
