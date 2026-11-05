@@ -6,7 +6,7 @@
  * for only when a dependency they relate to is known, and "Don't know" is always a valid answer: unknowns stay
  * unknown.
  */
-import type { CompanyContext, BusinessFact, Estimate } from './context';
+import type { CompanyContext, BusinessFact, Estimate, ResearchBasis } from './context';
 import type { Proposal } from './research';
 
 export interface IntakeQuestion {
@@ -47,6 +47,9 @@ export function intakeQuestions(c: CompanyContext, proposals: Proposal[] = []): 
 
 export interface IntakeAnswer { id: IntakeQuestion['id']; value: string | null; acceptProposalId?: string | null; estimateFor?: string; unknown?: boolean }
 
+/** A matched quote shows the page says it — not that it is true or still applies. Anything else is unverified. */
+export const researchBasis = (p: Proposal): ResearchBasis => (p.basis === 'inferred' ? 'inferred' : p.evidence.some((e) => e.quoteFound) ? 'quote_matched' : 'unverified');
+
 const listOf = (v: string) => v.split(/[\n;,]+/).map((x) => x.trim()).filter((x) => x.length > 1);
 
 /**
@@ -61,6 +64,11 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
   const ests = [...((bf.estimates as Estimate[]) ?? [])];
   const saved: string[] = [], unknown: string[] = [];
   const stamp = Date.now().toString(36);
+  // Which core columns were filled from research, so the value stays labelled as research (with its verification
+  // status) until the founder edits it. Kept in business_facts: no schema change.
+  const fromResearch = { ...((bf.column_sources as Record<string, unknown>) ?? {}) };
+  const COLUMN_OF: Record<string, string> = { product: 'product_description', buyers: 'target_customer', revenue_model: 'revenue_model', geography: 'geography_detail' };
+  const markColumn = (col: string, p: Proposal, value: unknown) => { fromResearch[col] = { value, basis: researchBasis(p), evidence: p.evidence[0]?.url ?? null }; };
   for (const a of answers) {
     if (a.unknown) { unknown.push(a.id); continue; }
     const p = a.acceptProposalId ? proposals.find((x) => x.id === a.acceptProposalId) : null;
@@ -69,13 +77,16 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
     if (!value) continue;
     const origin = typed ? 'founder' : 'research_accepted';
     const evidence = typed ? null : p?.evidence[0]?.url ?? null;
+    const basis = !typed && p ? { basis: researchBasis(p) } : {};
+    if (COLUMN_OF[a.id]) { if (!typed && p) markColumn(COLUMN_OF[a.id], p, value); else delete fromResearch[COLUMN_OF[a.id]]; }
     switch (a.id) {
       case 'product': columns.product_description = value; break;
       case 'buyers': columns.target_customer = value; break;
       case 'revenue_model': columns.revenue_model = value; break;
       case 'geography': columns.geography_detail = value; break;
-      case 'competitors': columns.competitors = listOf(value); break;
-      case 'dependencies': for (const [i, t] of listOf(value).entries()) deps.push({ id: `d${stamp}${i}`, text: t, origin, evidence }); break;
+      case 'competitors': columns.competitors = listOf(value); if (!typed && p) markColumn('competitors', p, columns.competitors); else delete fromResearch.competitors; break;
+      // An accepted research sentence stays whole (splitting it on commas produced fragments as "dependencies").
+      case 'dependencies': for (const [i, t] of (typed ? listOf(value) : [value]).entries()) deps.push({ id: `d${stamp}${i}`, text: t, origin, evidence, ...basis }); break;
       case 'constraints': for (const [i, t] of listOf(value).entries()) cons.push({ id: `c${stamp}${i}`, text: t, origin, evidence: null }); break;
       case 'estimate': {
         const n = Number(value.replace(/[^\d.]/g, ''));
@@ -92,11 +103,11 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
   for (const id of acceptIds) {
     const p = proposals.find((x) => x.id === id);
     if (!p || answers.some((a) => a.acceptProposalId === id)) continue;
-    const col = { product: 'product_description', buyers: 'target_customer', revenue_model: 'revenue_model', geography: 'geography_detail' }[p.field as string];
-    if (col && !current?.[col] && !(col in columns)) { columns[col] = p.value; saved.push(p.field); continue; }
-    if (p.field === 'competitors' && !(current?.competitors as unknown[] | undefined)?.length && !columns.competitors) { columns.competitors = listOf(p.value); saved.push('competitors'); continue; }
-    if (p.field === 'dependencies') { deps.push({ id: `d${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null }); saved.push('dependencies'); continue; }
-    pub.push({ id: `p${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null }); saved.push(p.field);
+    const col = COLUMN_OF[p.field as string];
+    if (col && !current?.[col] && !(col in columns)) { columns[col] = p.value; markColumn(col, p, p.value); saved.push(p.field); continue; }
+    if (p.field === 'competitors' && !(current?.competitors as unknown[] | undefined)?.length && !columns.competitors) { columns.competitors = listOf(p.value); markColumn('competitors', p, columns.competitors); saved.push('competitors'); continue; }
+    if (p.field === 'dependencies') { deps.push({ id: `d${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null, basis: researchBasis(p) }); saved.push('dependencies'); continue; }
+    pub.push({ id: `p${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null, basis: researchBasis(p) }); saved.push(p.field);
   }
-  return { columns, businessFacts: { ...bf, dependencies: deps, constraints: cons, estimates: ests, public_facts: pub }, saved, unknown };
+  return { columns, businessFacts: { ...bf, dependencies: deps, constraints: cons, estimates: ests, public_facts: pub, column_sources: fromResearch }, saved, unknown };
 }

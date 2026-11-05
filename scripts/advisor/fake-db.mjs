@@ -30,9 +30,10 @@ export function createFakeDb(seed = {}, { missing = [] } = {}) {
   }
   let failNext = null; // { table, op } → next matching statement returns a database error
   function builder(table) {
-    const st = { op: 'select', filters: [], payload: null, single: null, opts: {}, limit: null, order: null };
+    const st = { op: 'select', filters: [], payload: null, single: null, opts: {}, limit: null, order: null, columns: null };
     const b = {
-      select() { if (st.op === 'select') st.op = 'select'; return b; },
+      // Like PostgREST, a plain column list returns only those columns (a dropped column must be visible in tests).
+      select(cols) { if (st.op === 'select' && typeof cols === 'string' && cols.trim() !== '*' && !/[()*:]/.test(cols)) st.columns = cols.split(',').map((c) => c.trim()).filter(Boolean); return b; },
       insert(p) { st.op = 'insert'; st.payload = p; return b; },
       upsert(p, o = {}) { st.op = 'upsert'; st.payload = p; st.opts = o; return b; },
       update(p) { st.op = 'update'; st.payload = p; return b; },
@@ -75,7 +76,7 @@ export function createFakeDb(seed = {}, { missing = [] } = {}) {
       else if (st.op === 'delete') { tables.set(table, all.filter((r) => !match.includes(r))); out = match; }
       if (st.order) { const { col, asc } = st.order; out = [...out].sort((x, y) => (x[col] > y[col] ? 1 : x[col] < y[col] ? -1 : 0) * (asc ? 1 : -1)); }
       if (st.limit) out = out.slice(0, st.limit);
-      const copy = out.map((r) => JSON.parse(JSON.stringify(r)));
+      const copy = out.map((r) => JSON.parse(JSON.stringify(st.columns ? Object.fromEntries(st.columns.filter((c) => c in r).map((c) => [c, r[c]])) : r)));
       if (st.single === 'single') return copy.length === 1 ? { data: copy[0], error: null } : { data: null, error: { code: 'PGRST116', message: 'not one row' } };
       if (st.single === 'maybe') return { data: copy[0] ?? null, error: null };
       return { data: copy, error: null };

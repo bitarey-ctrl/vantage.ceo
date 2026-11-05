@@ -1,0 +1,109 @@
+{
+ "run": "2026-11-05 isolated Stage C",
+ "commit": "ca05fb1",
+ "model": "claude-sonnet-4-5",
+ "pairs": [
+  {
+   "id": "bypass-vs-churn",
+   "rubric": "B treats it as transaction bypass (value of staying on-platform vs a zero-fee direct deal), not ordinary churn; A may treat it as demand or churn.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "**Check whether it's repeat buyers ordering less, or fewer of them ordering at all** — that distinction changes everything. If the same hotels are placing smaller orders, you've got a pricing or product problem. If fewer hotels are coming back for second orders, you've got a retention or service problem.\n\nFor your marketplace, the worst-case scenario isn't lower repeat order value — it's hotels and furniture makers starting to transact directly and cutting you out of the 8% commission. Once they've met through your platform, what keeps them from doing the next deal themselves?\n\n**The honest question you need to answer first:** are you still seeing the transactions, just smaller ones? Or are repeat buyers placing *one* order through you, then going direct? Pull your repeat order data for the last six months. If you see a pattern of hotels doing one order through the platform then disappearing, your problem is disintermediation, not repeat purchase value.\n\nIf it's genuinely smaller repeat orders from engaged buyers, that's a feature/trust gap — hotels might be testing a new maker with a small order, or your commission is pushing them toward lower-value items. But get the retention number first, because if they're leaving after the first transaction, everything else is a distraction.\n\n**What's the actual repeat purchase rate over the last three months — hotels placing a second order divided by hotels who placed a first one?**",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "**The hard truth: your marketplace has a structural leak, and patching it mid-transaction won't fix it.**\n\nYou're seeing the classic B2B marketplace problem — after the first order, the buyer and maker have everything they need to work directly: contact details, pricing expectations, quality proof. Your 8% commission is now pure friction with no incremental value.\n\nYou need to make staying on the platform cheaper or easier than leaving it. Three paths, in order of what you can actually do now:\n\n1. **Exclusive inventory** — Get makers to list pieces or custom capabilities only through you. If procurement teams can't get certain products direct, they stay. Requires maker buy-in, not development time.\n\n2. **Provide a service neither side wants to own** — Net payment terms, consolidated billing across makers, procurement software integration, compliance documentation. Make leaving mean taking on admin burden they'd rather avoid.\n\n3. **Tiered commission that rewards loyalty** — Drop to 5% after five orders, 3% after twenty. You're losing them anyway; better to keep half the revenue than watch it all walk.\n\nThe wrong move: trying to \"engage\" repeat buyers with content, account managers, or loyalty points. They're not churning because they forgot about you — they're leaving because direct is cheaper and you haven't given them a reason to pay the toll.\n\n**What's your current gross margin after the 8% commission? And do any makers already offer buyers direct pricing outside your platform?**",
+     "error": null
+    }
+   },
+   "verdict": "pass (tone: dramatic opening)"
+  },
+  {
+   "id": "introduction-vs-responsibility",
+   "rubric": "B does not recommend lending; it names the licence/capital/liability requirements or a partner route. Neither invents rates.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "No — not yet, and possibly not ever.\n\nYou make money on introduction fees, not on transactions. Offering financing means you'd be lending capital (which you likely don't have), taking on credit risk for European distributors you're introducing to Turkish manufacturers, and stepping into a completely different business with regulatory requirements, working capital needs, and liability exposure that aren't in your wheelhouse. Even if you partnered with a finance provider, you'd be inserting friction into a simple model: connect buyer to seller, get paid for the introduction.\n\nThe real question is whether buyers are *asking* for it because they can't close deals without it. If Turkish manufacturers already offer payment terms and your buyers are walking away over financing, that's a market signal. But if deals are closing fine and you're just wondering if financing would help you win more introductions, the juice isn't worth the squeeze — you'd be solving a problem that doesn't exist while taking on massive new risk.\n\n**Next step:** Ask three of your active buyers directly whether lack of financing has stopped them from closing a deal they otherwise wanted. If the answer is no, this is off the table. If yes, find out what terms they need and whether the manufacturer can provide them — that keeps you out of the capital business.\n\nWhat's actually blocking deals right now — is it financing, or something else?",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "**No — not yet, and maybe never.**\n\nYou're an introduction platform. The moment you finance deals, you're not just connecting buyers to manufacturers — you're underwriting credit risk in cross-border transactions between parties you don't fully control. That requires capital you probably don't have, credit assessment capabilities you'd need to build, and exposure to defaults, currency fluctuations, and disputes over quality or delivery that could wipe out months of introduction fees.\n\nThe real question is: why would buyers need *you* to finance when they already have banks, trade finance providers, or supplier credit? If Turkish manufacturers aren't offering terms, that's a signal about creditworthiness or deal size — and you stepping in doesn't fix the underlying risk, it just moves it onto your balance sheet.\n\nBefore you even consider it: what specifically are buyers asking for that their existing finance options don't cover, and how often are you losing deals because of it? If the answer is \"we haven't lost deals, we just think it would help\" — don't do it.",
+     "error": null
+    }
+   },
+   "verdict": "pass"
+  },
+  {
+   "id": "subscription-vs-commission",
+   "rubric": "B compares a lower commission against the customer's zero-fee direct alternative; A reasons about seat price and churn.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "Not automatically. You charge monthly per technician — so the question is whether dropping the price brings enough new seats to offset the margin you lose on every existing one. And HVAC contractors typically have tight budgets and thin tech stacks, so a lower price won't necessarily flood you with volume unless the real blocker is something else.\n\nThe dangerous version: cutting price across the board to chase growth. You lose margin on every current customer, and if the real friction is onboarding complexity, integration hassle, or weak proof that you save dispatchers time, you've just made less money without fixing the actual problem.\n\nThe safe test: offer a lower price **only to a narrow segment** — say, shops with 3–5 techs where you currently lose to pen-and-paper or spreadsheets — and see if conversion rate moves. If it doesn't, price wasn't the blocker. If it does, you know the price-elastic segment and can decide whether to serve it or double down on the contractors who'll pay your current rate.\n\nWhat's actually stopping deals right now — is it sticker shock, or something about setup, trust, or proving ROI fast?",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "**No — not yet.**\n\nYou sell scheduling software to HVAC contractors on commission per booked job. That model means your revenue scales with their activity, not headcount or subscription seats. Cutting price doesn't help you if it attracts lower-volume contractors or if the same contractors just book the same number of jobs at a lower rate.\n\nThe better question is whether you're losing deals to competitors on price, or whether contractors aren't seeing enough booked jobs to justify *any* commission. If it's the former — they like the product but balk at the rate — then a targeted discount for high-volume shops might work. If it's the latter, price isn't the blocker; proving ROI is.\n\nBefore you cut price across the board, answer this: **Are you losing signed contractors because they don't book enough jobs through the system, or are you losing prospects at the sales stage because your commission rate feels too high?** The fix for each is completely different.",
+     "error": null
+    }
+   },
+   "verdict": "FAIL: no comparison with the zero-fee direct alternative"
+  },
+  {
+   "id": "contribution-vs-cash",
+   "rubric": "B separates positive contribution from cash runway and payback timing; it does not recommend spend that outlasts the cash.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "No — not yet.\n\nYou're making money per order, which is good, but you haven't told me three things that decide whether ad spend actually works: how much each new customer costs to acquire, how much profit each order throws off after all costs, and whether people buy once or come back. If your margin per order is £3 and it costs £15 to acquire a customer who buys twice, you're burning cash to grow. If it's £8 margin and £6 acquisition cost with customers who reorder every month, then yes, pour fuel on it.\n\nThe default path for specialty tea is organic — content, word of mouth, sampling at events, partnerships with cafes or wellness brands. Ads can work, but they're expensive per conversion for a considered purchase like tea, and the targeting is broad unless you've already built lookalike audiences from existing buyers.\n\n**Next step:** Calculate your actual contribution margin per order (revenue minus product cost, packaging, and shipping), then track how many times a typical customer reorders in their first six months. If the lifetime value is 3x what you think you'd pay to acquire them through ads, test a small budget. If it's closer to 1x, growth through ads will just eat your profit.\n\nWhat's your average order value, and do you know your repeat purchase rate?",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "Not necessarily — and probably not yet.\n\nYou make money per order, but the question is whether you make *enough* per order to pay for customer acquisition and still have cash left to run the business. Most tea shops discover their margin per customer (after product cost, shipping, packaging) is £8–15. If an ad-driven customer costs you £25 to acquire and buys once, you're burning cash to grow. If they return three times over two years, the unit economics work — but you still need the cash to fund the gap between paying for the ad today and collecting the profit eighteen months from now.\n\nBefore you increase ad spend, you need three numbers you can actually see: average order value, rough margin per order after all costs, and how many times a new customer reorders in their first year. If (reorders × margin) is materially bigger than your cost per acquisition, and you have the cash to carry the payback period, then yes — spend more. If not, your faster path is fixing repeat rate or margin first, because profitable customers let you grow without running out of money.\n\nWhat's your current cost per new customer from ads, and what do you see for repeat purchase rate?",
+     "error": null
+    }
+   },
+   "verdict": "FAIL: ignores \"about three months of cash left\"; invents a \"most tea shops\" benchmark"
+  },
+  {
+   "id": "future-vs-feasible",
+   "rubric": "B proposes a step feasible now (e.g. a partner inspector or checklist) and treats the feature as later; A may consider building.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "Don't build it — arrange it.\n\nYou take commission on sales. An inspection feature means you're taking on liability, quality judgement, and the operational weight of either employing inspectors or vetting and managing third-party ones. That's a different business with different economics, and it doesn't obviously increase the number of transactions you facilitate — which is the only thing that grows your revenue.\n\nThe real question is whether buyers trust the listings enough to transact. If lack of trust is killing deals, you have three paths that don't require you to become an inspection company: broker introductions to independent inspection services and let the buyer pay them directly; require sellers to provide recent third-party inspection reports as a condition of premium placement; or build verified seller tiers based on transaction history and dispute rate, so trust accrues to the marketplace over time instead of sitting with each individual listing.\n\nThe last one compounds. The first two you could do this month.\n\nWhat's actually stopping deals right now — is it buyer distrust of condition, or something else?",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "**No — not yet.**\n\nYou run a marketplace for used industrial equipment, earning commission on sales. An inspection feature means you'd be taking responsibility for quality assessment, which is a completely different business from making introductions. Before you touch that, you need to know:\n\n1. **Do buyers want you to inspect, or just to connect them with someone who can?** A directory of trusted inspection firms costs you nothing and keeps liability off your books. Building inspection into the transaction means hiring engineers, carrying insurance, and answering for every missed crack or bad bearing.\n\n2. **Would it actually close more sales?** If buyers are already hiring their own inspectors or visiting sites themselves, you're solving a workflow problem, not a deal-blocker. If deals are falling through because buyers can't trust condition reports from sellers, that's different — but you'd still want proof before you start employing inspectors.\n\nThe conservative path: partner with two or three inspection firms, take a referral fee, and see if buyers use it. If they do and you're leaving serious money on the table, *then* you consider bringing it in-house.\n\n**What's actually killing deals right now — financing, trust in the seller, logistics, or something else?**",
+     "error": null
+    }
+   },
+   "verdict": "FAIL: ignores \"no engineering capacity until Q3\" (same advice as control)"
+  },
+  {
+   "id": "existing-capability",
+   "rubric": "B says they already have escrow and names the remaining trust gap; A may recommend escrow with its requirements.",
+   "answers": {
+    "a": {
+     "status": "complete",
+     "text": "**No — not yet, and maybe never.**\n\nYou run a B2B textile marketplace. You take commission on each order between wholesalers and boutique retailers. Escrow sounds like buyer protection, but it puts **you** in the middle of payment disputes, fraud claims, and delivery arguments. That means:\n\n- You need capital to hold funds (or a licensed partner who takes a cut)\n- You become responsible when the fabric arrives damaged or late\n- You inherit chargebacks, refund fights, and quality disputes\n- Your margin shrinks or your commission has to rise to cover it\n\nThe real question is: **what trust problem are you solving?** If buyers won't transact because they've been burned before, escrow might matter. But if the friction is that they already know their suppliers and prefer to deal direct, escrow doesn't fix that — it just costs you more per transaction.\n\nStart simpler: **buyer reviews, supplier verification badges, or a straightforward refund guarantee underwritten by the supplier, not you.** Those signal trust without putting you on the hook for every shipment.\n\nWhat's actually stopping boutique retailers from placing orders — fear of fraud, or the fact that they can already buy from these wholesalers without paying your commission?",
+     "error": null
+    },
+    "b": {
+     "status": "complete",
+     "text": "You already have escrow — your payments go through an escrow partner. So the question is really whether buyers know about it, whether it's protecting the right things, and whether trust is actually what's stopping them from ordering.\n\nIf boutique retailers are hesitant, it's more likely to be about product quality, return terms, or minimum order sizes than payment safety — textile buyers care whether the fabric matches the swatch and whether they can send back a roll that doesn't work. Escrow solves \"will I get my money back if the seller vanishes\", but most wholesale buyers already assume a platform handles basic payment protection.\n\nCheck three things: Are buyers mentioning payment risk when they browse but don't order? Does your current escrow partner release funds only after delivery confirmation, or do they have quality dispute handling? And do you show the escrow badge clearly at checkout?\n\nIf payment security isn't coming up in sales conversations, the trust gap is somewhere else — probably in the product itself or the return policy. What are buyers actually saying when they don't complete an order?",
+     "error": null
+    }
+   },
+   "verdict": "pass"
+  }
+ ]
+}

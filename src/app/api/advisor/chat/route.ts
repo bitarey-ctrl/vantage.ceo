@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
+import { decisiveLimitsBlock, finalCheckBlock } from "@/lib/company-context/constraints";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { isMemoryField } from "@/lib/advisor/apply-memory";
@@ -62,7 +63,9 @@ export async function POST(request: NextRequest) {
           .single(),
         adminSupabase
           .from("ceo_context")
-          .select("sector, geography_detail, revenue_model, strategic_priorities, competitors, product_description, target_customer, top_priority, top_priority_other, additional_context, monthly_revenue_range, arr_band, avoided_decision")
+          // The whole row, like every other caller: a column list here silently dropped business_facts (stated
+          // constraints, dependencies, estimates) and the onboarding answer columns, so limits never reached the model.
+          .select("*")
           .eq("profile_id", user.id)
           .maybeSingle(),
         adminSupabase
@@ -122,6 +125,8 @@ The CEO's company context (what they told VANTAGE):
 
 ${companyContextBlock(company)}
 
+${decisiveLimitsBlock(company)}
+
 Use what they sell, who buys and their priorities in every answer. When asked about their priorities or competitors, state the ones above exactly; never invent ones that are not listed. A suggestion that would read the same for any company like theirs is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
 
 ${signalContext.text}
@@ -147,6 +152,7 @@ Your role: Be a direct, honest advisor for THIS business. Reference their actual
 - Keep these distinctions: making an introduction vs taking responsibility for payment, financing, quality or delivery; subscription vs commission revenue; positive contribution per sale vs enough cash to survive; a capability they might build later vs a step they can take now.
 - Respect stated constraints. If the best answer breaks one, say so and give the best option inside it.
 - No statistics, benchmarks, thresholds, deadlines or legal, regulatory or provider claims unless they are in their context or signals — then say where they came from. No invented urgency. No certain predictions.
+- That includes "most businesses like yours…", "typically", industry ranges and made-up example figures ("if your margin is £3…"). Do not swap one invented number for another: use the numbers they gave, or name the number you need and ask for it.
 - When a missing fact would change the answer, give the answer for each likely case in a sentence or two, then ask ONE focused question. Never recommend a commitment that rests on an assumption you made up.
 
 ## SELF-CHECK BEFORE ANSWERING
@@ -222,7 +228,9 @@ Rules, and they matter more than being helpful:
   it, do not describe it, do not paste it into your prose.
 
 ## STYLE
-Keep it concise: a direct answer, the reasoning that matters, and one next step — usually under 200 words, never more than about 450 unless they ask for depth. Finish every answer with a complete sentence; if the topic needs more, say what you would cover next instead of starting it. Be honest that you don't have their actual financials. Default shape: the direct answer first; two or three sentences of reasoning specific to their business; one practical next step; a caveat or a single focused question only when it matters. Plain words, short paragraphs, no headings in capitals, no flattery, no dramatic warnings, no unrequested long playbooks — give depth when they ask for it. Don't sit on the fence — pick a side, and be willing to be wrong.`;
+Keep it concise: a direct answer, the reasoning that matters, and one next step — usually under 200 words, never more than about 450 unless they ask for depth. Finish every answer with a complete sentence; if the topic needs more, say what you would cover next instead of starting it. Be honest that you don't have their actual financials. Default shape: the direct answer first; two or three sentences of reasoning specific to their business; one practical next step; a caveat or a single focused question only when it matters. Open with the answer itself, not a dramatic preamble ("The hard truth", "Here's the thing", "Let's be brutally honest"). Plain words, short paragraphs, no headings in capitals, no flattery, no dramatic warnings, no unrequested long playbooks — give depth when they ask for it. Don't sit on the fence — pick a side, and be willing to be wrong.
+
+${finalCheckBlock(company)}`.trimEnd();
 
     const encoder = new TextEncoder();
 

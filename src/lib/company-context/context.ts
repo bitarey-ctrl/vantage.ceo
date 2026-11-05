@@ -9,12 +9,15 @@
  * context carries a version hash so stored judgements can tell when the facts behind them changed.
  */
 import { createHash } from 'node:crypto';
+import { companyLimits } from './constraints';
 import { classifyAvoidedDecision, classifyBusinessModel, classifyRevenueModel, type FieldFlag } from './field-validation';
 
 export type FactOrigin = 'founder' | 'founder_profile' | 'advisor_noted' | 'research_accepted';
 
 /** A business fact beyond the fixed columns (ceo_context.business_facts). Estimates stay labelled as estimates. */
-export interface BusinessFact { id: string; text: string; origin: FactOrigin; evidence?: string | null }
+/** How far research evidence goes: a matched quote shows a fetched page says it — not that it is true or applies. */
+export type ResearchBasis = 'quote_matched' | 'unverified' | 'inferred';
+export interface BusinessFact { id: string; text: string; origin: FactOrigin; evidence?: string | null; strength?: 'hard' | 'preference'; basis?: ResearchBasis }
 export interface Estimate { id: string; label: string; value: number; unit: '%' | 'currency' | 'count'; basis: 'estimate' | 'actual'; origin: FactOrigin }
 export interface ContextFact { value: string; origin: FactOrigin; field: string }
 
@@ -51,6 +54,8 @@ export interface CompanyContext {
   riskTolerance: string | null;
   /** Stored values that do not fit their field: reinterpreted (verified mapping defect) or awaiting confirmation. */
   flags: FieldFlag[];
+  /** Context fields whose current value was accepted from research, with how far its evidence goes. */
+  research: Partial<Record<'product' | 'buyers' | 'revenueModel' | 'geography' | 'competitors', ResearchBasis>>;
   /** Plain-language list of what is not known (and must not be assumed). */
   unknowns: string[];
 }
@@ -84,7 +89,9 @@ function factList(raw: unknown, origin: FactOrigin): BusinessFact[] {
   return raw.map((f, i) => {
     const o = (f && typeof f === 'object' ? f : { text: f }) as Record<string, unknown>;
     const text = str(o.text);
-    const fact: BusinessFact | null = text ? { id: str(o.id) ?? `f${i}`, text, origin: (str(o.origin) as FactOrigin) ?? origin, evidence: str(o.evidence) } : null;
+    const strength = o.strength === 'hard' || o.strength === 'preference' ? o.strength : undefined;
+    const basis = o.basis === 'quote_matched' || o.basis === 'unverified' || o.basis === 'inferred' ? o.basis : undefined;
+    const fact: BusinessFact | null = text ? { id: str(o.id) ?? `f${i}`, text, origin: (str(o.origin) as FactOrigin) ?? origin, evidence: str(o.evidence), ...(strength ? { strength } : {}), ...(basis ? { basis } : {}) } : null;
     return fact;
   }).filter((x): x is BusinessFact => x !== null);
 }
@@ -144,6 +151,17 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   const riskTolerance = take('riskTolerance', str(field(ctx, 'risk_tolerance')) ?? ad.riskTolerance, 'founder');
   const website = take('website', firstUrl(notes) ?? firstUrl(product), 'founder');
   const bf = (field(ctx, 'business_facts') ?? {}) as Record<string, unknown>;
+  // A column filled from research stays labelled as research while its value is unchanged (the founder editing it
+  // makes it theirs). Older rows have no record and stay founder-reported.
+  const research: Record<string, ResearchBasis> = {};
+  const COLS: Record<string, [string, unknown]> = { product: ['product_description', product], buyers: ['target_customer', buyers], revenueModel: ['revenue_model', field(ctx, 'revenue_model')], geography: ['geography_detail', field(ctx, 'geography_detail')], competitors: ['competitors', field(ctx, 'competitors')] };
+  for (const [key, [col, current]] of Object.entries(COLS)) {
+    const rec = ((bf.column_sources ?? {}) as Record<string, { value?: unknown; basis?: unknown }>)[col];
+    if (rec && JSON.stringify(rec.value) === JSON.stringify(typeof current === 'string' ? current.trim() : current) && (rec.basis === 'quote_matched' || rec.basis === 'unverified' || rec.basis === 'inferred')) {
+      research[key] = rec.basis;
+      if (provenance[key]) provenance[key].origin = 'research_accepted';
+    }
+  }
   const dependencies = factList(bf.dependencies, 'founder');
   const constraints = factList(bf.constraints, 'founder');
   const estimates = estimateList(bf.estimates);
@@ -160,9 +178,9 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (!constraints.length) unknowns.push('limits on what it can do now (cash, team, time)');
   unknowns.push('margins, costs, cash and payment terms (never inferred)');
 
-  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags };
+  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags, research };
   const version = createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 16);
-  return { profileId, version, ...facts, provenance, unknowns };
+  return { profileId, version, ...facts, research, provenance, unknowns };
 }
 
 /**
@@ -171,30 +189,40 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
  */
 export function companyContextBlock(c: CompanyContext): string {
   const line = (label: string, value: string | null | undefined) => `${label}: ${value && value.trim() ? value : 'not recorded'}`;
+  const limits = companyLimits(c);
+  const RESEARCH_NOTE: Record<ResearchBasis, string> = {
+    quote_matched: 'from research they accepted; a fetched page says this — not independently verified',
+    unverified: 'from research they accepted; UNVERIFIED — no matching quote was found',
+    inferred: 'from research they accepted; inferred, not stated by any source',
+  };
+  const tag = (key: keyof CompanyContext['research'], value: string | null) => (value && c.research[key] ? `${value} (${RESEARCH_NOTE[c.research[key]!]})` : value);
+  const factText = (d: BusinessFact) => (d.origin === 'research_accepted' && d.basis ? `${d.text} (${RESEARCH_NOTE[d.basis]})` : d.text);
   return [
     line('Company', c.companyName ? `${c.companyName}${c.website ? ` (${c.website})` : ''}` : null),
-    line('What they sell', c.product),
-    line('Who buys', c.buyers),
-    line('How they make money', c.revenueModel ? `${c.revenueModel}${c.flags.some((f) => f.field === 'ceo_context.revenue_model' && f.action === 'confirm') ? ' (unconfirmed — may not describe how they make money; ask before relying on it)' : ''}` : null),
+    line('What they sell', tag('product', c.product)),
+    line('Who buys', tag('buyers', c.buyers)),
+    line('How they make money', c.revenueModel ? `${tag('revenueModel', c.revenueModel)}${c.flags.some((f) => f.field === 'ceo_context.revenue_model' && f.action === 'confirm') ? ' (unconfirmed — may not describe how they make money; ask before relying on it)' : ''}` : null),
     line('Revenue range (founder-reported)', c.revenueRange),
     line('Stage', c.stage),
     line('Sector', c.sector),
-    line('Where they operate and sell', c.geography.join(', ')),
+    line('Where they operate and sell', tag('geography', c.geography.join(', '))),
     line('Current #1 priority', c.topPriority),
     line('Strategic priorities', c.priorities.join('; ')),
-    line('Competitors they named', c.competitors.join(', ')),
+    line(c.research.competitors ? 'Competitors' : 'Competitors they named', tag('competitors', c.competitors.join(', '))),
     line('Decision they have been avoiding', c.avoidedDecision),
     ...(c.teamSize ? [line('Team size (onboarding answer)', c.teamSize)] : []),
     ...(c.decisionStyle ? [line('Their decision style (onboarding answer)', c.decisionStyle)] : []),
     ...(c.riskTolerance ? [line('Their risk tolerance (onboarding answer)', c.riskTolerance)] : []),
-    line('Public facts they confirmed', c.publicFacts.map((d) => d.text).join('; ')),
-    line('Depends on', c.dependencies.map((d) => d.text).join('; ')),
-    line('Constraints they stated', c.constraints.map((d) => d.text).join('; ')),
-    line('Numbers they gave', c.estimates.map((e) => `${e.label}: ${e.value}${e.unit === '%' ? '%' : e.unit === 'currency' ? ' (currency)' : ''} (${e.basis})`).join('; ')),
+    line('Public facts they accepted from research', c.publicFacts.map(factText).join('; ')),
+    line('Depends on', c.dependencies.map(factText).join('; ')),
+    // Hard limits and preferences are kept apart (see constraints.ts); the implications are spelled out in DECISIVE LIMITS.
+    line('Hard limits they stated', limits.filter((l) => l.strength === 'hard').map((l) => l.text).join('; ')),
+    ...(limits.some((l) => l.strength === 'preference') ? [line('Preferences they stated (can be traded off)', limits.filter((l) => l.strength === 'preference').map((l) => l.text).join('; '))] : []),
+    line('Numbers they gave (their estimates unless marked actual; not measured by VANTAGE)', c.estimates.map((e) => `${e.label}: ${e.value}${e.unit === '%' ? '%' : e.unit === 'currency' ? ' (currency)' : ''} (${e.basis})`).join('; ')),
     line('Notes they gave', c.notes),
     `Not known — do not assume or invent: ${c.unknowns.join('; ')}.`,
     'Business type: only what is stated above. If it is not stated, do not assume software, SaaS, a location, or a revenue model.',
-    'All values above are founder-reported unless stated otherwise; they are not independently verified.',
+    'All values above are founder-reported unless stated otherwise; they are not independently verified. Never make a value marked "from research" — least of all an UNVERIFIED one — the only basis for a confident recommendation: say what it rests on, or ask.',
   ].join('\n');
 }
 

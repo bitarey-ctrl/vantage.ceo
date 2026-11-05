@@ -9,7 +9,7 @@ import { connectionFor } from '../../src/lib/company-context/relevance.ts';
 import { sameEvent, clusterEvents } from '../../src/lib/company-context/events.ts';
 import { buildSourcePlan } from '../../src/lib/company-context/source-plan.ts';
 import { parseRss } from '../../src/lib/company-context/ingest.ts';
-import { connectAndCheck, parseStoredConnection, exposureCalc } from '../../src/lib/company-context/verify.ts';
+import { connectAndCheck, parseStoredConnection, exposureCalc, verifyCandidates } from '../../src/lib/company-context/verify.ts';
 import { intakeQuestions, intakeUpdate } from '../../src/lib/company-context/intake.ts';
 import { researchCompany } from '../../src/lib/company-context/research.ts';
 import { assertPublicHttps, safeFetch } from '../../src/lib/company-context/safe-fetch.ts';
@@ -214,6 +214,61 @@ test('intake saves typed answers over proposals, keeps evidence for accepted res
   assert.equal(u.businessFacts.estimates[0].basis, 'estimate');
   const c = normaliseCompanyContext('x', {}, { ...u.columns, business_facts: u.businessFacts });
   assert.match(companyContextBlock(c), /Depends on: Stripe for payments/);
+});
+
+test('research stays labelled by how far its evidence goes, and nothing becomes a fact without acceptance', () => {
+  const proposals = [
+    { id: 'ip0', field: 'product', value: 'Coffee subscriptions by post', basis: 'company_says', evidence: [{ url: 'https://pact.example/', quote: 'coffee by post', quoteFound: true }] },
+    { id: 'ip1', field: 'buyers', value: 'Offices', basis: 'unconfirmed', evidence: [{ url: 'https://news.example/x', quote: 'offices', quoteFound: false }] },
+    { id: 'ip2', field: 'history', value: 'Founded in 2012', basis: 'unconfirmed', evidence: [{ url: 'https://news.example/y', quote: null, quoteFound: false }] },
+  ];
+  // Not accepted → nothing saved.
+  const none = intakeUpdate({}, [], proposals, []);
+  assert.deepEqual(none.columns, {}); assert.deepEqual(none.businessFacts.public_facts, []);
+  // Accepted → saved, but labelled: a matched quote is "a page says this", an unmatched one is UNVERIFIED.
+  const u = intakeUpdate({}, [{ id: 'product', value: null, acceptProposalId: 'ip0' }], proposals, ['ip1', 'ip2']);
+  const c = normaliseCompanyContext('x', {}, { ...u.columns, business_facts: u.businessFacts });
+  const block = companyContextBlock(c);
+  assert.match(block, /What they sell: Coffee subscriptions by post \(from research they accepted; a fetched page says this — not independently verified\)/);
+  assert.match(block, /Who buys: Offices \(from research they accepted; UNVERIFIED — no matching quote was found\)/);
+  assert.match(block, /Public facts they accepted from research: Founded in 2012 \(from research they accepted; UNVERIFIED/);
+  assert.match(block, /Never make a value marked "from research"[^\n]*only basis for a confident recommendation/);
+  assert.equal(c.provenance.product.origin, 'research_accepted');
+  // The founder editing the value makes it theirs: the research label goes.
+  const edited = normaliseCompanyContext('x', {}, { ...u.columns, target_customer: 'Home coffee drinkers', business_facts: u.businessFacts });
+  assert.match(companyContextBlock(edited), /Who buys: Home coffee drinkers\n/);
+  assert.equal(edited.research.buyers, undefined);
+  // A typed answer replacing an accepted one clears the record.
+  const retyped = intakeUpdate({ ...u.columns, business_facts: u.businessFacts }, [{ id: 'product', value: 'Speciality coffee subscriptions' }], proposals, []);
+  assert.equal(retyped.businessFacts.column_sources.product_description, undefined);
+});
+
+test('the two real Pact Coffee verdicts (isolated run 2026-11-05) replayed through the assessment parser', async () => {
+  const pact = normaliseCompanyContext('p', { company_name: 'Pact Coffee' }, { product_description: 'Speciality coffee beans and coffee pods, mainly by subscription', target_customer: 'Home coffee drinkers and gift buyers', geography_detail: 'United Kingdom' });
+  const conn = { status: 'connected', score: 1, text: '', basis: '', matched: [], contextVersion: pact.version, candidate: true };
+  const items = [
+    { key: 'g', title: "Exclusive: UK's Pact Coffee reports another year of double-digit growth - World Coffee Portal", content: '', connection: conn, evidenceLevel: 'aggregator-headline' },
+    { key: 'k', title: "Keurig says it's come up with plastic-free coffee pods - Los Angeles Times", content: '', connection: conn, evidenceLevel: 'aggregator-headline' },
+  ];
+  // The model output actually stored in that run (fields abridged to the ones that decide the outcome).
+  const stored = [
+    { i: 0, decision: 'relevant', what_changed: 'Pact Coffee reported another year of double-digit growth in the UK.', connection: 'This is about your company directly, covering your financial performance.', effect: 'This confirms your subscription model is continuing to grow at double-digit rates, which validates your current business approach.', next_step: 'Review the full article.', watch_for: null },
+    { i: 1, decision: 'relevant', what_changed: 'Keurig has developed plastic-free coffee pods.', connection: 'You sell coffee pods to home coffee drinkers, competing in a market where Keurig is a major player.', effect: 'If consumers increasingly demand plastic-free pods, you may need to evaluate your pod offerings.', next_step: 'Check your current pod materials.', watch_for: null },
+  ];
+  const v = await verifyCandidates(pact, items, async () => stored);
+  assert.equal(v.get('g').decision, 'reject'); assert.equal(v.get('g').rejectReason, 'background', 'a headline about yourself cannot "validate" anything');
+  // Known limit: the invented market position in the Keurig connection is not detectable from wording; only the
+  // assessment rules address it, and whether they work needs a paid rerun.
+  assert.equal(v.get('k').decision, 'relevant');
+});
+
+test('an accepted research sentence is saved whole, not split on commas', () => {
+  const proposals = [{ id: 'd0', field: 'dependencies', value: 'It relies on buying green coffee direct from farmers, which it calls a direct-trade supply chain, instead of buying on the commodity market.', basis: 'company_says', evidence: [{ url: 'https://pact.example/', quote: 'direct-trade', quoteFound: true }] }];
+  const u = intakeUpdate({}, [{ id: 'dependencies', value: null, acceptProposalId: 'd0' }], proposals, []);
+  assert.equal(u.businessFacts.dependencies.length, 1);
+  assert.equal(u.businessFacts.dependencies[0].basis, 'quote_matched');
+  const typed = intakeUpdate({}, [{ id: 'dependencies', value: 'AWS, Stripe' }], proposals, []);
+  assert.deepEqual(typed.businessFacts.dependencies.map((d) => d.text), ['AWS', 'Stripe']);
 });
 
 test('research keeps only proposals backed by pages retrieved in the run, and checks quotes against fetched text', async () => {

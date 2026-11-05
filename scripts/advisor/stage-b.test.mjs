@@ -189,6 +189,9 @@ test('frozen reasoning pairs: each pair differs in exactly one stated fact, and 
     const onlyB = diff(b, a).join('\n');
     const factB = typeof p.differ.b === 'string' ? p.differ.b : p.differ.b.map((x) => x.text).join('; ');
     assert.ok(onlyB.includes(factB.slice(0, 25)), `${p.id}: the differing fact reaches the Advisor`);
-    assert.ok(diff(b, a).length <= 3, `${p.id}: prompts differ only around that fact (${diff(b, a).length} lines)`);
+    // Lines of the DECISIVE LIMITS / BEFORE YOU SEND sections are derived from that one fact, so they do not count.
+    const derived = (l) => /^## (DECISIVE LIMITS|BEFORE YOU SEND)$|^(HARD LIMITS|PREFERENCES|ESTIMATES|HOW THEY GET PAID)\b|^- ".*" → |^Re-read DECISIVE LIMITS/.test(l);
+    const own = diff(b, a).filter((l) => !derived(l));
+    assert.ok(own.length <= 3, `${p.id}: prompts differ only around that fact (${own.length} lines: ${own.join(' | ').slice(0, 300)})`);
   }
 });
