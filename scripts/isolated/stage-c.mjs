@@ -15,9 +15,12 @@ const Attention = require('../../public/comparison/attention-engine.js');
 const ISOLATED = 'acqhieylvcemgcevrxvc', PRODUCTION = 'odahuetnflsqkligzwpm';
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '', anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const mode = process.argv[2], base = (process.argv[3] || 'http://localhost:3300').replace(/\/$/, ''), origin = new URL(base).origin;
-// Approved ceilings (founder): advisor 7 calls/$0.50; candidate (C1–C7) 20 calls/$2.00; combined 27/$2.50.
-// APPROVED_CANDIDATE_CALLS lets an approved increase be recorded explicitly; nothing runs past it.
-const CEILING = { advisor: 7, candidate: Number(process.env.APPROVED_CANDIDATE_CALLS ?? 20) };
+// Approved hard ceilings (founder, option A): advisor 7 calls/$0.50; Stage C (C1–C7) 26 calls/$2.00;
+// combined 33 calls/$2.50. Nothing runs past any of them.
+const CEILING = { advisor: 7, candidate: 26 };
+const DOLLARS = { advisor: 0.5, candidate: 2.0, combined: 2.5 };
+// Conservative maximum cost of ONE request of each kind, used to refuse a step that could cross a dollar ceiling.
+const MAX_COST = { advisor: 0.06, research: 0.7, gate: 0.12, assessment: 0.18, analysis: 0.1 };
 const NEED = { candidateBeforeReasoning: 14, reasoning: 12 };
 const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [4, 20] }; // $ per million input/output tokens
 const SEARCH_PRICE = 0.01; // $ per web search request
@@ -31,7 +34,7 @@ const PLAN = [
   ['advisor', 'A6 field corrected while the answer is generated → stale proposal kept as conflict', 1],
   ['candidate', 'C1 research: identity (Opus 5.5 + web search/fetch)', 1],
   ['candidate', 'C2 research: market and rules', 1],
-  ['candidate', 'C3 refresh via real route: existing gate (132 candidates now → 6 batches) + 2 assessments', 8],
+  ['candidate', 'C3 refresh via real route: existing gate (144 candidates at last count → 6 batches) + 2 assessments', 8],
   ['candidate', 'C4 second collection: de-duplication + verified-source (incl. regulator) collection', 2],
   ['candidate', 'C5 impact analysis + re-analysis after a context correction (evidence change = free stale check)', 2],
   ['candidate', 'C6 decision draft carrying the evidence', 0],
@@ -45,7 +48,7 @@ if (mode === 'plan') {
     for (const r of rows) console.log(`  ${String(r[2]).padStart(2)}  ${r[1]}`);
   }
   const total = PLAN.reduce((a, r) => a + r[2], 0);
-  console.log(`\ncombined: ${total} planned vs 27 → ${total <= 27 ? 'fits' : `SHORTFALL ${total - 27}`}`);
+  console.log(`\ncombined: ${total} planned vs 33 → ${total <= 33 ? 'fits' : `SHORTFALL ${total - 33}`}`);
   process.exit(0);
 }
 
@@ -61,7 +64,12 @@ const report = existsSync(REPORT) ? JSON.parse(readFileSync(REPORT, 'utf8')) : {
 const saveReport = () => writeFileSync(REPORT, JSON.stringify(report, null, 1), { mode: 0o600 });
 function check(ok, name, detail = '') { report.results.push({ ok: Boolean(ok), name, detail: ok ? '' : String(detail).slice(0, 600) }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${ok ? '' : ' :: ' + String(detail).slice(0, 300)}`); return ok; }
 function note(name, detail) { report.results.push({ ok: null, name, detail: String(detail).slice(0, 600) }); console.log(`NOTE ${name}: ${String(detail).slice(0, 300)}`); }
-async function step(name, fn) { const t0 = Date.now(), c0 = ledger().calls.length; try { return await fn(); } finally { report.steps.push({ name, ms: Date.now() - t0, calls: ledger().calls.length - c0 }); saveReport(); } }
+function spent(from = 0) { return ledger().calls.slice(from).reduce((a, c) => { const pr = PRICES[c.model] ?? [0, 0], u = c.usage ?? {}; return a + ((u.input_tokens ?? 0) * pr[0] + (u.output_tokens ?? 0) * pr[1]) / 1e6 + (u.server_tool_use?.web_search_requests ?? 0) * SEARCH_PRICE; }, 0); }
+let phaseStart = 0, phaseDollars = 0;
+// Refuses a step whose worst case would cross the phase or combined dollar ceiling (usage is known only afterwards).
+async function step(name, fn, worst = 0) {
+  if (spent(phaseStart) + worst > phaseDollars || spent() + worst > DOLLARS.combined) { note(`${name} NOT RUN`, `worst case $${worst.toFixed(2)} would cross a dollar ceiling (phase spent $${spent(phaseStart).toFixed(3)}, total $${spent().toFixed(3)})`); saveReport(); console.error('Stopping this phase: dollar ceiling.'); process.exit(4); }
+  const t0 = Date.now(), c0 = ledger().calls.length; try { return await fn(); } finally { report.steps.push({ name, ms: Date.now() - t0, calls: ledger().calls.length - c0, cost: Math.round(spent(c0) * 10000) / 10000 }); saveReport(); } }
 
 async function signIn(row) {
   let jar = [];
@@ -134,11 +142,12 @@ const rows = loadQA(); const [A, B, R] = rows;
 for (const r of rows) S[r.label] = await signIn(r);
 
 if (mode === 'advisor') {
+  phaseStart = ledger().calls.length; phaseDollars = DOLLARS.advisor;
   setCeiling(ledger().calls.length + CEILING.advisor);
   let s = await newSession('A', 'Stage C advisor');
   // A1
   let q = await addQuestion('A', s, 'We now also compete with Brio Coffee Club. What should I keep an eye on?');
-  let r1 = await step('A1', () => ask('A', q.session, q.turnId));
+  let r1 = await step('A1', () => ask('A', q.session, q.turnId), MAX_COST.advisor);
   check(statusOf(r1) === 'complete', 'A1 answer completes', JSON.stringify({ end: r1.end, error: r1.error }));
   check(!r1.text.includes('[[VANTAGE_MEMORY'), 'A1 memory marker never reaches the reader');
   await saveAnswer('A', q.session.id, q.turnId, r1);
@@ -147,21 +156,21 @@ if (mode === 'advisor') {
   // A2
   s = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   q = await addQuestion('A', s, 'Walk me through how I should think about raising our subscription price.');
-  const r2 = await step('A2', () => ask('A', q.session, q.turnId, { maxTokens: 40 }));
+  const r2 = await step('A2', () => ask('A', q.session, q.turnId, { maxTokens: 40 }), MAX_COST.advisor);
   check(statusOf(r2) === 'max_tokens' && r2.end?.stopReason === 'max_tokens', 'A2 provider stop reason max_tokens reported as such', JSON.stringify(r2.end));
   await saveAnswer('A', q.session.id, q.turnId, r2);
   let reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   check(reload.messages.at(-1).status === 'max_tokens' && reload.messages.at(-1).incomplete === true, 'A2 incomplete status survives reload');
   // A3
   const prior = reload.messages.at(-1);
-  const r3 = await step('A3', () => ask('A', { ...reload, messages: reload.messages.slice(0, -1) }, q.turnId));
+  const r3 = await step('A3', () => ask('A', { ...reload, messages: reload.messages.slice(0, -1) }, q.turnId), MAX_COST.advisor);
   check(statusOf(r3) === 'complete', 'A3 retry completes', JSON.stringify(r3.end));
   await saveAnswer('A', s.id, q.turnId, r3, prior);
   reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   check(reload.messages.filter((m) => m.turnId === q.turnId && m.role === 'user').length === 1 && reload.messages.at(-1).attempts?.[0]?.content === prior.content, 'A3 no duplicate turns; earlier attempt kept');
   // A4
   q = await addQuestion('A', reload, 'Give me a detailed plan for our next three months, step by step.');
-  const r4 = await step('A4', () => ask('A', q.session, q.turnId, { abortAfterFirstDelta: true }));
+  const r4 = await step('A4', () => ask('A', q.session, q.turnId, { abortAfterFirstDelta: true }), MAX_COST.advisor);
   check(r4.aborted && !r4.end, 'A4 Stop: no completion claimed');
   await saveAnswer('A', q.session.id, q.turnId, r4);
   reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
@@ -170,7 +179,7 @@ if (mode === 'advisor') {
   // A5
   const s5 = await newSession('A', 'Stage C concurrency');
   q = await addQuestion('A', s5, 'Please note: we also compete with Kiko Roasters now.');
-  const [r5a, r5b] = await step('A5', () => Promise.all([ask('A', q.session, q.turnId), ask('A', q.session, q.turnId)]));
+  const [r5a, r5b] = await step('A5', () => Promise.all([ask('A', q.session, q.turnId), ask('A', q.session, q.turnId)]), 2 * MAX_COST.advisor);
   const ops5 = (await admin.from('advisor_memory_ops').select('status,field,value').eq('profile_id', A.id).eq('turn_id', q.turnId)).data;
   const comps = (await admin.from('ceo_context').select('competitors').eq('profile_id', A.id).single()).data.competitors;
   const kiko = JSON.stringify(comps).match(/kiko/gi)?.length ?? 0;
@@ -179,7 +188,7 @@ if (mode === 'advisor') {
   // A6
   const s6 = await newSession('A', 'Stage C stale');
   q = await addQuestion('A', s6, 'Update my profile: we now sell mainly to offices and workplaces, not home drinkers.');
-  const r6 = await step('A6', () => ask('A', q.session, q.turnId, { onFirstDelta: async () => { await admin.from('ceo_context').update({ target_customer: 'Founder correction (other tab): home coffee drinkers and gift buyers' }).eq('profile_id', A.id); } }));
+  const r6 = await step('A6', () => ask('A', q.session, q.turnId, { onFirstDelta: async () => { await admin.from('ceo_context').update({ target_customer: 'Founder correction (other tab): home coffee drinkers and gift buyers' }).eq('profile_id', A.id); } }), MAX_COST.advisor);
   const ctx6 = (await admin.from('ceo_context').select('target_customer').eq('profile_id', A.id).single()).data;
   check(ctx6.target_customer.startsWith('Founder correction'), 'A6 a correction made during generation is not overwritten by the older answer', JSON.stringify({ memory: r6.memory, ctx6 }));
   note('A6 memory outcome', JSON.stringify(r6.memory));
@@ -187,13 +196,15 @@ if (mode === 'advisor') {
 }
 
 if (mode === 'candidate') {
+  report.candidateStart = ledger().calls.length;
   if (NEED.candidateBeforeReasoning + NEED.reasoning > CEILING.candidate) { console.error(`Refusing to start: C1–C7 need ${NEED.candidateBeforeReasoning + NEED.reasoning} calls, approved ${CEILING.candidate}. Shortfall ${NEED.candidateBeforeReasoning + NEED.reasoning - CEILING.candidate}.`); process.exit(3); }
+  phaseStart = ledger().calls.length; phaseDollars = DOLLARS.candidate;
   setCeiling(ledger().calls.length + NEED.candidateBeforeReasoning);
   // Intake starts from name + website + market only.
   let intake = (await api('A', '/api/company/intake')).data;
   check(intake.questions?.length >= 1, `intake opens with ${intake.questions?.length} questions`);
-  const r1 = await step('C1', () => api('A', '/api/company/research', 'POST', { scope: 'identity' }));
-  const r2 = await step('C2', () => api('A', '/api/company/research', 'POST', { scope: 'landscape' }));
+  const r1 = await step('C1', () => api('A', '/api/company/research', 'POST', { scope: 'identity' }), MAX_COST.research);
+  const r2 = await step('C2', () => api('A', '/api/company/research', 'POST', { scope: 'landscape' }), MAX_COST.research);
   check(r1.status === 200 && !r1.data.failed, 'C1 identity research', JSON.stringify(r1.data));
   check(r2.status === 200 && !r2.data.failed, 'C2 market/rules research', JSON.stringify(r2.data));
   const runs = (await admin.from('company_research_runs').select('inputs,queries,retrieved,proposals,status').eq('profile_id', A.id)).data;
@@ -220,7 +231,7 @@ if (mode === 'candidate') {
   const srcs0 = (await admin.from('company_sources').select('url,kind,status,jurisdiction').eq('profile_id', A.id)).data;
   check(srcs0.length > 0, `source records stored (${srcs0.length} proposed)`);
   // C3 refresh through the real route (also runs the existing gate pipeline and its built-in "B2B SaaS" defaults).
-  const f1 = await step('C3', () => api('A', '/api/signals/refresh', 'POST', {}));
+  const f1 = await step('C3', () => api('A', '/api/signals/refresh', 'POST', {}), 6 * MAX_COST.gate + 2 * MAX_COST.assessment);
   check(f1.status === 200, `C3 refresh: ${f1.data.message ?? ''}`, JSON.stringify(f1.data).slice(0, 400));
   report.refresh1 = f1.data.sourcePlan;
   const runRows = (await admin.from('source_collection_runs').select('id,status,report').eq('profile_id', A.id)).data;
@@ -233,7 +244,7 @@ if (mode === 'candidate') {
   const { loadCompanyContext } = await import('../../src/lib/company-context/load.ts');
   const ctxA = await loadCompanyContext(admin, A.id);
   const before = (await admin.from('signal_triages').select('signal_id').eq('profile_id', A.id)).data.length;
-  const f2 = await step('C4', () => runSourcePlan(admin, ctxA, { maxNew: 12, trigger: 'test' }));
+  const f2 = await step('C4', () => runSourcePlan(admin, ctxA, { maxNew: 12, trigger: 'test' }), 2 * MAX_COST.assessment);
   const after = (await admin.from('signal_triages').select('signal_id').eq('profile_id', A.id)).data;
   const sigs = (await admin.from('signals').select('id,url').in('id', after.map((t) => t.signal_id))).data;
   const urls = sigs.map((x) => x.url).filter(Boolean);
@@ -249,7 +260,7 @@ if (mode === 'candidate') {
   // C5 analysis, invalidation, history.
   const target = shown[0];
   if (target) {
-    const a1 = await step('C5a', () => api('A', `/api/signals/${target.id}/analyse`, 'POST', {}));
+    const a1 = await step('C5a', () => api('A', `/api/signals/${target.id}/analyse`, 'POST', {}), MAX_COST.analysis);
     check(a1.status === 200 && a1.data.contextVersion === w.companyContext.version, 'C5 analysis saved with context version', JSON.stringify(a1.data).slice(0, 300));
     report.analysis = a1.data;
     const again = await api('A', `/api/signals/${target.id}/analyse`, 'POST', {});
@@ -262,7 +273,7 @@ if (mode === 'candidate') {
     check(w.analysis[target.id]?.stale === true, `evidence change marks the analysis stale: ${w.analysis[target.id]?.staleReason}`);
     // Context correction → re-analysis writes a new version and keeps history.
     await api('A', '/api/company/intake', 'POST', { answers: [{ id: 'constraints', value: 'Cash runway is six months' }], accept: [] });
-    const a2 = await step('C5b', () => api('A', `/api/signals/${target.id}/analyse`, 'POST', {}));
+    const a2 = await step('C5b', () => api('A', `/api/signals/${target.id}/analyse`, 'POST', {}), MAX_COST.analysis);
     const hist = (await admin.from('consequences').select('id,superseded_at').eq('profile_id', A.id).eq('signal_id', target.id)).data;
     check(a2.data.reused === false && hist.length === 2 && hist.find((h) => h.id === a1.data.consequenceId)?.superseded_at, 'context correction → new analysis, old kept as history');
     report.analysis2 = a2.data;
@@ -283,6 +294,8 @@ if (mode === 'candidate') {
 }
 
 if (mode === 'reasoning') {
+  // Stage C continues: its dollar ceiling covers C1–C7 together (spend from the candidate phase is carried in).
+  phaseStart = Number(process.env.CANDIDATE_PHASE_START ?? report.candidateStart ?? 0); phaseDollars = DOLLARS.candidate;
   setCeiling(ledger().calls.length + NEED.reasoning);
   const { pairs } = JSON.parse(readFileSync(new URL('../advisor/reasoning-pairs.json', import.meta.url), 'utf8'));
   for (const p of pairs.slice(0, Number(process.env.REASONING_PAIRS ?? 6))) {
@@ -293,7 +306,7 @@ if (mode === 'reasoning') {
       await admin.from('ceo_context').update(ctx).eq('profile_id', R.id);
       const s = await newSession('R', `pair ${p.id} ${side}`);
       const q = await addQuestion('R', s, p.question);
-      const r = await step(`C7 ${p.id}:${side}`, () => ask('R', q.session, q.turnId));
+      const r = await step(`C7 ${p.id}:${side}`, () => ask('R', q.session, q.turnId), MAX_COST.advisor);
       out.answers[side] = { status: statusOf(r), text: r.text.split('[[VANTAGE_MEMORY]]')[0].trim(), error: r.error };
     }
     report.reasoning.push(out); saveReport();
