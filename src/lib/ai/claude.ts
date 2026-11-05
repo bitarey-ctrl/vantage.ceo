@@ -25,7 +25,7 @@ export async function callClaude<T>(
 ): Promise<T> {
   const { maxTokens = 2048 } = options;
 
-  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL);
+  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL, { inputBytes: Buffer.byteLength(prompt, "utf8"), maxTokens });
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: maxTokens,

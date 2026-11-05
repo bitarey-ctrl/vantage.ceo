@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
@@ -38,27 +38,9 @@ export async function GET() {
       .limit(50);
 
     if (triageError) {
-      // signal_triages table doesn't exist yet — run migration 006 in Supabase SQL Editor
-      console.error("[signals/raw] signal_triages table missing:", triageError.message);
-      console.error("[signals/raw] ⚠️  Run supabase/migrations/006_signal_triages.sql in Supabase SQL Editor");
-
-      // Temporary fallback: return signals directly (no user scoping — shows all signals)
-      // This is only safe as a fallback — once table is created, triages path is used
-      const adminSupabase = await createAdminClient();
-      const { data: fallbackSignals, error: fallbackError } = await adminSupabase
-        .from("signals")
-        .select("id, title, content, source, url, published_at, urgency, category, what_happened, why_it_matters, what_to_consider, created_at")
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (fallbackError || !fallbackSignals) {
-        return NextResponse.json(
-          { error: "signal_triages table missing. Run migration 006 in Supabase SQL Editor." },
-          { status: 503 }
-        );
-      }
-
-      return NextResponse.json(fallbackSignals);
+      // Never fall back to unscoped signals: other accounts' monitoring must not be visible (migration 045).
+      console.error("[signals/raw] signal_triages query failed:", triageError.message);
+      return NextResponse.json({ error: "Your signals could not be loaded. Please try again." }, { status: 503 });
     }
 
     // Extract unique signals for this user

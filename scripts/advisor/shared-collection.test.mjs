@@ -23,7 +23,8 @@ mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaud
   const facts = prompt.slice(prompt.indexOf('COMPANY'), prompt.indexOf('ITEMS')).toLowerCase();
   return items.map((x) => {
     const hit = (/gas/i.test(x.title) && facts.includes('natural gas')) || (/aws|ec2/i.test(x.title) && facts.includes('aws'));
-    return hit ? { i: x.i, decision: 'relevant', what_changed: x.title, connection: 'You named this as something you depend on.', effect: 'If it applies to you, your costs rise.', unknowns: 'Your contract terms.', next_step: 'Check your next bill.', watch_for: null, quantified: null }
+    const basis = prompt.match(/Depends on: [^\n]+/)?.[0] ?? null;
+    return hit ? { i: x.i, decision: 'relevant', what_changed: x.title, connection: 'You named this as something you depend on.', basis_fact: basis, effect: 'If it applies to you, your costs rise.', unknowns: 'Your contract terms.', next_step: 'Check your next bill.', watch_for: null, quantified: null }
       : { i: x.i, decision: 'reject', reject_reason: 'no_plausible_effect' };
   });
 } } });

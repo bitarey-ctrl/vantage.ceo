@@ -52,6 +52,31 @@ const MIN_WHY_LENGTH = 40;
  * without a valid category, or returns with an empty/stub `why_it_matters`
  * is dropped here and never reaches the database.
  */
+export type GateFailureKind = "budget" | "auth" | "availability" | "other";
+
+/** Classify a failed gate call without looking at its message text (which may hold provider details). */
+export function gateFailureKind(err: unknown): GateFailureKind {
+  const e = err as { name?: string; status?: number } | null;
+  if (e?.name === "ProviderBudgetError") return "budget";
+  if (e?.status === 401 || e?.status === 403 || e?.name === "AuthenticationError" || e?.name === "PermissionDeniedError") return "auth";
+  if (e?.status === 429 || (typeof e?.status === "number" && e.status >= 500) || e?.name === "APIConnectionError" || e?.name === "APIConnectionTimeoutError" || e?.name === "RateLimitError" || e?.name === "InternalServerError") return "availability";
+  return "other";
+}
+
+const FAILURE_TEXT: Record<GateFailureKind, string> = {
+  budget: "the model-call budget for this environment was reached, so no request was sent for them",
+  auth: "the AI service did not accept this server's credentials — the server configuration needs attention",
+  availability: "the AI service was busy or unreachable — try again later",
+  other: "of an unexpected error while reading the AI service's response",
+};
+
+export function gateFailureMessage(kinds: GateFailureKind[], batchesRun: number, candidateCount: number): string {
+  const distinct = [...new Set(kinds)];
+  const why = distinct.map((k) => FAILURE_TEXT[k]).join("; and ");
+  return `New items were not checked: all ${batchesRun} check(s) of ${candidateCount} candidates failed because ${why}. ` +
+    `Nothing was judged unimportant — this is a failure, not a quiet day.`;
+}
+
 export async function gateSignals(
   candidates: RawCandidate[]
 ): Promise<GatedSignal[]> {
@@ -64,6 +89,7 @@ export async function gateSignals(
   const survivors: GatedSignal[] = [];
   let batchesRun = 0;
   let batchesFailed = 0;
+  const failureKinds: GateFailureKind[] = [];
 
   for (let start = 0; start < candidates.length; start += BATCH_SIZE) {
     const batch = candidates.slice(start, start + BATCH_SIZE);
@@ -88,7 +114,8 @@ export async function gateSignals(
       // Silence is the safe default for a filter whose job is to discard —
       // but only when it is partial. See the all-failed check below.
       batchesFailed++;
-      console.error("[gate] Batch failed, dropping its candidates:", err);
+      failureKinds.push(gateFailureKind(err));
+      console.error("[gate] Batch failed, dropping its candidates:", err instanceof Error ? `${err.name}: ${err.message.slice(0, 200)}` : "unknown");
       continue;
     }
 
@@ -119,14 +146,13 @@ export async function gateSignals(
   }
 
   // Every batch failing is not a quiet news day — it is a broken gate. The
-  // most likely cause is an invalid or revoked ANTHROPIC_API_KEY, which the
-  // requireEnv check above cannot catch because the variable is present.
+  // message names the actual failure category (budget limit, credentials,
+  // provider availability, other) and never includes credentials or raw
+  // provider error text.
   if (batchesRun > 0 && batchesFailed === batchesRun) {
-    throw new Error(
-      `[gate] All ${batchesRun} batch(es) failed — the gate produced no verdicts ` +
-        `for ${candidates.length} candidates. This is a failure, not an empty day. ` +
-        `Check ANTHROPIC_API_KEY validity and the Anthropic API status.`
-    );
+    const error = new Error(gateFailureMessage(failureKinds, batchesRun, candidates.length)) as Error & { code?: string };
+    error.code = `gate_${[...new Set(failureKinds)].length === 1 ? failureKinds[0] : "mixed"}`;
+    throw error;
   }
 
   return survivors;

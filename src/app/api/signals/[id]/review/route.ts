@@ -25,6 +25,10 @@ export async function POST(
 
     const { id } = await params;
 
+    // Only a signal linked to this account can be marked reviewed (the flag is shared across accounts).
+    const { data: link } = await supabase.from("signal_triages").select("signal_id").eq("profile_id", user.id).eq("signal_id", id).maybeSingle();
+    if (!link) return NextResponse.json({ error: "Signal not found" }, { status: 404 });
+
     // Admin client: setting reviewed_at on the global signals row isn't covered
     // by the per-user RLS policies, and it's a safe, single-column write.
     const admin = await createAdminClient();

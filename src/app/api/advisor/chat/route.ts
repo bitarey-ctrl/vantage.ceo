@@ -8,7 +8,7 @@ import { commitMemory, readFieldVersions, supabaseMemoryOps, turnMatches } from 
 import { logEvent } from "@/lib/analytics/log-event";
 import { loadSignalContext } from "@/lib/advisor/signal-context";
 import { ADVISOR_MODEL, advisorMaxTokens, relayAdvisorStream, sse } from "@/lib/advisor/stream";
-import { recordProviderUsage, reserveProviderCall } from "@/lib/ai/provider-budget";
+import { ProviderBudgetError, recordProviderUsage, reserveProviderCall } from "@/lib/ai/provider-budget";
 import { z } from "zod";
 
 // No automatic SDK retries: a retried request can be a second paid generation. Recovery is the explicit Retry.
@@ -284,11 +284,19 @@ ${finalCheckBlock(company)}`.trimEnd();
         const clientGone = () => request.signal.aborted;
         const send = (value: unknown) => { if (clientGone()) return; try { controller.enqueue(encoder.encode(sse(value))); } catch { /* closed */ } };
         try {
-          const slot = reserveProviderCall("advisor", ADVISOR_MODEL);
+          // A lower cap via header is honoured only in the isolated test environment (length-limit test).
+          const maxTokens = advisorMaxTokens(request.headers.get("x-test-max-tokens"));
+          let slot: number | null;
+          try {
+            slot = reserveProviderCall("advisor", ADVISOR_MODEL, { inputBytes: Buffer.byteLength(systemPrompt, "utf8") + messages.reduce((a, m) => a + Buffer.byteLength(m.content, "utf8") + 8, 0), maxTokens });
+          } catch (err) {
+            // Test environment budget ceiling: the question is not sent; say so with the stream's normal error event.
+            if (err instanceof ProviderBudgetError) { send({ error: { kind: "unavailable", message: "The test budget for AI answers is used up, so this question was not sent. Nothing was changed." } }); return; }
+            throw err;
+          }
           const messageStream = anthropic.messages.stream({
             model: ADVISOR_MODEL,
-            // A lower cap via header is honoured only in the isolated test environment (length-limit test).
-            max_tokens: advisorMaxTokens(request.headers.get("x-test-max-tokens")),
+            max_tokens: maxTokens,
             system: systemPrompt,
             messages: messages.map((m) => ({ role: m.role, content: m.content })),
           }, { signal: request.signal });

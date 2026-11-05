@@ -56,6 +56,8 @@ export interface CompanyContext {
   flags: FieldFlag[];
   /** Context fields whose current value was accepted from research, with how far its evidence goes. */
   research: Partial<Record<'product' | 'buyers' | 'revenueModel' | 'geography' | 'competitors', ResearchBasis>>;
+  /** Fields the founder changed after accepting research: founder-reported now; the earlier proposal is kept. */
+  corrections: Partial<Record<'product' | 'buyers' | 'revenueModel' | 'geography' | 'competitors', ResearchBasis>>;
   /** Plain-language list of what is not known (and must not be assumed). */
   unknowns: string[];
 }
@@ -154,12 +156,17 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   // A column filled from research stays labelled as research while its value is unchanged (the founder editing it
   // makes it theirs). Older rows have no record and stay founder-reported.
   const research: Record<string, ResearchBasis> = {};
+  const corrections: Record<string, ResearchBasis> = {};
   const COLS: Record<string, [string, unknown]> = { product: ['product_description', product], buyers: ['target_customer', buyers], revenueModel: ['revenue_model', field(ctx, 'revenue_model')], geography: ['geography_detail', field(ctx, 'geography_detail')], competitors: ['competitors', field(ctx, 'competitors')] };
   for (const [key, [col, current]] of Object.entries(COLS)) {
     const rec = ((bf.column_sources ?? {}) as Record<string, { value?: unknown; basis?: unknown }>)[col];
-    if (rec && JSON.stringify(rec.value) === JSON.stringify(typeof current === 'string' ? current.trim() : current) && (rec.basis === 'quote_matched' || rec.basis === 'unverified' || rec.basis === 'inferred')) {
+    if (!rec || !(rec.basis === 'quote_matched' || rec.basis === 'unverified' || rec.basis === 'inferred')) continue;
+    if (JSON.stringify(rec.value) === JSON.stringify(typeof current === 'string' ? current.trim() : current)) {
       research[key] = rec.basis;
       if (provenance[key]) provenance[key].origin = 'research_accepted';
+    } else if (current !== null && current !== undefined && current !== '') {
+      // The founder changed an accepted research value: theirs now, but the earlier proposal and its uncertainty stay.
+      corrections[key] = rec.basis;
     }
   }
   const dependencies = factList(bf.dependencies, 'founder');
@@ -181,8 +188,9 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags };
   // Research labels count towards the version only when present, so rows without them keep their existing version
   // (otherwise every stored assessment would turn stale and be re-paid for after this change).
-  const version = createHash('sha256').update(JSON.stringify(Object.keys(research).length ? { ...facts, research } : facts)).digest('hex').slice(0, 16);
-  return { profileId, version, ...facts, research, provenance, unknowns };
+  const labels = { ...(Object.keys(research).length ? { research } : {}), ...(Object.keys(corrections).length ? { corrections } : {}) };
+  const version = createHash('sha256').update(JSON.stringify({ ...facts, ...labels })).digest('hex').slice(0, 16);
+  return { profileId, version, ...facts, research, corrections, provenance, unknowns };
 }
 
 /**
@@ -197,7 +205,12 @@ export function companyContextBlock(c: CompanyContext): string {
     unverified: 'from research they accepted; UNVERIFIED — no matching quote was found',
     inferred: 'from research they accepted; inferred, not stated by any source',
   };
-  const tag = (key: keyof CompanyContext['research'], value: string | null) => (value && c.research[key] ? `${value} (${RESEARCH_NOTE[c.research[key]!]})` : value);
+  const CORRECTED: Record<ResearchBasis, string> = {
+    quote_matched: 'founder-reported; corrects an earlier research proposal that a fetched page stated',
+    unverified: 'founder-reported; corrects an earlier, unverified research proposal',
+    inferred: 'founder-reported; corrects an earlier research inference',
+  };
+  const tag = (key: keyof CompanyContext['research'], value: string | null) => (!value ? value : c.research[key] ? `${value} (${RESEARCH_NOTE[c.research[key]!]})` : c.corrections[key] ? `${value} (${CORRECTED[c.corrections[key]!]})` : value);
   const factText = (d: BusinessFact) => (d.origin === 'research_accepted' && d.basis ? `${d.text} (${RESEARCH_NOTE[d.basis]})` : d.text);
   return [
     line('Company', c.companyName ? `${c.companyName}${c.website ? ` (${c.website})` : ''}` : null),

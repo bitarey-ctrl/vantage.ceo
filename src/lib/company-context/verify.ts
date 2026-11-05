@@ -24,6 +24,8 @@ export interface Verdict {
   decision: 'relevant' | 'watch' | 'reject'; rejectReason: string | null;
   whatChanged: string | null; connection: string | null; effect: string | null; unknowns: string | null; nextStep: string | null; watchFor: string | null;
   calculation: Calculation | null;
+  /** The stated company fact the connection rests on (checked to exist in the context). */
+  basisFact?: string | null;
 }
 type Caller = <T>(prompt: string, options?: { maxTokens?: number }) => Promise<T>;
 
@@ -43,14 +45,16 @@ For each item return:
 - decision: "relevant" if it could change something for this company now (customers, demand, prices, costs, competition, rules it must follow, money, a stated priority or constraint); "watch" if not yet, but there is a specific supported reason to watch it; "reject" otherwise.
 - reject_reason (when reject): "namesake" (a different organisation or meaning with the same name), "duplicate" (same event as an earlier item), "not_about_subject", "no_plausible_effect", or "background" (true and on-topic, but nothing for them to do or watch).
 How to judge (these decide most items):
-- A report about the company itself (its own results, launches, funding) is not news to the founder. It is "background" unless a third party says something they may need to answer or correct — then "watch".
-- A headline or news-search snippet is unverified. Never say it "confirms", "validates" or "proves" anything.
-- connection must quote a fact from COMPANY above. Never add a market position, competitor, market share or presence that is not stated there (e.g. do not write "a market where X is a major player" unless X is a named competitor).
+- The company's own developments: an item that only repeats what the company itself announced or reported (its own results, launches) is not news to the founder — "background". It does matter when it adds something they may not know or must respond to: a third party's claim or criticism, a legal or regulatory action, a reported error, a customer, supplier or partner change — then "relevant" or "watch".
+- A competitor's development is "relevant" or "watch" only when you can name the overlap from COMPANY (a stated product, buyer group or market they share) and how it changes something for this company. A competitor merely being active is "no_plausible_effect".
+- A headline or news-search snippet is unverified: describe what it reports, not what it proves.
+- Never infer market presence, market share, customer demand or competitive importance that COMPANY or the item does not state (e.g. do not write "a market where X is a major player" unless that is stated).
 - Sharing a broad category word (coffee, software, freight) is not a connection. Name the mechanism: which stated product, buyer, dependency, market or constraint it changes, and how.
 - "relevant" means they could act on it this week; "watch" means a specific trigger would make it actionable.
 - same_event_as: number of an EARLIER item reporting the same underlying event, else null.
 - what_changed: one plain sentence, only facts stated in the item.
 - connection: one sentence naming the company fact it touches (quote the fact, e.g. "you depend on AWS").
+- basis_fact: the COMPANY line the connection rests on, copied word for word from the COMPANY block above (e.g. "Depends on: AWS hosting"); null if there is none. An item without one is rejected.
 - effect: one sentence on the practical effect, written conditionally when uncertain ("If ..., you could ..."). Respect the stated constraints.
 - unknowns: what is not known that decides whether this matters (e.g. your contract terms, your exposure).
 - next_step: one concrete step that fits the constraints and can be done this week.
@@ -58,7 +62,7 @@ How to judge (these decide most items):
 - quantified: only if the item states a percentage change that applies to one founder estimate: {"estimate_id": id, "change_pct": number, "quote": exact text from the item containing the number}; else null. Never estimate numbers yourself.
 Write to the founder as "you". No jargon. When unsure, reject.
 
-Respond with ONLY JSON: [{"i": number, "decision": string, "reject_reason": string|null, "same_event_as": number|null, "what_changed": string|null, "connection": string|null, "effect": string|null, "unknowns": string|null, "next_step": string|null, "watch_for": string|null, "quantified": object|null}]`;
+Respond with ONLY JSON: [{"i": number, "decision": string, "reject_reason": string|null, "same_event_as": number|null, "what_changed": string|null, "connection": string|null, "basis_fact": string|null, "effect": string|null, "unknowns": string|null, "next_step": string|null, "watch_for": string|null, "quantified": object|null}]`;
 }
 
 const clip = (v: unknown, n = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
@@ -95,6 +99,8 @@ export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], 
   if (!items.length) return new Map();
   try {
     const rows = await call<Record<string, unknown>[]>(prompt(ctx, items), { maxTokens: 6000 });
+    const flat = (t: string) => t.toLowerCase().replace(/[“”"']/g, '').replace(/\s+/g, ' ').trim();
+    const contextText = flat(companyContextBlock(ctx));
     const out = new Map<string, Verdict>();
     for (const r of Array.isArray(rows) ? rows : []) {
       const i = typeof r.i === 'number' ? r.i : -1;
@@ -105,13 +111,14 @@ export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], 
       const fields = { whatChanged: clip(r.what_changed), connection: clip(r.connection), effect: clip(r.effect), unknowns: clip(r.unknowns), nextStep: clip(r.next_step), watchFor: clip(r.watch_for) };
       // A selected item must state its connection and effect; "watch" must name its trigger. Otherwise it is rejected.
       if (repeat || (decision !== 'reject' && (!fields.connection || !fields.effect || !fields.whatChanged)) || (decision === 'watch' && !fields.watchFor)) decision = 'reject';
-      // An unverified headline cannot support "this confirms/validates …": at most something to watch (if a trigger
-      // was named), otherwise background. The check is on wording only; it cannot verify the rest of the reasoning.
-      const overclaims = decision === 'relevant' && !/^original-/.test(item.evidenceLevel ?? '') && /\b(confirm|validat|prov)(e|es|ed|ing|s)?\b/i.test(`${fields.connection} ${fields.effect}`);
+      // Structural check, same for every company and item: a kept item must rest on a fact the founder actually
+      // stated. The quoted basis has to appear in the company context; otherwise the connection is unsupported.
+      // This proves the cited fact exists, not that the reasoning from it is right.
+      const basisFact = clip(r.basis_fact, 300);
       let downgraded: string | null = null;
-      if (overclaims) { decision = fields.watchFor ? 'watch' : 'reject'; downgraded = decision === 'reject' ? 'background' : null; }
+      if (decision !== 'reject' && !(basisFact && basisFact.replace(/\s+/g, ' ').length >= 8 && contextText.includes(flat(basisFact)))) { decision = 'reject'; downgraded = 'unsupported_connection'; }
       const calculation = decision === 'reject' ? null : exposureCalc(ctx, `${item.title} ${item.content}`, (r.quantified as Record<string, unknown> | null) ?? null);
-      out.set(item.key, { decision, rejectReason: decision === 'reject' ? (repeat ? 'duplicate' : downgraded ?? clip(r.reject_reason, 40) ?? 'incomplete') : null, ...fields, calculation });
+      out.set(item.key, { decision, rejectReason: decision === 'reject' ? (repeat ? 'duplicate' : downgraded ?? clip(r.reject_reason, 40) ?? 'incomplete') : null, ...fields, basisFact: decision === 'reject' ? null : basisFact, calculation });
     }
     for (const it of items) if (!out.has(it.key)) out.set(it.key, { decision: 'reject', rejectReason: 'not returned', whatChanged: null, connection: null, effect: null, unknowns: null, nextStep: null, watchFor: null, calculation: null });
     return out;
@@ -124,6 +131,7 @@ export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], 
 /** The stored per-account assessment (signal_triages.relevance_reason holds this as JSON). */
 export interface StoredConnection {
   v: 2; status: 'relevant' | 'watch' | 'unassessed' | 'rejected'; checked: boolean;
+  basisFact?: string | null;
   text: string; basis: string;
   whatChanged: string | null; connection: string | null; effect: string | null; unknowns: string | null; nextStep: string | null; watchFor: string | null;
   calculation: Calculation | null; rejectReason: string | null;
@@ -141,7 +149,7 @@ export function storedConnection(connection: Connection, verdict: Verdict | null
   const text = verdict.decision === 'watch'
     ? `Worth watching: ${verdict.connection} Watch for: ${verdict.watchFor}`
     : `Why this matters to you: ${verdict.connection} ${verdict.effect}`;
-  return { ...base, status: verdict.decision, checked: true, text, basis: verdict.decision === 'watch' ? 'Assessed · watch' : 'Assessed · relevant', whatChanged: verdict.whatChanged, connection: verdict.connection, effect: verdict.effect, unknowns: verdict.unknowns, nextStep: verdict.nextStep, watchFor: verdict.watchFor, calculation: verdict.calculation, rejectReason: null };
+  return { ...base, status: verdict.decision, checked: true, basisFact: verdict.basisFact ?? null, text, basis: verdict.decision === 'watch' ? 'Assessed · watch' : 'Assessed · relevant', whatChanged: verdict.whatChanged, connection: verdict.connection, effect: verdict.effect, unknowns: verdict.unknowns, nextStep: verdict.nextStep, watchFor: verdict.watchFor, calculation: verdict.calculation, rejectReason: null };
 }
 
 /** Reads v2 rows, and Phase-1 v1 rows (treated as needing reassessment). Plain-text legacy reasons return null. */

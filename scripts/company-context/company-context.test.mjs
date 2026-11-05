@@ -127,7 +127,7 @@ test('the assessment keeps relevant/watch items with all five parts, drops rejec
     { key: 'k3', title: 'Toast the bread: breakfast ideas - C', content: '' },
     { key: 'k4', title: 'Gusto opens office', content: '' },
   ];
-  const full = { what_changed: 'Gusto added tip pooling.', connection: 'You compete with Gusto on restaurant payroll.', effect: 'If buyers want tip pooling, you could lose deals.', unknowns: 'How many of your buyers ask for it.', next_step: 'Ask five customers this week.' };
+  const full = { what_changed: 'Gusto added tip pooling.', connection: 'You compete with Gusto on restaurant payroll.', basis_fact: 'Competitors they named: Gusto, Toast', effect: 'If buyers want tip pooling, you could lose deals.', unknowns: 'How many of your buyers ask for it.', next_step: 'Ask five customers this week.' };
   const call = async () => [
     { i: 0, decision: 'relevant', ...full },
     { i: 1, decision: 'relevant', same_event_as: 0, ...full },
@@ -234,32 +234,57 @@ test('research stays labelled by how far its evidence goes, and nothing becomes 
   assert.match(block, /Public facts they accepted from research: Founded in 2012 \(from research they accepted; UNVERIFIED/);
   assert.match(block, /Never make a value marked "from research"[^\n]*only basis for a confident recommendation/);
   assert.equal(c.provenance.product.origin, 'research_accepted');
-  // The founder editing the value makes it theirs: the research label goes.
+  // The founder editing the value makes it founder-reported, but the earlier proposal and its uncertainty are kept.
   const edited = normaliseCompanyContext('x', {}, { ...u.columns, target_customer: 'Home coffee drinkers', business_facts: u.businessFacts });
-  assert.match(companyContextBlock(edited), /Who buys: Home coffee drinkers\n/);
-  assert.equal(edited.research.buyers, undefined);
-  // A typed answer replacing an accepted one clears the record.
+  assert.match(companyContextBlock(edited), /Who buys: Home coffee drinkers \(founder-reported; corrects an earlier, unverified research proposal\)/);
+  assert.equal(edited.research.buyers, undefined); assert.equal(edited.corrections.buyers, 'unverified');
+  assert.equal(edited.businessFacts?.column_sources, undefined); // (stored history is in the row, not the context)
+  // A typed answer replacing an accepted one keeps the research record (nothing erased).
   const retyped = intakeUpdate({ ...u.columns, business_facts: u.businessFacts }, [{ id: 'product', value: 'Speciality coffee subscriptions' }], proposals, []);
-  assert.equal(retyped.businessFacts.column_sources.product_description, undefined);
+  assert.equal(retyped.columns.product_description, 'Speciality coffee subscriptions');
+  assert.equal(retyped.businessFacts.column_sources.product_description.proposal, 'Coffee subscriptions by post');
+  const after = normaliseCompanyContext('x', {}, { ...u.columns, ...retyped.columns, business_facts: retyped.businessFacts });
+  assert.match(companyContextBlock(after), /What they sell: Speciality coffee subscriptions \(founder-reported; corrects an earlier research proposal that a fetched page stated\)/);
+  // Accepting a newer proposal for the same field moves the earlier record to history.
+  const re = intakeUpdate({ business_facts: u.businessFacts }, [{ id: 'buyers', value: null, acceptProposalId: 'ip1' }], proposals, []);
+  assert.equal(re.businessFacts.column_history.length, 1);
+  // Unchanged context version for rows without research labels (no mass re-assessment).
+  const plain = { product_description: 'a', target_customer: 'b' };
+  assert.equal(normaliseCompanyContext('x', {}, plain).version, normaliseCompanyContext('x', {}, { ...plain, business_facts: {} }).version);
 });
 
-test('the two real Pact Coffee verdicts (isolated run 2026-11-05) replayed through the assessment parser', async () => {
-  const pact = normaliseCompanyContext('p', { company_name: 'Pact Coffee' }, { product_description: 'Speciality coffee beans and coffee pods, mainly by subscription', target_customer: 'Home coffee drinkers and gift buyers', geography_detail: 'United Kingdom' });
+test('assessment rule is structural and the same for every company: a kept item must cite a stated fact', async () => {
+  const pact = normaliseCompanyContext('p', { company_name: 'Pact Coffee' }, { product_description: 'Speciality coffee beans and coffee pods, mainly by subscription', target_customer: 'Home coffee drinkers and gift buyers', geography_detail: 'United Kingdom', competitors: ['Brio Coffee Club'] });
   const conn = { status: 'connected', score: 1, text: '', basis: '', matched: [], contextVersion: pact.version, candidate: true };
-  const items = [
-    { key: 'g', title: "Exclusive: UK's Pact Coffee reports another year of double-digit growth - World Coffee Portal", content: '', connection: conn, evidenceLevel: 'aggregator-headline' },
-    { key: 'k', title: "Keurig says it's come up with plastic-free coffee pods - Los Angeles Times", content: '', connection: conn, evidenceLevel: 'aggregator-headline' },
-  ];
-  // The model output actually stored in that run (fields abridged to the ones that decide the outcome).
-  const stored = [
-    { i: 0, decision: 'relevant', what_changed: 'Pact Coffee reported another year of double-digit growth in the UK.', connection: 'This is about your company directly, covering your financial performance.', effect: 'This confirms your subscription model is continuing to grow at double-digit rates, which validates your current business approach.', next_step: 'Review the full article.', watch_for: null },
-    { i: 1, decision: 'relevant', what_changed: 'Keurig has developed plastic-free coffee pods.', connection: 'You sell coffee pods to home coffee drinkers, competing in a market where Keurig is a major player.', effect: 'If consumers increasingly demand plastic-free pods, you may need to evaluate your pod offerings.', next_step: 'Check your current pod materials.', watch_for: null },
-  ];
-  const v = await verifyCandidates(pact, items, async () => stored);
-  assert.equal(v.get('g').decision, 'reject'); assert.equal(v.get('g').rejectReason, 'background', 'a headline about yourself cannot "validate" anything');
-  // Known limit: the invented market position in the Keurig connection is not detectable from wording; only the
-  // assessment rules address it, and whether they work needs a paid rerun.
-  assert.equal(v.get('k').decision, 'relevant');
+  const item = (key, title) => ({ key, title, content: '', connection: conn, evidenceLevel: 'aggregator-headline' });
+  const items = [item('own-fine', 'Regulator fines Pact Coffee over subscription cancellations'), item('own-growth', 'Pact Coffee reports double-digit growth'),
+    item('rival', 'Brio Coffee Club launches pods for home brewers'), item('keurig', 'Keurig launches plastic-free pods'), item('para', 'Keurig launches plastic-free pods (paraphrased basis)')];
+  const v = await verifyCandidates(pact, items, async () => [
+    // An own-company development is not dismissed by rule: kept when the model judges it actionable and cites a fact.
+    { i: 0, decision: 'relevant', what_changed: 'A regulator fined Pact Coffee.', connection: 'This is your company.', basis_fact: 'Company: Pact Coffee', effect: 'If the ruling applies to your sign-up flow, you must change it.', next_step: 'Read the ruling.', watch_for: null },
+    { i: 1, decision: 'reject', reject_reason: 'background' },
+    // A competitor item is kept only with a stated overlap.
+    { i: 2, decision: 'watch', what_changed: 'Brio launched pods.', connection: 'You named Brio as a competitor and you sell pods.', basis_fact: 'Competitors they named: Brio Coffee Club', effect: 'If your subscribers compare pod prices, you could lose some.', next_step: 'Note it.', watch_for: 'Brio pod pricing below yours.' },
+    // A cited "fact" that the founder never stated (an invented market position) is unsupported.
+    { i: 3, decision: 'relevant', what_changed: 'Keurig launched plastic-free pods.', connection: 'Keurig is a major player in your market.', basis_fact: 'Keurig is a major player in your market', effect: 'You may need to match it.', next_step: 'Check.', watch_for: null },
+    // Known strictness: a paraphrase of a real fact is also rejected (fails closed).
+    { i: 4, decision: 'relevant', what_changed: 'Keurig launched plastic-free pods.', connection: 'You sell pods.', basis_fact: 'They sell coffee pods', effect: 'Buyers may expect it.', next_step: 'Check.', watch_for: null },
+  ]);
+  assert.equal(v.get('own-fine').decision, 'relevant'); assert.equal(v.get('own-fine').basisFact, 'Company: Pact Coffee');
+  assert.equal(v.get('own-growth').rejectReason, 'background');
+  assert.equal(v.get('rival').decision, 'watch');
+  assert.equal(v.get('keurig').decision, 'reject'); assert.equal(v.get('keurig').rejectReason, 'unsupported_connection');
+  assert.equal(v.get('para').rejectReason, 'unsupported_connection');
+  // Same rule for an unrelated company: no customer-specific branch.
+  const saas = normaliseCompanyContext('s', { company_name: 'Ledgerly' }, { product_description: 'Accounting software for dental clinics', business_facts: { dependencies: [{ text: 'AWS hosting' }] } });
+  const w = await verifyCandidates(saas, [item('aws', 'AWS raises EC2 prices')], async () => [{ i: 0, decision: 'relevant', what_changed: 'AWS raised prices.', connection: 'You depend on AWS.', basis_fact: 'Depends on: AWS hosting', effect: 'If your instances are affected, costs rise.', next_step: 'Check the bill.', watch_for: null }]);
+  assert.equal(w.get('aws').decision, 'relevant');
+  // The assessment prompt states the generalised rules (no keyword patch remains in the parser).
+  let seen = ''; await verifyCandidates(pact, [items[0]], async (p) => { seen = p; return []; });
+  assert.match(seen, /does matter when it adds something they may not know or must respond to/);
+  assert.match(seen, /A competitor's development is "relevant" or "watch" only when you can name the overlap/);
+  assert.match(seen, /Never infer market presence, market share, customer demand or competitive importance/);
+  assert.doesNotMatch(readFileSync(new URL('../../src/lib/company-context/verify.ts', import.meta.url), 'utf8'), /confirm\|validat/);
 });
 
 test('an accepted research sentence is saved whole, not split on commas', () => {

@@ -68,7 +68,13 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
   // status) until the founder edits it. Kept in business_facts: no schema change.
   const fromResearch = { ...((bf.column_sources as Record<string, unknown>) ?? {}) };
   const COLUMN_OF: Record<string, string> = { product: 'product_description', buyers: 'target_customer', revenue_model: 'revenue_model', geography: 'geography_detail' };
-  const markColumn = (col: string, p: Proposal, value: unknown) => { fromResearch[col] = { value, basis: researchBasis(p), evidence: p.evidence[0]?.url ?? null }; };
+  // Superseded research records are kept, never deleted: accepting or correcting a value does not erase where an
+  // earlier proposal came from or how uncertain it was.
+  const history = [...((bf.column_history as unknown[]) ?? [])];
+  const markColumn = (col: string, p: Proposal, value: unknown) => {
+    if (fromResearch[col]) history.push({ column: col, ...(fromResearch[col] as object), replacedAt: new Date().toISOString(), replacedBy: 'research' });
+    fromResearch[col] = { value, basis: researchBasis(p), evidence: p.evidence[0]?.url ?? null, proposal: p.value, acceptedAt: new Date().toISOString() };
+  };
   for (const a of answers) {
     if (a.unknown) { unknown.push(a.id); continue; }
     const p = a.acceptProposalId ? proposals.find((x) => x.id === a.acceptProposalId) : null;
@@ -78,13 +84,15 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
     const origin = typed ? 'founder' : 'research_accepted';
     const evidence = typed ? null : p?.evidence[0]?.url ?? null;
     const basis = !typed && p ? { basis: researchBasis(p) } : {};
-    if (COLUMN_OF[a.id]) { if (!typed && p) markColumn(COLUMN_OF[a.id], p, value); else delete fromResearch[COLUMN_OF[a.id]]; }
+    // A typed answer becomes the founder-reported value; the research record stays (context.ts then shows the value
+    // as a founder correction of that proposal).
+    if (COLUMN_OF[a.id] && !typed && p) markColumn(COLUMN_OF[a.id], p, value);
     switch (a.id) {
       case 'product': columns.product_description = value; break;
       case 'buyers': columns.target_customer = value; break;
       case 'revenue_model': columns.revenue_model = value; break;
       case 'geography': columns.geography_detail = value; break;
-      case 'competitors': columns.competitors = listOf(value); if (!typed && p) markColumn('competitors', p, columns.competitors); else delete fromResearch.competitors; break;
+      case 'competitors': columns.competitors = listOf(value); if (!typed && p) markColumn('competitors', p, columns.competitors); break;
       // An accepted research sentence stays whole (splitting it on commas produced fragments as "dependencies").
       case 'dependencies': for (const [i, t] of (typed ? listOf(value) : [value]).entries()) deps.push({ id: `d${stamp}${i}`, text: t, origin, evidence, ...basis }); break;
       case 'constraints': for (const [i, t] of listOf(value).entries()) cons.push({ id: `c${stamp}${i}`, text: t, origin, evidence: null }); break;
@@ -109,5 +117,5 @@ export function intakeUpdate(current: Record<string, unknown> | null, answers: I
     if (p.field === 'dependencies') { deps.push({ id: `d${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null, basis: researchBasis(p) }); saved.push('dependencies'); continue; }
     pub.push({ id: `p${stamp}${id}`, text: p.value, origin: 'research_accepted', evidence: p.evidence[0]?.url ?? null, basis: researchBasis(p) }); saved.push(p.field);
   }
-  return { columns, businessFacts: { ...bf, dependencies: deps, constraints: cons, estimates: ests, public_facts: pub, column_sources: fromResearch }, saved, unknown };
+  return { columns, businessFacts: { ...bf, dependencies: deps, constraints: cons, estimates: ests, public_facts: pub, column_sources: fromResearch, column_history: history }, saved, unknown };
 }
