@@ -178,8 +178,10 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (!constraints.length) unknowns.push('limits on what it can do now (cash, team, time)');
   unknowns.push('margins, costs, cash and payment terms (never inferred)');
 
-  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags, research };
-  const version = createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 16);
+  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags };
+  // Research labels count towards the version only when present, so rows without them keep their existing version
+  // (otherwise every stored assessment would turn stale and be re-paid for after this change).
+  const version = createHash('sha256').update(JSON.stringify(Object.keys(research).length ? { ...facts, research } : facts)).digest('hex').slice(0, 16);
   return { profileId, version, ...facts, research, provenance, unknowns };
 }
 
