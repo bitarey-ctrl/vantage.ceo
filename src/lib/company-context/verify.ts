@@ -63,13 +63,25 @@ export function exposureCalc(ctx: CompanyContext, itemText: string, q: { estimat
   const est = ctx.estimates.find((e) => e.id === q.estimate_id && e.unit === '%');
   if (!est) return null;
   const flat = (s: string) => s.replace(/\s+/g, ' ').toLowerCase();
-  if (!flat(itemText).includes(flat(q.quote))) return null;
+  const quote = flat(q.quote);
+  if (!flat(itemText).includes(quote)) return null;
   const nums = (q.quote.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
   if (!nums.some((n) => Math.abs(Math.abs(n) - Math.abs(q.change_pct as number)) < 1e-9)) return null;
+  // A percentage in an article is not automatically a change to the founder's cost base. Require that the quote
+  // (1) names the cost item the estimate is about, (2) describes a price/cost change (not growth, share or margin),
+  // and (3) does not point to a market the founder did not list.
+  const item = est.label.replace(/^share of costs:\s*/i, '').toLowerCase();
+  const itemWords = item.split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  if (!itemWords.length || !itemWords.some((w) => quote.includes(w))) return null;
+  if (!/(price|pricing|cost|fee|rate|tariff|duty|tax|charge|toll|surcharge|rent)/.test(quote)) return null;
+  const places = ['us', 'u.s.', 'united states', 'uk', 'united kingdom', 'eu', 'europe', 'germany', 'france', 'china', 'india', 'japan', 'canada', 'australia', 'turkey', 'spain', 'italy', 'netherlands'];
+  const markets = ctx.geography.map((g) => g.toLowerCase());
+  const named = places.filter((p) => new RegExp(`(^|[^a-z])${p.replace('.', '\\.')}([^a-z]|$)`).test(quote));
+  if (named.length && !named.some((p) => markets.some((m) => m.includes(p) || p.includes(m)))) return null;
   const resultPct = Math.round(est.value * (q.change_pct as number)) / 100;
   return {
     estimateId: est.id, estimateLabel: est.label, sharePct: est.value, changePct: q.change_pct, resultPct, quote: q.quote.slice(0, 300),
-    text: `If the ${q.change_pct}% change applies to you in full: ${est.value}% (${est.basis === 'estimate' ? 'your estimate' : 'your figure'}) × ${q.change_pct}% ≈ ${resultPct > 0 ? '+' : ''}${resultPct}% of total costs. Contract terms and timing are not known.`,
+    text: `Conditional: if the reported ${q.change_pct}% change applies in full to your ${item}, then ${est.value}% (${est.basis === 'estimate' ? 'your estimate' : 'your figure'}) × ${q.change_pct}% ≈ ${resultPct > 0 ? '+' : ''}${resultPct}% of total costs. Not checked against your contracts, timing or exclusions.`,
   };
 }
 

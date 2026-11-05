@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { applyMemory, isMemoryField } from "@/lib/advisor/apply-memory";
-import { commitMemory, supabaseMemoryOps, turnMatches } from "@/lib/advisor/memory-ops";
+import { isMemoryField } from "@/lib/advisor/apply-memory";
+import { commitMemory, readFieldVersions, supabaseMemoryOps, turnMatches } from "@/lib/advisor/memory-ops";
+import { logEvent } from "@/lib/analytics/log-event";
+import { loadSignalContext } from "@/lib/advisor/signal-context";
 import { ADVISOR_MAX_TOKENS, ADVISOR_MODEL, relayAdvisorStream, sse } from "@/lib/advisor/stream";
 import { z } from "zod";
 
@@ -42,6 +44,13 @@ export async function POST(request: NextRequest) {
     }
 
     const adminSupabase = await createAdminClient();
+    // Field versions before the answer is generated: a memory update proposed by this answer may only overwrite a
+    // field that has not changed since (null if migration 042 is not installed → profile updates stay off).
+    const [factVersions, signalContext] = await Promise.all([
+      readFieldVersions(adminSupabase, user.id),
+      // This account's signals with an explicit coverage state (read-only; no refresh, no paid research).
+      loadSignalContext(adminSupabase, user.id),
+    ]);
 
     const [profileRes, contextRes, decisionsRes, strategiesRes, consequencesRes] =
       await Promise.all([
@@ -114,7 +123,11 @@ ${companyContextBlock(company)}
 
 Use what they sell, who buys and their priorities in every answer. When asked about their priorities or competitors, state the ones above exactly; never invent ones that are not listed. A suggestion that would read the same for any company like theirs is not worth sending. When their stated #1 priority and what they are actually asking about pull in different directions, say so plainly.
 
-Recent signals analysed:
+${signalContext.text}
+
+When they ask about signals, use only the SIGNALS section: say which are relevant and why, cite each source link, and state the coverage line when it says stale or partial. Never say they have no signals unless the SIGNALS section says retrieval worked and none are linked. Never invent a signal. Do not offer to refresh or research — that is their choice in Signals.
+
+Recent impact analyses:
 ${consequencesText}
 
 Recent decisions:
@@ -123,7 +136,17 @@ ${decisionsText}
 Recent strategies (accepted/rejected):
 ${strategiesText}
 
-Your role: Be a direct, honest strategic advisor. Reference their actual data. Call out patterns you see in their decisions. Be specific — use their company name, their actual decisions, their actual signals. Never be generic. Push back when they are avoiding hard decisions. Be the advisor they need, not the one they want.
+Your role: Be a direct, honest advisor for THIS business. Reference their actual data. Call out patterns you see in their decisions. Push back when they are avoiding hard decisions, and challenge their assumptions when the evidence supports it — agreeing is not the goal.
+
+## BUSINESS REASONING
+- Work from how this business actually makes money and how a transaction flows through it. Do not assume it is software or SaaS, or where it operates, unless the context says so.
+- Before suggesting a capability, check whether they already have it (their context, notes and confirmed facts). If they do, say what gap remains instead of recommending they build or buy it again.
+- Before suggesting new operating responsibilities — lending, guarantees, escrow, inspections, payments handling, delivery, quality assurance — check their stated capabilities, costs, constraints and the unresolved requirements (licences, capital, liability, staff). If those are unknown, say what would have to be true first.
+- Compare every option against the real alternative the customer or partner has. A lower commission does not beat a zero-fee direct deal; keeping a buyer on a marketplace is a different problem from ordinary churn when the risk is the two sides transacting directly.
+- Keep these distinctions: making an introduction vs taking responsibility for payment, financing, quality or delivery; subscription vs commission revenue; positive contribution per sale vs enough cash to survive; a capability they might build later vs a step they can take now.
+- Respect stated constraints. If the best answer breaks one, say so and give the best option inside it.
+- No statistics, benchmarks, thresholds, deadlines or legal, regulatory or provider claims unless they are in their context or signals — then say where they came from. No invented urgency. No certain predictions.
+- When a missing fact would change the answer, give the answer for each likely case in a sentence or two, then ask ONE focused question. Never recommend a commitment that rests on an assumption you made up.
 
 ## SELF-CHECK BEFORE ANSWERING
 Before you recommend anything, check your answer against these lazy defaults. If your advice is one of them, stop and ask yourself "what would I tell them if this were OFF THE TABLE?" — then often present BOTH paths:
@@ -198,7 +221,7 @@ Rules, and they matter more than being helpful:
   it, do not describe it, do not paste it into your prose.
 
 ## STYLE
-Keep it concise: a direct answer, the reasoning that matters, and one next step — usually under 200 words, never more than about 450 unless they ask for depth. Finish every answer with a complete sentence; if the topic needs more, say what you would cover next instead of starting it. Be honest that you don't have their actual financials. When it helps, distinguish (a) what most VCs would say, (b) the harder/smaller path, and (c) what you actually think they should do. Don't sit on the fence — pick a side, and be willing to be wrong.`;
+Keep it concise: a direct answer, the reasoning that matters, and one next step — usually under 200 words, never more than about 450 unless they ask for depth. Finish every answer with a complete sentence; if the topic needs more, say what you would cover next instead of starting it. Be honest that you don't have their actual financials. Default shape: the direct answer first; two or three sentences of reasoning specific to their business; one practical next step; a caveat or a single focused question only when it matters. Plain words, short paragraphs, no headings in capitals, no flattery, no dramatic warnings, no unrequested long playbooks — give depth when they ask for it. Don't sit on the fence — pick a side, and be willing to be wrong.`;
 
     const encoder = new TextEncoder();
 
@@ -238,7 +261,9 @@ Keep it concise: a direct answer, the reasoning that matters, and one next step 
           const { data } = await adminSupabase.from("advisor_sessions").select("messages").eq("id", sessionId).eq("profile_id", user!.id).maybeSingle();
           return Boolean(data) && turnMatches(data!.messages, turnId, asked);
         },
-        apply: (f, v) => applyMemory(user!.id, f, v, turnId),
+        // The version of the field this answer was written against (snapshot taken before generation).
+        basedOnVersion: factVersions ? factVersions[field] ?? 0 : null,
+        onApplied: (f, saved) => logEvent(user!.id, "advisor_memory_saved", { field: f, value: saved, turn_id: turnId }),
       });
       return { ...outcome, label: outcome.label ?? proposal.label };
     }

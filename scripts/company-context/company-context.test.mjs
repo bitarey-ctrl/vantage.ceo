@@ -47,7 +47,9 @@ test('unknown stays unknown: no invented sector, geography or model', () => {
   const c = normaliseCompanyContext('x', { company_name: 'Quiet Ltd' }, null);
   const block = companyContextBlock(c);
   assert.match(block, /What they sell: not recorded/);
-  assert.doesNotMatch(block, /SaaS|Turkey|technology/);
+  const facts = block.split('\n').filter((l) => !l.startsWith('Business type:') && !l.startsWith('Not known'));
+  assert.doesNotMatch(facts.join('\n'), /SaaS|Turkey|technology/);
+  assert.match(block, /do not assume software, SaaS, a location, or a revenue model/);
   assert.ok(c.unknowns.includes('what the company sells'));
 });
 
@@ -162,13 +164,16 @@ test('items from watched sources are assessed even without a keyword match (indi
 
 test('sizing is deterministic: founder estimate × quoted change, only when the quote holds the number', () => {
   const c = normaliseCompanyContext('x', { company_name: 'X' }, { business_facts: { estimates: [{ id: 'e1', label: 'Share of costs: AWS', value: 30, unit: '%', basis: 'estimate' }] } });
-  const text = 'AWS will raise EC2 prices by 10% from March.';
-  const ok = exposureCalc(c, text, { estimate_id: 'e1', change_pct: 10, quote: 'raise EC2 prices by 10%' });
+  const text = 'AWS will raise EC2 prices by 10% from March. AWS revenue grew 17%. AWS raises prices in Japan by 8%.';
+  const ok = exposureCalc(c, text, { estimate_id: 'e1', change_pct: 10, quote: 'AWS will raise EC2 prices by 10%' });
   assert.equal(ok.resultPct, 3);
-  assert.match(ok.text, /30% \(your estimate\) × 10% ≈ \+3%/);
-  assert.equal(exposureCalc(c, text, { estimate_id: 'e1', change_pct: 12, quote: 'raise EC2 prices by 10%' }), null, 'number must be in the quote');
+  assert.match(ok.text, /^Conditional: .*30% \(your estimate\) × 10% ≈ \+3%/);
+  assert.equal(exposureCalc(c, text, { estimate_id: 'e1', change_pct: 12, quote: 'AWS will raise EC2 prices by 10%' }), null, 'number must be in the quote');
   assert.equal(exposureCalc(c, text, { estimate_id: 'e1', change_pct: 10, quote: 'prices up 10% everywhere' }), null, 'quote must be in the item');
-  assert.equal(exposureCalc(c, text, { estimate_id: 'nope', change_pct: 10, quote: 'raise EC2 prices by 10%' }), null, 'needs a founder estimate');
+  assert.equal(exposureCalc(c, text, { estimate_id: 'nope', change_pct: 10, quote: 'AWS will raise EC2 prices by 10%' }), null, 'needs a founder estimate');
+  assert.equal(exposureCalc(c, 'EC2 prices rise 10%.', { estimate_id: 'e1', change_pct: 10, quote: 'EC2 prices rise 10%' }), null, 'quote must name the cost item you estimated');
+  assert.equal(exposureCalc(c, text, { estimate_id: 'e1', change_pct: 17, quote: 'AWS revenue grew 17%' }), null, 'growth is not a price change to you');
+  assert.equal(exposureCalc(c, text, { estimate_id: 'e1', change_pct: 8, quote: 'AWS raises prices in Japan by 8%' }), null, 'a market you did not list is not your cost');
 });
 
 test('public searches never contain priorities, notes, constraints, estimates or the avoided decision', () => {

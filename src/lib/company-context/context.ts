@@ -9,6 +9,7 @@
  * context carries a version hash so stored judgements can tell when the facts behind them changed.
  */
 import { createHash } from 'node:crypto';
+import { classifyAvoidedDecision, classifyBusinessModel, classifyRevenueModel, type FieldFlag } from './field-validation';
 
 export type FactOrigin = 'founder' | 'founder_profile' | 'advisor_noted' | 'research_accepted';
 
@@ -44,6 +45,12 @@ export interface CompanyContext {
   estimates: Estimate[];
   /** Field → where the value came from. */
   provenance: Record<string, ContextFact>;
+  /** Onboarding answers that were stored in the wrong field, shown under their real meaning. */
+  teamSize: string | null;
+  decisionStyle: string | null;
+  riskTolerance: string | null;
+  /** Stored values that do not fit their field: reinterpreted (verified mapping defect) or awaiting confirmation. */
+  flags: FieldFlag[];
   /** Plain-language list of what is not known (and must not be assumed). */
   unknowns: string[];
 }
@@ -111,7 +118,13 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   const notes = take('notes', str(field(ctx, 'additional_context')), 'founder');
   const product = take('product', str(field(ctx, 'product_description')), 'founder');
   const buyers = take('buyers', str(field(ctx, 'target_customer')), 'founder');
-  const revenueModel = take('revenueModel', str(field(ctx, 'revenue_model')) ?? str(field(profile, 'business_model')), 'founder');
+  // Validate before use: onboarding wrote team size, decision style and risk tolerance into business fields.
+  const rm = classifyRevenueModel(str(field(ctx, 'revenue_model')));
+  const bm = classifyBusinessModel(str(field(profile, 'business_model')));
+  const flags = [rm.flag, bm.flag].filter((f): f is FieldFlag => Boolean(f));
+  const revenueModel = take('revenueModel', rm.value ?? bm.value, 'founder');
+  const teamSize = take('teamSize', str(field(profile, 'team_size')) ?? bm.teamSize, 'founder');
+  const decisionStyle = take('decisionStyle', str(field(ctx, 'decision_style')) ?? rm.decisionStyle, 'founder');
   const band = str(field(ctx, 'arr_band'));
   const revenueRange = take('revenueRange', str(field(ctx, 'monthly_revenue_range')) ?? (band ? ARR_BANDS[band] ?? band : null) ?? str(field(profile, 'revenue_range')), 'founder');
   const stage = take('stage', str(field(profile, 'company_stage')), 'founder_profile');
@@ -125,7 +138,10 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (priorities.length) take('priorities', priorities.join('; '), 'founder');
   const competitors = normaliseList(field(ctx, 'competitors'), 'name', true);
   if (competitors.length) take('competitors', competitors.join(', '), 'founder');
-  const avoidedDecision = take('avoidedDecision', str(field(ctx, 'avoided_decision')), 'founder');
+  const ad = classifyAvoidedDecision(str(field(ctx, 'avoided_decision')));
+  if (ad.flag) flags.push(ad.flag);
+  const avoidedDecision = take('avoidedDecision', ad.value, 'founder');
+  const riskTolerance = take('riskTolerance', str(field(ctx, 'risk_tolerance')) ?? ad.riskTolerance, 'founder');
   const website = take('website', firstUrl(notes) ?? firstUrl(product), 'founder');
   const bf = (field(ctx, 'business_facts') ?? {}) as Record<string, unknown>;
   const dependencies = factList(bf.dependencies, 'founder');
@@ -136,7 +152,7 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   const unknowns: string[] = [];
   if (!product) unknowns.push('what the company sells');
   if (!buyers) unknowns.push('who buys');
-  if (!revenueModel) unknowns.push('how it makes money');
+  if (!revenueModel || flags.some((f) => f.field === 'ceo_context.revenue_model' && f.action === 'confirm')) unknowns.push('how it makes money');
   if (!geography.length) unknowns.push('where it operates and sells');
   if (!competitors.length) unknowns.push('which competitors matter');
   if (!priorities.length && !topPriority) unknowns.push('current priorities');
@@ -144,7 +160,7 @@ export function normaliseCompanyContext(profileId: string, profile: Row, ctx: Ro
   if (!constraints.length) unknowns.push('limits on what it can do now (cash, team, time)');
   unknowns.push('margins, costs, cash and payment terms (never inferred)');
 
-  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts };
+  const facts = { companyName, website, product, buyers, revenueModel, revenueRange, stage, sector, geography, topPriority, priorities, competitors, avoidedDecision, notes, dependencies, constraints, estimates, publicFacts, teamSize, decisionStyle, riskTolerance, flags };
   const version = createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 16);
   return { profileId, version, ...facts, provenance, unknowns };
 }
@@ -159,7 +175,7 @@ export function companyContextBlock(c: CompanyContext): string {
     line('Company', c.companyName ? `${c.companyName}${c.website ? ` (${c.website})` : ''}` : null),
     line('What they sell', c.product),
     line('Who buys', c.buyers),
-    line('How they make money', c.revenueModel),
+    line('How they make money', c.revenueModel ? `${c.revenueModel}${c.flags.some((f) => f.field === 'ceo_context.revenue_model' && f.action === 'confirm') ? ' (unconfirmed — may not describe how they make money; ask before relying on it)' : ''}` : null),
     line('Revenue range (founder-reported)', c.revenueRange),
     line('Stage', c.stage),
     line('Sector', c.sector),
@@ -168,12 +184,16 @@ export function companyContextBlock(c: CompanyContext): string {
     line('Strategic priorities', c.priorities.join('; ')),
     line('Competitors they named', c.competitors.join(', ')),
     line('Decision they have been avoiding', c.avoidedDecision),
+    ...(c.teamSize ? [line('Team size (onboarding answer)', c.teamSize)] : []),
+    ...(c.decisionStyle ? [line('Their decision style (onboarding answer)', c.decisionStyle)] : []),
+    ...(c.riskTolerance ? [line('Their risk tolerance (onboarding answer)', c.riskTolerance)] : []),
     line('Public facts they confirmed', c.publicFacts.map((d) => d.text).join('; ')),
     line('Depends on', c.dependencies.map((d) => d.text).join('; ')),
     line('Constraints they stated', c.constraints.map((d) => d.text).join('; ')),
     line('Numbers they gave', c.estimates.map((e) => `${e.label}: ${e.value}${e.unit === '%' ? '%' : e.unit === 'currency' ? ' (currency)' : ''} (${e.basis})`).join('; ')),
     line('Notes they gave', c.notes),
     `Not known — do not assume or invent: ${c.unknowns.join('; ')}.`,
+    'Business type: only what is stated above. If it is not stated, do not assume software, SaaS, a location, or a revenue model.',
     'All values above are founder-reported unless stated otherwise; they are not independently verified.',
   ].join('\n');
 }

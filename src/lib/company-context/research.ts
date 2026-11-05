@@ -16,7 +16,8 @@ export const RESEARCH_MODEL = 'claude-opus-5-5';
 export type ProposalField = 'identity' | 'product' | 'buyers' | 'revenue_model' | 'geography' | 'competitors' | 'history' | 'dependencies';
 export interface Proposal {
   id: string; field: ProposalField; value: string;
-  basis: 'company_says' | 'third_party_reports' | 'inferred';
+  /** 'unconfirmed': the model cited a page but its quote was not found in any page we fetched. */
+  basis: 'company_says' | 'third_party_reports' | 'inferred' | 'unconfirmed';
   evidence: { url: string; quote: string | null; quoteFound: boolean }[];
 }
 export interface ProposedSource { url: string; kind: 'company' | 'competitor' | 'supplier' | 'customer' | 'industry' | 'government' | 'regulator'; title: string | null; why: string; claims: string; jurisdiction: string | null; retrievedInRun: boolean }
@@ -131,7 +132,11 @@ export async function researchCompany(inputs: ResearchInputs, opts: { scope?: Re
         return { url: e.url as string, quote, quoteFound: Boolean(quote && page && page.includes(norm(quote))) };
       });
     if (!field || !value || !evidence.length) { dropped++; continue; }
-    proposals.push({ id: `p${n}`, field, value, basis, evidence: evidence.slice(0, 3) });
+    // A claim of what a page SAYS needs the quote to be found in a fetched page. Search-result snippets are
+    // encrypted and cannot be checked, so those claims are kept only as unconfirmed leads.
+    const confirmed = evidence.some((e) => e.quoteFound);
+    const shown = basis !== 'inferred' && !confirmed ? 'unconfirmed' : basis;
+    proposals.push({ id: `p${n}`, field, value, basis: shown, evidence: evidence.slice(0, 3) });
   }
   const sources: ProposedSource[] = (Array.isArray(parsed.sources) ? parsed.sources : []).map((raw) => raw as Record<string, unknown>)
     .filter((s) => typeof s.url === 'string' && /^https:\/\//.test(s.url as string) && KINDS.includes(s.kind as typeof KINDS[number]))

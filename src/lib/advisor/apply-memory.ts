@@ -208,3 +208,47 @@ export async function applyMemory(
   return { ok: true, saved };
 }
 
+
+/**
+ * The value an Advisor memory update would store, computed from the current row without writing anything.
+ * Same validation, de-duplication and caps as applyMemory. Used by the transactional path (migration 042), which
+ * writes `value` only if the field's version is still the one this was computed from.
+ */
+export type MemoryComputation =
+  | { ok: false; error: string }
+  | { ok: true; alreadyPresent: boolean; value: unknown; saved: string };
+
+export function computeMemoryUpdate(field: MemoryField, rawValue: string, ctx: Record<string, unknown> | null, today = new Date().toISOString().slice(0, 10)): MemoryComputation {
+  const value = rawValue.trim();
+  if (!value) return { ok: false, error: "value is required" };
+  switch (field) {
+    case "competitors": {
+      const names = normaliseCompetitors(ctx?.competitors);
+      if (names.some((n) => n.toLowerCase() === value.toLowerCase())) return { ok: true, alreadyPresent: true, value: null, saved: value };
+      if (names.length >= MAX_COMPETITORS) return { ok: false, error: `You already track ${MAX_COMPETITORS} competitors. Remove one in Profile first.` };
+      const saved = value.slice(0, 80);
+      return { ok: true, alreadyPresent: false, value: [...names.map((name) => ({ name })), { name: saved }], saved };
+    }
+    case "additional_context": {
+      const existing = typeof ctx?.additional_context === "string" ? ctx.additional_context : "";
+      const note = value.slice(0, MAX_NOTE);
+      if (existing.toLowerCase().includes(note.toLowerCase())) return { ok: true, alreadyPresent: true, value: null, saved: note };
+      const line = `${today} — ${note}`;
+      const next = existing.trim() ? `${existing.trim()}\n${line}` : line;
+      if (next.length > MAX_ADDITIONAL_CONTEXT) return { ok: false, error: "Your additional context is full. Trim it in Profile and I'll add this next time." };
+      return { ok: true, alreadyPresent: false, value: next, saved: note };
+    }
+    case "top_priority": {
+      const matched = matchEnum(value, TOP_PRIORITIES);
+      if (!matched) return { ok: false, error: `top_priority must be one of: ${TOP_PRIORITIES.join(", ")}` };
+      return { ok: true, alreadyPresent: ctx?.top_priority === matched, value: matched, saved: matched };
+    }
+    case "arr_band": {
+      const matched = matchEnum(value, ARR_BANDS);
+      if (!matched) return { ok: false, error: `arr_band must be one of: ${ARR_BANDS.join(", ")}` };
+      return { ok: true, alreadyPresent: ctx?.arr_band === matched, value: matched, saved: matched };
+    }
+    case "product_description": { const saved = value.slice(0, 300); return { ok: true, alreadyPresent: ctx?.product_description === saved, value: saved, saved }; }
+    case "target_customer": { const saved = value.slice(0, 160); return { ok: true, alreadyPresent: ctx?.target_customer === saved, value: saved, saved }; }
+  }
+}

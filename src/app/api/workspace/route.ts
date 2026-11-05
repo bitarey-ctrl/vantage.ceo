@@ -158,9 +158,11 @@ export async function GET() {
     judged.sort((a, b) => (eventScore.get(b.eventId)! - eventScore.get(a.eventId)!) || (a.eventId === b.eventId ? Number(b.id === b.eventId) - Number(a.id === a.eventId) : time(b) - time(a)));
     const plan = buildSourcePlan(company);
     // Verified coverage and the last persisted run (migration 040). Missing tables simply mean "not reported".
-    const [sourceRows, lastRun] = await Promise.all([
+    const [sourceRows, lastRun, conflicts] = await Promise.all([
       supabase.from('company_sources').select('id,url,final_url,title,kind,why,claims,jurisdiction,collection_method,status,last_checked_at,last_ok_at,last_error,discovered_by').eq('profile_id', user.id).neq('status', 'retired').order('kind').limit(60),
       supabase.from('source_collection_runs').select('id,trigger,started_at,finished_at,status,report').eq('profile_id', user.id).order('started_at', { ascending: false }).limit(1).maybeSingle(),
+      // Advisor suggestions that were NOT applied because the field changed after the answer (migration 042).
+      supabase.from('advisor_memory_ops').select('field,value,label,updated_at').eq('profile_id', user.id).eq('status', 'conflict').order('updated_at', { ascending: false }).limit(10),
     ]);
     const verified = (sourceRows.data ?? []) as { url: string; final_url: string | null; title: string | null; kind: string; why: string | null; claims: string | null; jurisdiction: string | null; status: string; last_checked_at: string | null; last_ok_at: string | null; last_error: string | null }[];
     const run = lastRun.data as { finished_at: string | null; started_at: string; status: string; report: { sources?: { id: string; label: string; ok: boolean; items: number; error?: string }[] } } | null;
@@ -185,6 +187,7 @@ export async function GET() {
         ],
       },
       hiddenRejected,
+      memoryConflicts: conflicts.error ? [] : conflicts.data ?? [],
       durable: { ready: !durableMissing && !durableFailed, message: durableMissing ? SCHEMA_MESSAGE : durableFailed ? errors.durable : null },
       workspaces: workspaceMap, sessionLinks, signalPreferences,
     });

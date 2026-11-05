@@ -1,24 +1,18 @@
 /**
- * POST /api/signals/[id]/assess  { force?: boolean }
+ * Impact analysis for one signal, shared by POST /api/signals/[id]/analyse (the only analysis endpoint).
  *
- * Impact analysis made with the canonical company context and this account's stored relevance assessment.
- * A saved analysis is returned only while it is current: same company context version and the same assessment.
- * Otherwise a new analysis is written and the earlier one is kept as history (superseded_at), never overwritten.
- * Numbers come only from the deterministic calculation in the assessment; unknown exposure stays unknown.
- *
- * (The older /api/signals/[id]/analyse route is unchanged and still serves the previous screens.)
+ * Uses the canonical company context and this account's stored relevance assessment. A saved analysis is returned
+ * only while it is current (same context version and the same assessment); otherwise a new one is written and the
+ * earlier one kept as history (superseded_at). Numbers come only from the stored calculation; unknown exposure stays
+ * unknown. Ownership: the signal must be linked to the account.
  */
-import { createAdminClient } from '@/lib/supabase/server';
 import { runConsequencePipeline } from '@/lib/ai/consequence-mapper';
 import type { Profile, CeoContext, Decision } from '@/types/database';
-import { companyContextBlock, normaliseCompanyContext } from '@/lib/company-context/context';
-import { parseStoredConnection } from '@/lib/company-context/verify';
-import { analysisQuality } from '@/lib/company-context/quality';
-import { json, sameOrigin, signedIn } from '@/lib/company-context/route-guard';
+import { companyContextBlock, normaliseCompanyContext } from './context';
+import { parseStoredConnection } from './verify';
+import { analysisQuality } from './quality';
 
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
-
+type Db = { from: (t: string) => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Row = Record<string, unknown> & { id: string; created_at: string; context_version?: string | null; evidence?: { assessment?: string } | null };
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 const view = (r: Row, quality: unknown, stale = false) => ({
@@ -27,20 +21,18 @@ const view = (r: Row, quality: unknown, stale = false) => ({
   calculation: r.calculation ?? null, evidence: r.evidence ?? null, quality, stale,
 });
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!sameOrigin(request)) return json({ error: 'This action must come from your VANTAGE workspace.' }, 403);
-  const { id: signalId } = await params;
+export async function runImpactAnalysis(opts: { supabase: Db; admin: Db; userId: string; signalId: string; force: boolean; analyse?: typeof runConsequencePipeline }): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { supabase, admin, signalId, force } = opts;
+  const user = { id: opts.userId };
+  const json = (body: Record<string, unknown>, status = 200) => ({ status, body });
+  const pipeline = opts.analyse ?? runConsequencePipeline;
   if (!/^[0-9a-f-]{36}$/i.test(signalId)) return json({ error: 'Signal not found.' }, 404);
-  const { supabase, user } = await signedIn();
-  if (!user) return json({ error: 'Please sign in again.' }, 401);
-  const force = Boolean(((await request.json().catch(() => ({}))) as { force?: boolean }).force);
 
   // Ownership: the signal must be linked to this account.
   const { data: link } = await supabase.from('signal_triages').select('relevance_reason,signal:signals(id,title,content,url,what_happened)').eq('profile_id', user.id).eq('signal_id', signalId).maybeSingle();
   const signal = (link as { signal?: { id: string; title: string; content: string; url: string | null; what_happened: string | null } } | null)?.signal;
   if (!signal) return json({ error: 'Signal not found.' }, 404);
 
-  const admin = await createAdminClient();
   const [{ data: profile }, { data: ctxRow }, { data: decisions }, { data: previous }] = await Promise.all([
     admin.from('profiles').select('*').eq('id', user.id).single(),
     admin.from('ceo_context').select('*').eq('profile_id', user.id).maybeSingle(),
@@ -69,7 +61,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const legacyContext = { ...(ctxRow ?? {}), profile_id: user.id } as unknown as CeoContext;
   let result;
   try {
-    result = await runConsequencePipeline(signal.id, signal.title, evidenceText, profile as Profile, legacyContext, (decisions ?? []) as Decision[], companyContextBlock(company));
+    result = await pipeline(signal.id, signal.title, evidenceText, profile as Profile, legacyContext, (decisions ?? []) as Decision[], companyContextBlock(company));
   } catch {
     return json({ error: 'The analysis could not run. Nothing was changed. Try again in a moment.' }, 502);
   }

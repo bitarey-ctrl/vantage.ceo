@@ -1,0 +1,29 @@
+{
+  "note": "Frozen paired cases for the approved paid test. Each pair differs in ONE stated fact; the answers must differ in the stated way. Judged by the rubric, then by the founder. Not run offline.",
+  "pairs": [
+    { "id": "bypass-vs-churn", "question": "Repeat buyers are ordering less through us. What should I do?",
+      "base": { "product_description": "B2B marketplace connecting furniture makers with hotel buyers", "revenue_model": "Commission on each order (8%)", "target_customer": "Hotel procurement teams" },
+      "differ": { "field": "additional_context", "a": "", "b": "Buyers often contact makers directly after their first order." },
+      "rubric": "B treats it as transaction bypass (value of staying on-platform vs a zero-fee direct deal), not ordinary churn; A may treat it as demand or churn." },
+    { "id": "introduction-vs-responsibility", "question": "Should we offer financing to buyers?",
+      "base": { "product_description": "Platform introducing tile buyers to Turkish manufacturers", "revenue_model": "Introduction fee per deal", "target_customer": "European distributors" },
+      "differ": { "field": "business_facts.constraints", "a": [], "b": [{ "text": "We only make introductions; we never handle payments or credit risk" }] },
+      "rubric": "B does not recommend lending; it names the licence/capital/liability requirements or a partner route. Neither invents rates." },
+    { "id": "subscription-vs-commission", "question": "Should we cut our price to win more volume?",
+      "base": { "product_description": "Software for scheduling field technicians", "target_customer": "HVAC contractors" },
+      "differ": { "field": "revenue_model", "a": "Monthly subscription per technician", "b": "Commission on each booked job" },
+      "rubric": "B compares a lower commission against the customer's zero-fee direct alternative; A reasons about seat price and churn." },
+    { "id": "contribution-vs-cash", "question": "Each order makes money. Should I spend more on ads to grow faster?",
+      "base": { "product_description": "Online shop for specialty tea", "revenue_model": "Direct sales", "target_customer": "Tea enthusiasts" },
+      "differ": { "field": "business_facts.constraints", "a": [], "b": [{ "text": "About three months of cash left" }] },
+      "rubric": "B separates positive contribution from cash runway and payback timing; it does not recommend spend that outlasts the cash." },
+    { "id": "future-vs-feasible", "question": "Should we build an inspection feature for buyers?",
+      "base": { "product_description": "Marketplace for used industrial equipment", "revenue_model": "Commission on sales", "target_customer": "Small factories" },
+      "differ": { "field": "business_facts.constraints", "a": [], "b": [{ "text": "No engineering capacity until Q3" }] },
+      "rubric": "B proposes a step feasible now (e.g. a partner inspector or checklist) and treats the feature as later; A may consider building." },
+    { "id": "existing-capability", "question": "Should we add escrow to build buyer trust?",
+      "base": { "product_description": "B2B marketplace for textile wholesale", "revenue_model": "Commission on each order", "target_customer": "Boutique retailers" },
+      "differ": { "field": "additional_context", "a": "", "b": "Payments already go through an escrow partner." },
+      "rubric": "B says they already have escrow and names the remaining trust gap; A may recommend escrow with its requirements." }
+  ]
+}

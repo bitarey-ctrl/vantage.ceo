@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadCompanyContext } from "@/lib/company-context/load";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 import { analyzeBlindSpots } from "@/lib/decisions/blind-spots";
 
@@ -33,11 +34,8 @@ export async function POST(
       return NextResponse.json({ error: "Decision not found" }, { status: 404 });
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("company_name, industry, company_stage, business_model, geography, revenue_range")
-      .eq("id", user.id)
-      .single();
+    // The same validated business context as the Advisor and signals (no team size posing as a business model).
+    const company = await loadCompanyContext(supabase, user.id);
 
     const result = await analyzeBlindSpots({
       title: decision.title,
@@ -47,12 +45,13 @@ export async function POST(
       knownContext: decision.known_context,
       openQuestions: decision.open_questions,
       business: {
-        companyName: profile?.company_name ?? null,
-        industry: profile?.industry ?? null,
-        companyStage: profile?.company_stage ?? null,
-        businessModel: profile?.business_model ?? null,
-        geography: profile?.geography ?? null,
-        revenueRange: profile?.revenue_range ?? null,
+        companyName: company.companyName,
+        industry: company.sector,
+        companyStage: company.stage,
+        // Unconfirmed values are not passed as facts.
+        businessModel: company.flags.some((f) => f.field === "ceo_context.revenue_model" && f.action === "confirm") ? null : company.revenueModel,
+        geography: company.geography.join(", ") || null,
+        revenueRange: company.revenueRange,
       },
     });
 
