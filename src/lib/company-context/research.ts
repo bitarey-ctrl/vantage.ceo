@@ -11,6 +11,7 @@
  * founder accepts or corrects it.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { recordProviderUsage, reserveProviderCall } from '@/lib/ai/provider-budget';
 
 export const RESEARCH_MODEL = 'claude-opus-5-5';
 export type ProposalField = 'identity' | 'product' | 'buyers' | 'revenue_model' | 'geography' | 'competitors' | 'history' | 'dependencies';
@@ -70,7 +71,8 @@ const canon = (u: string) => { try { const x = new URL(u); x.hash = ''; return x
 
 /** Run the research. `client` is injectable for tests. */
 export async function researchCompany(inputs: ResearchInputs, opts: { scope?: ResearchScope; client?: Pick<Anthropic, 'messages'>; maxSearches?: number; maxFetches?: number } = {}): Promise<ResearchResult> {
-  const client = opts.client ?? new Anthropic();
+  // No automatic retries: one research request can cost several cents of tokens and searches; failures are reported.
+  const client = opts.client ?? new Anthropic({ maxRetries: 0 });
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt(inputs, opts.scope ?? 'identity') }];
   const queries: string[] = [];
   const retrieved = new Set<string>();
@@ -80,6 +82,7 @@ export async function researchCompany(inputs: ResearchInputs, opts: { scope?: Re
 
   for (let turn = 0; turn < 4; turn++) {
     // Streamed: server-side search and fetch can run long enough for an idle non-streaming connection to drop.
+    const slot = reserveProviderCall(`research:${opts.scope ?? 'identity'}`, RESEARCH_MODEL);
     const response = await client.messages.stream({
       model: RESEARCH_MODEL,
       max_tokens: 16000,
@@ -90,6 +93,7 @@ export async function researchCompany(inputs: ResearchInputs, opts: { scope?: Re
       ],
       messages,
     }).finalMessage();
+    recordProviderUsage(slot, response.usage);
     usage.input_tokens += response.usage.input_tokens;
     usage.output_tokens += response.usage.output_tokens;
     usage.web_search_requests += response.usage.server_tool_use?.web_search_requests ?? 0;

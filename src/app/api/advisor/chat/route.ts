@@ -6,7 +6,8 @@ import { isMemoryField } from "@/lib/advisor/apply-memory";
 import { commitMemory, readFieldVersions, supabaseMemoryOps, turnMatches } from "@/lib/advisor/memory-ops";
 import { logEvent } from "@/lib/analytics/log-event";
 import { loadSignalContext } from "@/lib/advisor/signal-context";
-import { ADVISOR_MAX_TOKENS, ADVISOR_MODEL, relayAdvisorStream, sse } from "@/lib/advisor/stream";
+import { ADVISOR_MODEL, advisorMaxTokens, relayAdvisorStream, sse } from "@/lib/advisor/stream";
+import { recordProviderUsage, reserveProviderCall } from "@/lib/ai/provider-budget";
 import { z } from "zod";
 
 // No automatic SDK retries: a retried request can be a second paid generation. Recovery is the explicit Retry.
@@ -275,13 +276,15 @@ Keep it concise: a direct answer, the reasoning that matters, and one next step 
         const clientGone = () => request.signal.aborted;
         const send = (value: unknown) => { if (clientGone()) return; try { controller.enqueue(encoder.encode(sse(value))); } catch { /* closed */ } };
         try {
+          const slot = reserveProviderCall("advisor", ADVISOR_MODEL);
           const messageStream = anthropic.messages.stream({
             model: ADVISOR_MODEL,
-            max_tokens: ADVISOR_MAX_TOKENS,
+            // A lower cap via header is honoured only in the isolated test environment (length-limit test).
+            max_tokens: advisorMaxTokens(request.headers.get("x-test-max-tokens")),
             system: systemPrompt,
             messages: messages.map((m) => ({ role: m.role, content: m.content })),
           }, { signal: request.signal });
-          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply });
+          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply, onUsage: (u) => recordProviderUsage(slot, u) });
         } finally {
           try { controller.close(); } catch { /* already closed */ }
         }

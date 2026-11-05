@@ -18,6 +18,11 @@ import Anthropic from '@anthropic-ai/sdk';
 export const ADVISOR_MODEL = 'claude-sonnet-4-5';
 /** Output ceiling. The prompt asks for short answers well inside this; hitting it is reported, never hidden. */
 export const ADVISOR_MAX_TOKENS = 1000;
+/** The output cap actually used. A lower cap is honoured only in the isolated test environment (length-limit test). */
+export function advisorMaxTokens(requested?: string | null): number {
+  const test = Number(requested ?? process.env.ADVISOR_MAX_TOKENS_TEST);
+  return process.env.ISOLATED_TEST === '1' && Number.isInteger(test) && test >= 16 && test < ADVISOR_MAX_TOKENS ? test : ADVISOR_MAX_TOKENS;
+}
 export const MEMORY_TAG = '[[VANTAGE_MEMORY]]';
 
 export type EndStatus = 'complete' | 'max_tokens' | 'refusal' | 'incomplete';
@@ -86,12 +91,14 @@ export interface MemoryReport { ok: boolean; [k: string]: unknown }
 export async function relayAdvisorStream(opts: {
   stream: ProviderStream; send: Send; clientGone: () => boolean;
   applyFromReply: (reply: string) => Promise<MemoryReport | null>;
+  onUsage?: (usage: unknown) => void;
 }): Promise<{ status: EndStatus | 'error' | 'disconnected'; memory: 'applied' | 'none' | 'skipped' | 'failed' }> {
   const { stream, send, clientGone, applyFromReply } = opts;
   const filter = createMarkerFilter();
   try {
     stream.on('text', (text) => { const visible = filter.push(text); if (visible) send({ delta: visible }); });
     const final = await stream.finalMessage();
+    opts.onUsage?.((final as { usage?: unknown }).usage);
     const tail = filter.flush();
     if (tail) send({ delta: tail });
     const status = endStatus(final.stop_reason);

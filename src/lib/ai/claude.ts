@@ -1,7 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { recordProviderUsage, reserveProviderCall } from "./provider-budget";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  // Approved paid tests allow no automatic retries; production keeps the SDK default.
+  ...(process.env.ISOLATED_TEST === "1" ? { maxRetries: 0 } : {}),
 });
 
 export const CLAUDE_MODEL = "claude-sonnet-4-5";
@@ -22,6 +25,7 @@ export async function callClaude<T>(
 ): Promise<T> {
   const { maxTokens = 2048 } = options;
 
+  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL);
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: maxTokens,
@@ -33,6 +37,7 @@ export async function callClaude<T>(
     ],
   });
 
+  recordProviderUsage(slot, response.usage);
   const content = response.content[0];
   if (content.type !== "text") {
     throw new Error("Unexpected response type from Claude API");

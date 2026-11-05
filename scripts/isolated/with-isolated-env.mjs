@@ -23,6 +23,9 @@ const env = {
   ANTHROPIC_API_KEY: prod.ANTHROPIC_API_KEY, NEWSAPI_KEY: prod.NEWSAPI_KEY ?? '',
   NEXT_PUBLIC_APP_URL: `http://localhost:${process.env.PORT_OVERRIDE ?? 3300}`, NEXT_PUBLIC_APP_NAME: 'VANTAGE (isolated test)',
   CRON_SECRET: process.env.CRON_SECRET_OVERRIDE ?? randomBytes(24).toString('hex'), ISOLATED_TEST: '1',
+  // Test-only controls, passed through when set by the caller: hard call ceiling + ledger, lower Advisor cap.
+  ...(process.env.PROVIDER_BUDGET_FILE ? { PROVIDER_BUDGET_FILE: process.env.PROVIDER_BUDGET_FILE, PROVIDER_CALL_LIMIT: process.env.PROVIDER_CALL_LIMIT ?? '0' } : {}),
+  ...(process.env.ADVISOR_MAX_TOKENS_TEST ? { ADVISOR_MAX_TOKENS_TEST: process.env.ADVISOR_MAX_TOKENS_TEST } : {}),
 };
 for (const [k, v] of Object.entries(env)) if (String(v ?? '').includes(PRODUCTION)) { console.error(`Refusing: ${k} points at production.`); process.exit(2); }
 const [cmd, ...args] = process.argv.slice(2);

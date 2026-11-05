@@ -103,11 +103,13 @@ export async function POST(request: NextRequest) {
       }
       case 3: {
         const { teamSize } = body.data as { teamSize: string };
-        // Stored in business_model — no team_size column in schema
-        await supabase
+        // Team size has its own column (migration 043). It used to be written into business_model, where every
+        // reader took it for the business model.
+        const { error } = await supabase
           .from("profiles")
-          .update({ business_model: teamSize })
+          .update({ team_size: teamSize })
           .eq("id", user.id);
+        if (error) return NextResponse.json({ error: "Your team size could not be saved." }, { status: 500 });
         break;
       }
       case 4: {
@@ -148,10 +150,12 @@ export async function POST(request: NextRequest) {
             { profile_id: user.id },
             { onConflict: "profile_id", ignoreDuplicates: true }
           );
-        await supabase
+        // Its own column (migration 043); it used to be written into a business field.
+        const { error } = await supabase
           .from("ceo_context")
-          .update({ revenue_model: decisionStyle })
+          .update({ decision_style: decisionStyle })
           .eq("profile_id", user.id);
+        if (error) return NextResponse.json({ error: "Your decision style could not be saved." }, { status: 500 });
         break;
       }
       case 7: {
@@ -162,10 +166,12 @@ export async function POST(request: NextRequest) {
             { profile_id: user.id },
             { onConflict: "profile_id", ignoreDuplicates: true }
           );
-        await supabase
+        // Its own column (migration 043); it used to be written into a business field.
+        const { error } = await supabase
           .from("ceo_context")
-          .update({ avoided_decision: riskTolerance })
+          .update({ risk_tolerance: riskTolerance })
           .eq("profile_id", user.id);
+        if (error) return NextResponse.json({ error: "Your risk tolerance could not be saved." }, { status: 500 });
         break;
       }
       case 8: {
