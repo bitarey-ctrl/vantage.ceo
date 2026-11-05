@@ -122,9 +122,9 @@ export const SMALL_BUSINESS_RULES_QUERY = `("small businesses" OR SMEs OR "small
 /** Google News feeds for a refresh: shared pricing/cost/rule queries plus up to 3 competitors. */
 export function buildQueryFeeds(competitors: string[]): SourceFeed[] {
   const feeds: SourceFeed[] = [
-    { name: "Trade measures", url: buildGoogleNewsRssUrl(TRADE_MEASURES_QUERY), category: "compliance", maxItems: 5 },
-    { name: "Input costs", url: buildGoogleNewsRssUrl(INPUT_COSTS_QUERY), category: "cost_base", maxItems: 5 },
-    { name: "Small-business rules", url: buildGoogleNewsRssUrl(SMALL_BUSINESS_RULES_QUERY), category: "compliance", maxItems: 5 },
+    { name: "Trade measures", url: buildGoogleNewsRssUrl(TRADE_MEASURES_QUERY), category: "compliance", maxItems: 3 },
+    { name: "Input costs", url: buildGoogleNewsRssUrl(INPUT_COSTS_QUERY), category: "cost_base", maxItems: 3 },
+    { name: "Small-business rules", url: buildGoogleNewsRssUrl(SMALL_BUSINESS_RULES_QUERY), category: "compliance", maxItems: 3 },
     {
       name: "AI provider pricing",
       url: buildGoogleNewsRssUrl(AI_PRICING_QUERY),

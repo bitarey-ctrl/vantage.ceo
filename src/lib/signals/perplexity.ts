@@ -34,7 +34,8 @@ interface NewsApiArticle {
  * business` — unbounded, and the main reason NewsAPI flooded the candidate
  * pool with generic business news.
  */
-// Sector-neutral: shared collection must not be shaped around one business type. Software developments still
+// Sector-neutral: shared collection must not be shaped around one business type. pageSize 8 keeps the gate's
+// per-refresh volume (and cost) at its previous level now that the broader queries fill every page. Software developments still
 // arrive through the curated feeds (sources.ts); each account's relevance is decided per account later.
 const CATEGORY_QUERIES: { label: string; query: string }[] = [
   {
@@ -58,7 +59,7 @@ async function fetchNewsApiQuery(
 ): Promise<NewsApiArticle[]> {
   try {
     const res = await fetch(
-      `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&from=${fromDate}&sortBy=publishedAt&language=en&pageSize=15&apiKey=${apiKey}`,
+      `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&from=${fromDate}&sortBy=publishedAt&language=en&pageSize=8&apiKey=${apiKey}`,
       { headers: { "User-Agent": "VANTAGE/1.0" } }
     );
     if (!res.ok) {
