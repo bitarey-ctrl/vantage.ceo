@@ -191,6 +191,9 @@ export async function applyMemory(
     // 42703 / PGRST204: the column does not exist because a migration has not
     // been run. Say which one instead of a generic failure.
     const missing = updateError.code === "42703" || updateError.code === "PGRST204";
+    // Anything else is a temporary storage failure: raise it so the caller records "failed" and can retry,
+    // instead of treating it as an invalid update.
+    if (!missing) throw new Error(`ceo_context update failed: ${updateError.code ?? "unknown"}`);
     const migration = field === "additional_context" ? "032" : "031";
     return {
       ok: false,
@@ -205,15 +208,3 @@ export async function applyMemory(
   return { ok: true, saved };
 }
 
-/** Whether a memory write was already recorded for this conversation turn (retry protection; uses feature_events). */
-export async function memoryAppliedForTurn(profileId: string, turnId: string): Promise<boolean> {
-  const admin = await createAdminClient();
-  const { data } = await admin
-    .from("feature_events")
-    .select("id")
-    .eq("profile_id", profileId)
-    .eq("event", "advisor_memory_saved")
-    .eq("metadata->>turn_id", turnId)
-    .limit(1);
-  return Boolean(data?.length);
-}

@@ -2,16 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { applyMemory, isMemoryField, memoryAppliedForTurn } from "@/lib/advisor/apply-memory";
+import { applyMemory, isMemoryField } from "@/lib/advisor/apply-memory";
+import { commitMemory, supabaseMemoryOps, turnMatches } from "@/lib/advisor/memory-ops";
 import { ADVISOR_MAX_TOKENS, ADVISOR_MODEL, relayAdvisorStream, sse } from "@/lib/advisor/stream";
 import { z } from "zod";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// No automatic SDK retries: a retried request can be a second paid generation. Recovery is the explicit Retry.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
 
 const chatRequest = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(40000) })).min(1).max(300),
-  // Stable id of the user turn being answered; a retry of the same turn reuses it, so memory is written at most once.
+  // The stored conversation and the id of the question being answered. A retry reuses both; memory updates are
+  // written at most once per (account, conversation, question). Without them no memory update is written.
   turnId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
+  sessionId: z.string().uuid().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -31,6 +35,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "This conversation could not be read. Nothing was sent." }, { status: 400 });
     }
     const turnId = parsed.data.turnId ?? null;
+    const sessionId = parsed.data.sessionId ?? null;
     const messages = parsed.data.messages.filter((m) => m.content.trim()).slice(-20);
     if (!messages.length || messages[messages.length - 1].role !== "user") {
       return NextResponse.json({ error: "There is no question to answer." }, { status: 400 });
@@ -221,18 +226,21 @@ Keep it concise: a direct answer, the reasoning that matters, and one next step 
       }
       if (!isMemoryField(field) || typeof value !== "string" || !value.trim()) return null;
 
-      // A retry of a turn whose memory was already written must not write it again.
-      if (turnId && (await memoryAppliedForTurn(user!.id, turnId))) {
-        return { ok: true, field, value, label: typeof label === "string" ? label : value, alreadyApplied: true };
-      }
-      const result = await applyMemory(user!.id, field, value, turnId);
-      return {
-        ok: result.ok,
-        field,
-        value: result.saved ?? value,
-        label: typeof label === "string" ? label : value,
-        error: result.error,
-      };
+      if (!turnId || !sessionId) return { ok: false, field, error: "This update was not saved: the question could not be identified." };
+      const proposal = { field, value: value.trim(), label: typeof label === "string" ? label : value };
+      const asked = messages[messages.length - 1].content;
+      const outcome = await commitMemory({
+        store: supabaseMemoryOps(adminSupabase),
+        key: { profileId: user!.id, sessionId, turnId },
+        proposal,
+        // Ownership and binding: this account's conversation, and its latest question, with the same text.
+        verifyTurn: async () => {
+          const { data } = await adminSupabase.from("advisor_sessions").select("messages").eq("id", sessionId).eq("profile_id", user!.id).maybeSingle();
+          return Boolean(data) && turnMatches(data!.messages, turnId, asked);
+        },
+        apply: (f, v) => applyMemory(user!.id, f, v, turnId),
+      });
+      return { ...outcome, label: outcome.label ?? proposal.label };
     }
 
     const readable = new ReadableStream({

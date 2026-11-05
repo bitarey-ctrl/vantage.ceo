@@ -13,6 +13,7 @@ import { parseStoredConnection, storedConnection } from '@/lib/company-context/v
 import { clusterEvents } from '@/lib/company-context/events';
 import { buildSourcePlan } from '@/lib/company-context/source-plan';
 import { advisorMessage } from '@/lib/advisor/messages';
+import { saveConversation } from '@/lib/advisor/sessions';
 
 /*
  * The main app's account API (also served at /api/test/workspace). Every read and write is scoped to the signed-in
@@ -335,8 +336,8 @@ export async function POST(request: Request) {
     }
 
     if (cmd.operation === 'save-session') {
-      const { data, error } = await supabase.from('advisor_sessions').update({ messages: cmd.messages, updated_at: new Date().toISOString() }).eq('id', cmd.id).eq('profile_id', user.id).eq('updated_at', cmd.expectedUpdatedAt).select().maybeSingle();
-      return error ? json({ error: 'Could not save this conversation. Keep this page open and copy any unsaved reply.' }, 500) : !data ? json({ error: 'This conversation is unavailable or changed in another view. Refresh before continuing.' }, 409) : json(data);
+      const saved = await saveConversation(supabase, user.id, cmd.id, cmd.expectedUpdatedAt, cmd.messages);
+      return saved.status === 200 ? json(saved.row) : json({ error: saved.error }, saved.status);
     }
 
     if (cmd.operation === 'link-session') {

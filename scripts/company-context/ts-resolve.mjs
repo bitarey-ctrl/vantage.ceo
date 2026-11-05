@@ -14,6 +14,12 @@ registerHooks({
       const candidate = new URL(`${specifier}.ts`, context.parentURL);
       if (existsSync(fileURLToPath(candidate))) return next(candidate.href, context);
     }
-    return next(specifier, context);
+    try {
+      return next(specifier, context);
+    } catch (error) {
+      // Package subpaths without an exports map (e.g. "next/server") need their file extension under ESM.
+      if (error?.code === 'ERR_MODULE_NOT_FOUND' && /^[a-z@][^:]*\/[^.]+$/.test(specifier)) return next(`${specifier}.js`, context);
+      throw error;
+    }
   },
 });
