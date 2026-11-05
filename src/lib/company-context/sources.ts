@@ -37,7 +37,23 @@ export async function saveProposedSources(db: Db, profileId: string, sources: Pr
   return rows.length;
 }
 
-/** Open a source ourselves: record final URL, title, feed (if advertised) and a content fingerprint. */
+/**
+ * An advertised feed is used only when it plausibly follows the page itself: same site, and not a site-wide change,
+ * edit or comments log (Wikipedia's RecentChanges feed, /comments/feed). Otherwise the page itself is watched.
+ * Found in the isolated run: a company's Wikipedia page advertised the site-wide edit log, 20 unrelated items a run.
+ */
+export function usableFeed(feedUrl: string | null, pageUrl: string): string | null {
+  if (!feedUrl) return null;
+  try {
+    const f = new URL(feedUrl), p = new URL(pageUrl);
+    const site = (h: string) => h.replace(/^www\./, '');
+    if (site(f.hostname) !== site(p.hostname)) return null;
+    if (/special:|recentchanges|action=history|\/comments\/feed|[?&]feed=comments/i.test(decodeURIComponent(f.pathname + f.search))) return null;
+    return feedUrl;
+  } catch { return null; }
+}
+
+/** Open a source ourselves: record final URL, title, feed (if advertised and usable) and a content fingerprint. */
 export async function verifySource(url: string, fetchImpl?: typeof fetch) {
   const page = await safeFetch(url, { fetchImpl });
   if (!page.ok) return { ok: false as const, error: page.error ?? `HTTP ${page.status}`, finalUrl: page.finalUrl };
@@ -49,7 +65,7 @@ export async function verifySource(url: string, fetchImpl?: typeof fetch) {
   }
   const { title, text } = pageText(page.text);
   if (text.length < 80) return { ok: false as const, error: 'Page had no readable text (it may need a browser)', finalUrl: page.finalUrl };
-  const feed = feedLink(page.text, page.finalUrl);
+  const feed = usableFeed(feedLink(page.text, page.finalUrl), page.finalUrl);
   return { ok: true as const, finalUrl: page.finalUrl, title, feedUrl: feed, method: feed ? 'rss' as const : 'page' as const, hash: hash(text.slice(0, 20000)), text: text.slice(0, 20000) };
 }
 
@@ -87,7 +103,9 @@ export async function collectVerifiedSources(db: Db, profileId: string, opts: { 
   const items: CollectedItem[] = [];
   const report: { id: string; url: string; ok: boolean; items: number; changed: boolean; error?: string }[] = [];
   await Promise.all(((data ?? []) as SourceRow[]).map(async (s) => {
-    const target = s.collection_method === 'rss' && s.feed_url ? s.feed_url : s.final_url ?? s.url;
+    // Sources stored before usableFeed() existed are held to the same rule at collection time.
+    const feedUrl = s.collection_method === 'rss' && s.feed_url && (s.feed_url === (s.final_url ?? s.url) || usableFeed(s.feed_url, s.final_url ?? s.url)) ? s.feed_url : null;
+    const target = feedUrl ?? s.final_url ?? s.url;
     const page = await safeFetch(target, { fetchImpl: opts.fetchImpl });
     if (!page.ok) {
       report.push({ id: s.id, url: target, ok: false, items: 0, changed: false, error: page.error });
@@ -95,7 +113,7 @@ export async function collectVerifiedSources(db: Db, profileId: string, opts: { 
       return;
     }
     let found: CollectedItem[] = [], fingerprint: string, changed = false;
-    if (s.collection_method === 'rss' && s.feed_url) {
+    if (feedUrl) {
       const entries = parseRss(page.text, 20);
       fingerprint = hash(entries.map((e) => e.url).join('\n'));
       changed = fingerprint !== s.content_hash;

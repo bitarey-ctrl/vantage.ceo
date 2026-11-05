@@ -13,7 +13,7 @@ import { connectAndCheck, parseStoredConnection, exposureCalc, verifyCandidates 
 import { intakeQuestions, intakeUpdate } from '../../src/lib/company-context/intake.ts';
 import { researchCompany } from '../../src/lib/company-context/research.ts';
 import { assertPublicHttps, safeFetch } from '../../src/lib/company-context/safe-fetch.ts';
-import { verifySource, collectVerifiedSources } from '../../src/lib/company-context/sources.ts';
+import { verifySource, collectVerifiedSources, usableFeed } from '../../src/lib/company-context/sources.ts';
 import { analysisQuality } from '../../src/lib/company-context/quality.ts';
 
 const brewer = normaliseCompanyContext('p1', { company_name: 'Hopfield Brewing' }, {
@@ -269,6 +269,18 @@ test('an accepted research sentence is saved whole, not split on commas', () => 
   assert.equal(u.businessFacts.dependencies[0].basis, 'quote_matched');
   const typed = intakeUpdate({}, [{ id: 'dependencies', value: 'AWS, Stripe' }], proposals, []);
   assert.deepEqual(typed.businessFacts.dependencies.map((d) => d.text), ['AWS', 'Stripe']);
+});
+
+test('an advertised feed is used only if it follows the page itself (not a site-wide edit or comments log)', async () => {
+  const wiki = 'https://en.wikipedia.org/wiki/Pact_Coffee';
+  assert.equal(usableFeed('https://en.wikipedia.org/w/index.php?title=Special:RecentChanges&feed=atom', wiki), null);
+  assert.equal(usableFeed('https://example.com/comments/feed/', 'https://example.com/news'), null);
+  assert.equal(usableFeed('https://other.example/feed', 'https://example.com/news'), null, 'different site');
+  assert.equal(usableFeed('https://www.example.com/news/feed', 'https://example.com/news'), 'https://www.example.com/news/feed');
+  const html = '<html><head><title>Pact Coffee - Wikipedia</title><link rel="alternate" type="application/atom+xml" href="/w/index.php?title=Special:RecentChanges&amp;feed=atom"></head><body>' + 'Pact Coffee is a British coffee company. '.repeat(5) + '</body></html>';
+  const fetchImpl = async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+  const r = await verifySource(wiki, fetchImpl);
+  assert.equal(r.feedUrl, null); assert.equal(r.method, 'page');
 });
 
 test('research keeps only proposals backed by pages retrieved in the run, and checks quotes against fetched text', async () => {
