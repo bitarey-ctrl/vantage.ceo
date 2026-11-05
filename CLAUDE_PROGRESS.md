@@ -1720,3 +1720,10 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Architecture:** shared collection (feeds → neutral gate → shared `signals`) never receives account context; account relevance is decided per account (assessment on `signal_triages`).
 **Verification:** tsc clean; build passes; new `scripts/advisor/shared-collection.test.mjs` (5) through the real pipeline with scripted network/model + all earlier suites pass (10+10+23+1+17+16+2+42).
 **Status:** LOCAL ONLY.
+
+## 2026-11-05 — Stage C isolated end-to-end (vantage-rls-test); candidate `ca05fb1`
+**New files:** `supabase/migrations/044_fact_version_null_fix.sql`; `docs/advisor/STAGE_C_RESULTS.md`.
+**Files changed:** `src/lib/company-context/{safe-fetch,ingest}.ts` (connection-stall fix); `scripts/isolated/{stage-c.mjs,with-isolated-env.mjs}`; `scripts/company-context/company-context.test.mjs`.
+**What was done:** Verified isolated identity; preflight; applied 039–044 to the isolated project only (043 no-op). Ran Advisor (7 calls, $0.063) and Stage C (25 calls, $1.254); combined 32 calls / $1.317 within 33 / $2.50. All persistence, isolation, versioning and memory-race checks passed on real Postgres and the real provider. Fixed two defects found in the run (044; safeFetch stall). Reasoning pairs: 3 pass, 1 partial, 2 fail.
+**Verification:** tsc clean; build passes; offline suites pass (24 context incl. new safeFetch regression).
+**Status:** LOCAL CANDIDATE on isolated DB. Not pushed or deployed.
