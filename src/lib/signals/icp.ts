@@ -6,7 +6,10 @@
  * moves, it moves in this file and nowhere else.
  */
 
-export const ICP_DESCRIPTION = `B2B SaaS founders and CEOs in the US and UK, roughly $1M-$20M ARR, with a small leadership team or none at all, and no chief of staff.`;
+// Account-neutral on purpose: the shared gate must not filter public evidence around one kind of business (or around
+// whichever account triggered a refresh). Whether a signal matters to a particular business is decided later, per
+// account, against that account's validated context (src/lib/company-context/verify.ts).
+export const ICP_DESCRIPTION = `Founders and CEOs of small and mid-sized operating businesses — any sector, any country — with a small leadership team or none at all, and no chief of staff.`;
 
 /** The five categories. A signal that hits none of them is discarded. */
 export const SIGNAL_CATEGORIES = [
@@ -37,8 +40,8 @@ export const CATEGORY_LABEL: Record<SignalCategory, string> = {
  * prose rather than keywords on purpose — keyword floors are what made the
  * old triage layer pass everything.
  */
-export const CATEGORY_DEFINITIONS = `1. PRICING — what they can charge, or what the market will bear.
-2. COST BASE — infrastructure, AI/model pricing, tooling, headcount costs.
-3. COMPETITION — a competitor's funding, launch, pricing move, shutdown, or acquisition.
-4. COMPLIANCE — regulation, data/privacy, AI rules, or security standards they must meet.
-5. CAPITAL — fundraising climate, SaaS multiples, M&A activity in their category.`;
+export const CATEGORY_DEFINITIONS = `1. PRICING — what businesses can charge, or what buyers in a market will pay.
+2. COST BASE — what it costs to operate: materials, energy, freight, labour, rent, duties and taxes, software, cloud and AI/model pricing, platform and payment fees.
+3. COMPETITION — a company's funding, launch, pricing move, expansion, shutdown, or acquisition.
+4. COMPLIANCE — rules businesses must meet: product, trade, tax, employment, data/privacy, AI or security rules and standards.
+5. CAPITAL — financing conditions: lending, investment and fundraising climate, valuations, M&A activity.`;

@@ -1713,3 +1713,10 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; eslint clean on changed files (1 pre-existing warning); build passes (one transient Google Fonts fetch failure, passed on retry); tests 10 + 10 + 23 + 1 + 17 + 16 + 2 + 42 pass.
 **Blocked:** vantage-rls-test INACTIVE; budget shortfall decision; API credit unconfirmed (free count_tokens works; message credit unknown until the first approved call).
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-05 — Shared collection made account-neutral (authorized protected files)
+**Files changed (authorized):** `src/lib/signals/icp.ts` (neutral reader; sector-neutral category definitions); `src/lib/ai/prompts/triage.ts` (gate keeps concrete developments for an identifiable kind of business; concrete trade/cost measures no longer auto-discarded; no SaaS reader); `src/lib/signals/perplexity.ts` (NewsAPI queries sector-neutral, same count); `src/lib/signals/sources.ts` (3 small sector-neutral shared queries: trade measures, input costs, small-business rules; software sources kept); `src/app/api/signals/refresh/route.ts`, `src/app/api/onboarding/complete/route.ts`, `src/app/api/signals/ingest/route.ts` ("B2B SaaS"/"technology"/"undisclosed" defaults removed; onboarding completion links via the account's own assessment; manual ingest analysis uses the validated context block).
+**Also:** `src/lib/company-context/ingest.ts` — shared signal rows store only the item's own text (no account assessment).
+**Architecture:** shared collection (feeds → neutral gate → shared `signals`) never receives account context; account relevance is decided per account (assessment on `signal_triages`).
+**Verification:** tsc clean; build passes; new `scripts/advisor/shared-collection.test.mjs` (5) through the real pipeline with scripted network/model + all earlier suites pass (10+10+23+1+17+16+2+42).
+**Status:** LOCAL ONLY.

@@ -4,6 +4,7 @@ import { backfillTriagesForProfile } from "@/lib/signal-linking/backfill";
 import { ensureProfileExists } from "@/lib/auth/ensure-profile";
 import { processSignalsForProfile } from "@/lib/signals/signal-processor";
 import { markProfileIngested } from "@/lib/ingest-queue/order";
+import { normaliseCompanyContext } from "@/lib/company-context/context";
 import type { Profile, CeoContext, Decision } from "@/types/database";
 
 // The response returns immediately; the work below it runs in `after`, so give
@@ -115,15 +116,14 @@ export async function POST() {
           id: contextRow?.id ?? "",
           profile_id: profileId,
           strategic_priorities: contextRow?.strategic_priorities ?? [],
-          revenue_model:
-            contextRow?.revenue_model ?? profile.business_model ?? "B2B SaaS",
-          monthly_revenue_range:
-            contextRow?.monthly_revenue_range ?? profile.revenue_range ?? "undisclosed",
+          // Unknown stays unknown: no invented business type or revenue range.
+          revenue_model: contextRow?.revenue_model ?? null,
+          monthly_revenue_range: contextRow?.monthly_revenue_range ?? profile.revenue_range ?? null,
           competitors: contextRow?.competitors ?? [],
           avoided_decision: contextRow?.avoided_decision ?? null,
           avoided_decision_stated_reason:
             contextRow?.avoided_decision_stated_reason ?? null,
-          sector: contextRow?.sector ?? profile.industry ?? "B2B SaaS",
+          sector: contextRow?.sector ?? profile.industry ?? null,
           sector_tags: contextRow?.sector_tags ?? [],
           geography_detail: contextRow?.geography_detail ?? profile.geography ?? null,
           past_decision_regrets: contextRow?.past_decision_regrets ?? [],
@@ -132,7 +132,9 @@ export async function POST() {
           updated_at: contextRow?.updated_at ?? new Date().toISOString(),
         };
 
-        const result = await processSignalsForProfile(profile, context, [] as Decision[]);
+        // Same rules as a manual refresh: survivors are linked only after this account's own assessment.
+        const company = normaliseCompanyContext(profileId, profileRow, contextRow);
+        const result = await processSignalsForProfile(profile, context, [] as Decision[], company);
         await markProfileIngested(profileId);
 
         console.log(

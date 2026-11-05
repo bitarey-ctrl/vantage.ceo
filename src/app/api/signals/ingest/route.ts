@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { companyContextBlock, normaliseCompanyContext } from '@/lib/company-context/context';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { mapConsequences } from '@/lib/ai/consequence-mapper';
 
@@ -84,10 +85,11 @@ export async function POST(request: NextRequest) {
       // so the prompt never crashes on empty onboarding data
       const safeContext = {
         strategic_priorities: [],
-        revenue_model: profile.business_model ?? 'B2B SaaS',
-        monthly_revenue_range: profile.revenue_range ?? 'undisclosed',
+        // Unknown stays unknown: no invented business type, sector or revenue range.
+        revenue_model: null,
+        monthly_revenue_range: profile.revenue_range ?? null,
         competitors: [],
-        sector: profile.industry ?? 'technology',
+        sector: profile.industry ?? null,
         geography_detail: profile.geography ?? '',
         avoided_decision: null,
         avoided_decision_stated_reason: null,
@@ -97,12 +99,14 @@ export async function POST(request: NextRequest) {
 
       try {
         // Skip triage for manual signals — go straight to consequence mapping
+        // The validated company context replaces the prompt's built-in software framing (unknown stays unknown).
         const consequenceResult = await mapConsequences(
           signal.title,
           signal.content,
           profile,
           safeContext,
-          recentDecisions ?? []
+          recentDecisions ?? [],
+          companyContextBlock(normaliseCompanyContext(profile.id, profile, context))
         );
 
         if (consequenceResult) {

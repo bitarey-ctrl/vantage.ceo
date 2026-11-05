@@ -10,7 +10,7 @@ import type { CompanyContext } from './context';
 import { connectionFor } from './relevance';
 import { clusterEvents, sameEvent } from './events';
 import { buildSourcePlan, type SourcePlan } from './source-plan';
-import { connectAndCheck, parseStoredConnection, type EvidenceLevel, type StoredConnection } from './verify';
+import { connectAndCheck, parseStoredConnection, type EvidenceLevel } from './verify';
 import { verifyDueSources, collectVerifiedSources } from './sources';
 
 export interface FeedItem { title: string; url: string; published_at: string | null; content: string; publisher: string | null }
@@ -141,7 +141,8 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
     if (!signalId) {
       const { data, error } = await admin.from('signals').insert({
         source: 'rss', title: it.title, content: it.publisher ? `${it.content} (Reported by ${it.publisher}.)` : it.content, url: it.url,
-        published_at: it.published_at, what_happened: (stored as StoredConnection).whatChanged ?? it.title, category: null, urgency: 'watch',
+        // Shared record: only the item's own public text. This account's assessment stays on its own triage row.
+        published_at: it.published_at, what_happened: it.title, category: null, urgency: 'watch',
       }).select('id').single();
       if (error || !data) { writeErrors++; continue; }
       signalId = data.id; inserted++;

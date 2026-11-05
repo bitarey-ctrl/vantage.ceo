@@ -110,9 +110,21 @@ export function buildCompetitorQuery(name: string): string {
   return `"${name}" (launch OR pricing OR funding OR acquired OR "shuts down") when:7d`;
 }
 
-/** Google News feeds for a profile: the pricing query plus up to 3 competitors. */
+/**
+ * Sector-neutral shared queries, so non-software developments can enter the shared pool at all (every static feed
+ * above is software, cloud or tech regulation). Kept small; the account-neutral gate and each account's own
+ * assessment decide what matters to whom.
+ */
+export const TRADE_MEASURES_QUERY = `(tariff OR "import duty" OR "anti-dumping" OR "export ban") (announces OR imposes OR raises OR cuts OR extends) when:7d`;
+export const INPUT_COSTS_QUERY = `("energy prices" OR "freight rates" OR "shipping rates" OR "raw material prices" OR "fuel surcharge") (rise OR rises OR fall OR falls OR jump OR cut) when:7d`;
+export const SMALL_BUSINESS_RULES_QUERY = `("small businesses" OR SMEs OR "small firms") ("new rules" OR regulation OR "minimum wage" OR VAT) when:7d`;
+
+/** Google News feeds for a refresh: shared pricing/cost/rule queries plus up to 3 competitors. */
 export function buildQueryFeeds(competitors: string[]): SourceFeed[] {
   const feeds: SourceFeed[] = [
+    { name: "Trade measures", url: buildGoogleNewsRssUrl(TRADE_MEASURES_QUERY), category: "compliance", maxItems: 5 },
+    { name: "Input costs", url: buildGoogleNewsRssUrl(INPUT_COSTS_QUERY), category: "cost_base", maxItems: 5 },
+    { name: "Small-business rules", url: buildGoogleNewsRssUrl(SMALL_BUSINESS_RULES_QUERY), category: "compliance", maxItems: 5 },
     {
       name: "AI provider pricing",
       url: buildGoogleNewsRssUrl(AI_PRICING_QUERY),

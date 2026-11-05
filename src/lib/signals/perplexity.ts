@@ -34,18 +34,20 @@ interface NewsApiArticle {
  * business` — unbounded, and the main reason NewsAPI flooded the candidate
  * pool with generic business news.
  */
+// Sector-neutral: shared collection must not be shaped around one business type. Software developments still
+// arrive through the curated feeds (sources.ts); each account's relevance is decided per account later.
 const CATEGORY_QUERIES: { label: string; query: string }[] = [
   {
     label: "competition",
-    query: '"B2B SaaS" AND (launch OR acquired OR "shuts down" OR pricing)',
+    query: '(acquires OR acquired OR "shuts down" OR "raises prices" OR "cuts prices") AND (company OR startup OR brand OR retailer OR manufacturer)',
   },
   {
     label: "capital",
-    query: '("seed round" OR "Series A" OR "Series B") AND (SaaS OR "software startup")',
+    query: '("seed round" OR "Series A" OR "Series B" OR "business lending" OR "small business loans")',
   },
   {
     label: "compliance",
-    query: '("EU AI Act" OR GDPR OR "SOC 2" OR "data protection") AND (software OR SaaS)',
+    query: '("new rules" OR regulation OR tariff OR "import duty" OR "data protection") AND (businesses OR companies OR exporters OR importers)',
   },
 ];
 

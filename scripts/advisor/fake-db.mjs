@@ -39,6 +39,7 @@ export function createFakeDb(seed = {}, { missing = [] } = {}) {
       delete() { st.op = 'delete'; return b; },
       eq(c, v) { st.filters.push((r) => (c.includes('->>') ? (r[c.split('->>')[0]] ?? {})[c.split('->>')[1]] === v : r[c] === v)); return b; },
       neq(c, v) { st.filters.push((r) => r[c] !== v); return b; },
+      not(c, op, v) { st.filters.push((r) => (op === 'is' && v === null ? r[c] != null : r[c] !== v)); return b; },
       lt(c, v) { st.filters.push((r) => r[c] < v); return b; },
       gte(c, v) { st.filters.push((r) => r[c] >= v); return b; },
       in(c, vs) { st.filters.push((r) => vs.includes(r[c])); return b; },
