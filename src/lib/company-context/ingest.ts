@@ -75,7 +75,7 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
   const items: (FeedItem & { sourceId: string; evidenceLevel: EvidenceLevel; forceCandidate?: boolean })[] = [];
   await Promise.all(plan.sources.map(async (s) => {
     try {
-      const res = await doFetch(s.url, { headers: { 'user-agent': 'VANTAGE-research/1.0 (+https://www.vantage.ceo)', accept: 'application/rss+xml, application/xml' }, signal: AbortSignal.timeout(opts.perSourceTimeoutMs ?? 12_000), redirect: 'follow' });
+      const res = await doFetch(s.url, { headers: { 'user-agent': 'VANTAGE-research/1.0 (+https://www.vantage.ceo)', accept: 'application/rss+xml, application/xml' }, signal: AbortSignal.timeout(opts.perSourceTimeoutMs ?? 12_000), redirect: 'follow', cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const parsed = parseRss((await res.text()).slice(0, 2_000_000));
       items.push(...parsed.map((p) => ({ ...p, sourceId: s.id, evidenceLevel: 'aggregator-headline' as const })));

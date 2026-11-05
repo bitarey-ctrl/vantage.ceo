@@ -32,15 +32,23 @@ export async function assertPublicHttps(raw: string): Promise<URL> {
 export async function safeFetch(raw: string, opts: { timeoutMs?: number; maxBytes?: number; accept?: string; fetchImpl?: typeof fetch } = {}): Promise<FetchedPage> {
   const doFetch = opts.fetchImpl ?? fetch;
   const maxBytes = opts.maxBytes ?? 1_500_000;
+  // One controller for the whole request chain: on timeout or when the size cap is reached the CONNECTION is
+  // aborted, not just our reader — otherwise the download keeps running and starves later fetches in the process.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? 12_000);
   let current = raw;
   try {
     for (let hop = 0; hop < 5; hop++) {
       const url = await assertPublicHttps(current);
       const res = await doFetch(url.href, {
-        redirect: 'manual', signal: AbortSignal.timeout(opts.timeoutMs ?? 12_000),
+        redirect: 'manual', signal: ctl.signal, cache: 'no-store',
         headers: { 'user-agent': 'VANTAGE-research/1.0 (+https://www.vantage.ceo)', accept: opts.accept ?? 'text/html,application/xhtml+xml,application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.5' },
       });
-      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) { current = new URL(res.headers.get('location')!, url).href; continue; }
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        await res.body?.cancel().catch(() => {}); // release the connection before following the redirect
+        current = new URL(res.headers.get('location')!, url).href;
+        continue;
+      }
       const reader = res.body?.getReader();
       let received = 0; const chunks: Uint8Array[] = [];
       if (reader) {
@@ -48,7 +56,7 @@ export async function safeFetch(raw: string, opts: { timeoutMs?: number; maxByte
           const { done, value } = await reader.read();
           if (done) break;
           received += value.byteLength;
-          if (received > maxBytes) { await reader.cancel(); break; }
+          if (received > maxBytes) { ctl.abort(); break; }
           chunks.push(value);
         }
       }
@@ -57,7 +65,10 @@ export async function safeFetch(raw: string, opts: { timeoutMs?: number; maxByte
     }
     return { ok: false, status: 0, finalUrl: current, contentType: '', text: '', error: 'Too many redirects' };
   } catch (error) {
+    // A size-capped read aborts the request on purpose; anything read so far was already returned above.
     return { ok: false, status: 0, finalUrl: current, contentType: '', text: '', error: (error as Error).message.slice(0, 160) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

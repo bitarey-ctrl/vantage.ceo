@@ -286,3 +286,17 @@ test('no shipped company-context code, prompt or source list names a test custom
     assert.doesNotMatch(canonical, names);
   }
 });
+
+test('safe fetch releases the connection: redirect bodies are cancelled, an over-size download is aborted', async () => {
+  let redirectCancelled = false, signalSeen = null;
+  const big = new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(400_000)); } }); // never ends on its own
+  const fetchImpl = async (u, init) => {
+    signalSeen = init.signal;
+    if (u.endsWith('/start')) return new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(10)); }, cancel() { redirectCancelled = true; } }), { status: 302, headers: { location: '/big' } });
+    return new Response(big, { status: 200, headers: { 'content-type': 'text/html' } });
+  };
+  const r = await safeFetch('https://93.184.215.14/start', { fetchImpl, maxBytes: 1_000_000 });
+  assert.equal(redirectCancelled, true, 'redirect body released');
+  assert.equal(signalSeen.aborted, true, 'over-size download aborted at the connection');
+  assert.ok(r.text.length > 0 && r.text.length <= 1_200_000);
+});

@@ -78,7 +78,10 @@ async function signIn(row) {
   return { cookie: jar.map((x) => `${x.name}=${encodeURIComponent(x.value)}`).join('; '), token: data.session.access_token };
 }
 let S = {};
-const api = async (who, path, method = 'GET', body, headers = {}) => { const r = await fetch(base + path, { method, headers: { cookie: S[who].cookie, origin, 'content-type': 'application/json', ...headers }, body: body ? JSON.stringify(body) : undefined }); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { raw: t.slice(0, 300) }; } return { status: r.status, data: d }; };
+// A 401 means the test account's session expired (e.g. a long pause): sign in again once. Never repeats paid calls
+// (the Advisor and research requests do not go through this helper's retry).
+const api = async (who, path, method = 'GET', body, headers = {}, again = true) => { const r = await fetch(base + path, { method, headers: { cookie: S[who].cookie, origin, 'content-type': 'application/json', ...headers }, body: body ? JSON.stringify(body) : undefined }); if (r.status === 401 && again && !/\/api\/(advisor\/chat|company\/research|signals\/refresh|signals\/[^/]+\/analyse)/.test(path)) { S[who] = await signIn(rows.find((x) => x.label === who)); return api(who, path, method, body, headers, false); } const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { raw: t.slice(0, 300) }; } return { status: r.status, data: d }; };
+const freshAuth = async () => { for (const r of rows) S[r.label] = await signIn(r); };
 const ws = async (who) => (await api(who, '/api/workspace')).data;
 const cmd = (who, body) => api(who, '/api/workspace', 'POST', body);
 
@@ -143,10 +146,14 @@ for (const r of rows) S[r.label] = await signIn(r);
 
 if (mode === 'advisor') {
   phaseStart = ledger().calls.length; phaseDollars = DOLLARS.advisor;
-  setCeiling(ledger().calls.length + CEILING.advisor);
-  let s = await newSession('A', 'Stage C advisor');
+  const resume = process.env.ADVISOR_FROM === 'A4';
+  setCeiling(resume ? Number(process.env.ADVISOR_PHASE_START ?? 0) + CEILING.advisor : ledger().calls.length + CEILING.advisor);
+  if (resume) phaseStart = Number(process.env.ADVISOR_PHASE_START ?? 0);
+  let s = resume ? (await api('A', '/api/advisor/sessions')).data.find?.((x) => x.title === 'Stage C advisor') ?? null : await newSession('A', 'Stage C advisor');
+  let q, reload;
+  if (!resume) {
   // A1
-  let q = await addQuestion('A', s, 'We now also compete with Brio Coffee Club. What should I keep an eye on?');
+  q = await addQuestion('A', s, 'We now also compete with Brio Coffee Club. What should I keep an eye on?');
   let r1 = await step('A1', () => ask('A', q.session, q.turnId), MAX_COST.advisor);
   check(statusOf(r1) === 'complete', 'A1 answer completes', JSON.stringify({ end: r1.end, error: r1.error }));
   check(!r1.text.includes('[[VANTAGE_MEMORY'), 'A1 memory marker never reaches the reader');
@@ -159,7 +166,7 @@ if (mode === 'advisor') {
   const r2 = await step('A2', () => ask('A', q.session, q.turnId, { maxTokens: 40 }), MAX_COST.advisor);
   check(statusOf(r2) === 'max_tokens' && r2.end?.stopReason === 'max_tokens', 'A2 provider stop reason max_tokens reported as such', JSON.stringify(r2.end));
   await saveAnswer('A', q.session.id, q.turnId, r2);
-  let reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
+  reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   check(reload.messages.at(-1).status === 'max_tokens' && reload.messages.at(-1).incomplete === true, 'A2 incomplete status survives reload');
   // A3
   const prior = reload.messages.at(-1);
@@ -168,6 +175,9 @@ if (mode === 'advisor') {
   await saveAnswer('A', s.id, q.turnId, r3, prior);
   reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   check(reload.messages.filter((m) => m.turnId === q.turnId && m.role === 'user').length === 1 && reload.messages.at(-1).attempts?.[0]?.content === prior.content, 'A3 no duplicate turns; earlier attempt kept');
+  }
+  await freshAuth();
+  reload = (await api('A', '/api/advisor/sessions/' + s.id)).data;
   // A4
   q = await addQuestion('A', reload, 'Give me a detailed plan for our next three months, step by step.');
   const r4 = await step('A4', () => ask('A', q.session, q.turnId, { abortAfterFirstDelta: true }), MAX_COST.advisor);
