@@ -12,6 +12,7 @@ import { connectionFor } from '@/lib/company-context/relevance';
 import { parseStoredConnection, storedConnection } from '@/lib/company-context/verify';
 import { clusterEvents } from '@/lib/company-context/events';
 import { buildSourcePlan } from '@/lib/company-context/source-plan';
+import { advisorMessage } from '@/lib/advisor/messages';
 
 /*
  * The main app's account API (also served at /api/test/workspace). Every read and write is scoped to the signed-in
@@ -41,7 +42,7 @@ const decisionFields = z.object({
   alternatives_considered: z.array(option).max(20).optional(),
   status: z.enum(['open', 'decided', 'archived']).optional(), actual_outcome: optionalText,
 });
-const message = z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(40000), incomplete: z.boolean().optional() });
+const message = advisorMessage;
 const command = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('create-decision'), input: decisionFields.extend({
     title: z.string().trim().min(1).max(120), source: z.enum(['signal', 'strategy', 'manual']).optional(), source_id: z.string().uuid().nullable().optional(),

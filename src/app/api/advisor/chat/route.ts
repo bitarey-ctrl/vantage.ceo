@@ -2,19 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { applyMemory, isMemoryField } from "@/lib/advisor/apply-memory";
+import { applyMemory, isMemoryField, memoryAppliedForTurn } from "@/lib/advisor/apply-memory";
+import { ADVISOR_MAX_TOKENS, ADVISOR_MODEL, relayAdvisorStream, sse } from "@/lib/advisor/stream";
+import { z } from "zod";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = "claude-sonnet-4-5";
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface ChatRequest {
-  messages: ChatMessage[];
-}
+const chatRequest = z.object({
+  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(40000) })).min(1).max(300),
+  // Stable id of the user turn being answered; a retry of the same turn reuses it, so memory is written at most once.
+  turnId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,11 +26,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json()) as ChatRequest;
-    const messages = (body.messages ?? []).slice(-20);
-
-    if (!messages.length) {
-      return NextResponse.json({ error: "messages required" }, { status: 400 });
+    const parsed = chatRequest.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: "This conversation could not be read. Nothing was sent." }, { status: 400 });
+    }
+    const turnId = parsed.data.turnId ?? null;
+    const messages = parsed.data.messages.filter((m) => m.content.trim()).slice(-20);
+    if (!messages.length || messages[messages.length - 1].role !== "user") {
+      return NextResponse.json({ error: "There is no question to answer." }, { status: 400 });
     }
 
     const adminSupabase = await createAdminClient();
@@ -192,7 +193,7 @@ Rules, and they matter more than being helpful:
   it, do not describe it, do not paste it into your prose.
 
 ## STYLE
-Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be honest that you don't have their actual financials. When it helps, distinguish (a) what most VCs would say, (b) the harder/smaller path, and (c) what you actually think they should do. Don't sit on the fence — pick a side, and be willing to be wrong.`;
+Keep it concise: a direct answer, the reasoning that matters, and one next step — usually under 200 words, never more than about 450 unless they ask for depth. Finish every answer with a complete sentence; if the topic needs more, say what you would cover next instead of starting it. Be honest that you don't have their actual financials. When it helps, distinguish (a) what most VCs would say, (b) the harder/smaller path, and (c) what you actually think they should do. Don't sit on the fence — pick a side, and be willing to be wrong.`;
 
     const encoder = new TextEncoder();
 
@@ -220,7 +221,11 @@ Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be
       }
       if (!isMemoryField(field) || typeof value !== "string" || !value.trim()) return null;
 
-      const result = await applyMemory(user!.id, field, value);
+      // A retry of a turn whose memory was already written must not write it again.
+      if (turnId && (await memoryAppliedForTurn(user!.id, turnId))) {
+        return { ok: true, field, value, label: typeof label === "string" ? label : value, alreadyApplied: true };
+      }
+      const result = await applyMemory(user!.id, field, value, turnId);
       return {
         ok: result.ok,
         field,
@@ -232,58 +237,20 @@ Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be
 
     const readable = new ReadableStream({
       async start(controller) {
+        // The browser closing the connection (Stop, navigation, network loss) aborts the provider call: no hidden
+        // spending, and an interrupted answer never reaches the memory write below.
+        const clientGone = () => request.signal.aborted;
+        const send = (value: unknown) => { if (clientGone()) return; try { controller.enqueue(encoder.encode(sse(value))); } catch { /* closed */ } };
         try {
           const messageStream = anthropic.messages.stream({
-            model: MODEL,
-            max_tokens: 1000,
+            model: ADVISOR_MODEL,
+            max_tokens: ADVISOR_MAX_TOKENS,
             system: systemPrompt,
-            messages: messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-          });
-
-          messageStream.on("text", (text: string) => {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`)
-            );
-          });
-
-          const final = await messageStream.finalMessage();
-
-          const replyText = final.content
-            .map((block) => (block.type === "text" ? block.text : ""))
-            .join("");
-
-          try {
-            const memory = await applyFromReply(replyText);
-            if (memory) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ memory })}\n\n`)
-              );
-            }
-          } catch (err) {
-            // A failed write must never take the answer down with it.
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error("[POST /api/advisor/chat] Memory write failed:", msg);
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ memory: { ok: false, error: "Could not save that to your profile." } })}\n\n`
-              )
-            );
-          }
-
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.error("[POST /api/advisor/chat] Stream error:", errMsg);
-          try {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ error: errMsg })}\n\n`)
-            );
-            controller.close();
-          } catch {}
+            messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          }, { signal: request.signal });
+          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply });
+        } finally {
+          try { controller.close(); } catch { /* already closed */ }
         }
       },
     });
@@ -296,8 +263,7 @@ Keep it concise — 3–6 sentences unless a longer answer is clearly needed. Be
       },
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("[POST /api/advisor/chat]", msg);
-    return NextResponse.json({ error: `Advisor failed: ${msg.slice(0, 200)}` }, { status: 500 });
+    console.error("[POST /api/advisor/chat]", error instanceof Error ? error.message.slice(0, 200) : "unknown");
+    return NextResponse.json({ error: "The Advisor could not start. Nothing was changed. Try again in a moment." }, { status: 500 });
   }
 }

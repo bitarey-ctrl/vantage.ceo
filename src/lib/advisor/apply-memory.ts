@@ -88,7 +88,8 @@ function matchEnum(value: string, allowed: readonly string[]): string | null {
 export async function applyMemory(
   profileId: string,
   field: MemoryField,
-  rawValue: string
+  rawValue: string,
+  turnId: string | null = null
 ): Promise<ApplyMemoryResult> {
   const value = rawValue.trim();
   if (!value) return { ok: false, error: "value is required" };
@@ -199,7 +200,20 @@ export async function applyMemory(
     };
   }
 
-  await logEvent(profileId, "advisor_memory_saved", { field, value: saved });
+  await logEvent(profileId, "advisor_memory_saved", { field, value: saved, ...(turnId ? { turn_id: turnId } : {}) });
 
   return { ok: true, saved };
+}
+
+/** Whether a memory write was already recorded for this conversation turn (retry protection; uses feature_events). */
+export async function memoryAppliedForTurn(profileId: string, turnId: string): Promise<boolean> {
+  const admin = await createAdminClient();
+  const { data } = await admin
+    .from("feature_events")
+    .select("id")
+    .eq("profile_id", profileId)
+    .eq("event", "advisor_memory_saved")
+    .eq("metadata->>turn_id", turnId)
+    .limit(1);
+  return Boolean(data?.length);
 }
