@@ -1735,3 +1735,13 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; build passes; 95 + 28 + 42 tests pass; baseline assertions rehearsed in a rolled-back transaction on the isolated DB.
 **Pending your authorization / action:** paid regression plan (17 calls, $0.70 ceiling); a disposable Supabase project for the production baseline; decision on shared-signal readability; you sign in for the browser refresh check.
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-06 — Remaining corrections and final verification (isolated only; paid run within approved 17 calls / $0.70)
+**New files:** `supabase/migrations/045_signal_read_scope.sql`; `scripts/isolated/read-paths-045.mjs`; `docs/advisor/FINAL_VERIFICATION_2026-11-06.md`; `docs/next/DECISION_OUTCOME_PILOT_PLAN.md`.
+**Files changed:** `src/lib/signals/gate.ts` (AUTHORIZED: failure categories, no provider text); `src/lib/ai/{provider-budget,claude}.ts` (worst-case dollar reservation); `src/app/api/advisor/chat/route.ts` (estimate + clear budget refusal); `src/app/api/signals/raw/route.ts` (no unscoped fallback); `src/app/api/signals/[id]/review/route.ts` (own link required); `src/lib/company-context/{context,intake,verify}.ts` (research history kept through corrections; structural basis-fact rule replaces wording downgrade); tests; harness (`regression` mode, official prices).
+**What was done:** 045 written, applied to the isolated project (public) and to a production-shaped schema copy (`prodbase`, fingerprint-identical to production); isolation, privilege and service-role behaviour verified as real roles, with a negative control. 9 Advisor regression and fresh cases run; browser refresh run once; the two intended Pact reassessments executed.
+**Results:** corrected failures 3/3 pass; tone check fails (also invented figures); fresh 3 pass, 1 partial, 1 untested (network). Refresh: growth → background (correct), Keurig still relevant (partial); new-candidate assessment and 2 gate batches hit connection errors, 2 batches refused by the dollar ceiling; partial gate failure not reported (blocker).
+**Spend:** this pass 15 calls, $0.1355 recorded / $0.5989 conservative; cumulative 47 calls, $1.4523 recorded / $1.9508 conservative. 2 approved calls unused.
+**Verification:** tsc clean; tests 95 + 28 + 42 + 3 (budget) pass; build passes.
+**Pending your action:** approve or reject the next-phase plan and its budget; authorize protected-file fixes for the blockers; apply 040–045 to production when ready (045 reports orphan consequence rows first).
+**Status:** LOCAL ONLY. Not pushed or deployed.
