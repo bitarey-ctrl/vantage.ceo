@@ -22,9 +22,8 @@ const DOLLARS = { advisor: 0.5, candidate: 2.0, combined: 2.5 };
 // Conservative maximum cost of ONE request of each kind, used to refuse a step that could cross a dollar ceiling.
 const MAX_COST = { advisor: 0.06, research: 0.7, gate: 0.12, assessment: 0.18, analysis: 0.1 };
 const NEED = { candidateBeforeReasoning: 14, reasoning: 12 };
-// $ per million input/output tokens. Opus is priced conservatively ($5/$25): the earlier $4/$20 assumption understated
-// the 2026-11-05 total ($1.317 vs $1.508 on the same usage).
-const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [5, 25] };
+// $ per million input/output tokens — official prices checked 2026-11-05 (platform.claude.com/docs/en/about-claude/pricing).
+const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [4, 20] };
 const SEARCH_PRICE = 0.01; // $ per web search request
 
 const PLAN = [
