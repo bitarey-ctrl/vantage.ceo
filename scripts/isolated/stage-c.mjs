@@ -339,6 +339,9 @@ if (mode === 'regression') {
     ...IDS.map((id) => pairs.find((p) => p.id === id)).map((p) => { const ctx = { business_facts: {}, ...p.base }; if (p.differ.field.startsWith('business_facts.')) ctx.business_facts = { [p.differ.field.split('.')[1]]: p.differ.b }; else ctx[p.differ.field] = p.differ.b; return { id: `${p.id}:b`, kind: 'regression', question: p.question, ctx, rubric: p.rubric }; }),
     ...cases.map((c) => ({ id: c.id, kind: 'fresh', question: c.question, ctx: { business_facts: {}, ...c.context }, rubric: c.rubric })),
   ];
+  // REGRESSION_ONLY=id runs just that case (a case that was never sent; never used to re-send a sent request).
+  if (process.env.REGRESSION_ONLY) runs.splice(0, runs.length, ...runs.filter((r) => r.id === process.env.REGRESSION_ONLY));
+  if (!runs.length) { console.error('No such case.'); process.exit(3); }
   const dollars = Number(process.env.REGRESSION_DOLLARS ?? 0);
   if (!dollars) { console.error('Set REGRESSION_DOLLARS (the approved hard ceiling).'); process.exit(3); }
   phaseStart = ledger().calls.length; phaseDollars = dollars;

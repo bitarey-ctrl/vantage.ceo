@@ -27,7 +27,7 @@ const env = {
   ...(process.env.PROVIDER_BUDGET_FILE ? { PROVIDER_BUDGET_FILE: process.env.PROVIDER_BUDGET_FILE, PROVIDER_CALL_LIMIT: process.env.PROVIDER_CALL_LIMIT ?? '0' } : {}),
   ...(process.env.ADVISOR_MAX_TOKENS_TEST ? { ADVISOR_MAX_TOKENS_TEST: process.env.ADVISOR_MAX_TOKENS_TEST } : {}),
   // Harness file locations (private paths, no secrets).
-  ...Object.fromEntries(['QA_FILE', 'REPORT_FILE', 'CANDIDATE_PHASE_START', 'ADVISOR_FROM', 'ADVISOR_PHASE_START'].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
+  ...Object.fromEntries(['QA_FILE', 'REPORT_FILE', 'CANDIDATE_PHASE_START', 'ADVISOR_FROM', 'ADVISOR_PHASE_START', 'REGRESSION_DOLLARS', 'REGRESSION_ONLY'].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
 };
 for (const [k, v] of Object.entries(env)) if (String(v ?? '').includes(PRODUCTION)) { console.error(`Refusing: ${k} points at production.`); process.exit(2); }
 const [cmd, ...args] = process.argv.slice(2);
