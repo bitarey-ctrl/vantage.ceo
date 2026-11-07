@@ -28,7 +28,7 @@ test('a partly failed gate is recorded per batch and composes to "partial", nami
   const run = composeRunStatus(stages);
   assert.equal(run.status, 'partial');
   assert.deepEqual(run.affected, ['gate']);
-  assert.match(run.message, /checking new shared news: 2 of 3 steps failed because (the connection to the AI service failed; and the model-call budget|the model-call budget.*; and the connection)/);
+  assert.match(run.message, /Checking new shared news: 2 of 3 steps failed because (the connection to the AI service failed; and the model-call budget|the model-call budget.*; and the connection)/);
   assert.match(run.message, /not judged unimportant, and your earlier results are unchanged/);
   assert.doesNotMatch(run.message, /Nothing material/);
 });
@@ -101,4 +101,12 @@ test('source eligibility: discovery candidates are monitored only after identity
   assert.equal(sourceEligibility({ url: 'https://some-blog.example/regulation', kind: 'regulator' }, { pageTitle: 'Rules', text: 'coffee pods rules' }, ctx).eligible, false);
   // A competitor source must identify itself as that competitor.
   assert.equal(sourceEligibility({ url: 'https://example.com/news', kind: 'competitor', title: 'Brio Coffee Club' }, { pageTitle: 'Unrelated', text: 'coffee pods' }, ctx).eligible, false);
+});
+
+test('dependencies match by name or their own phrase, not single common words (real Pact data vs private-equity news)', () => {
+  const ctx = normaliseCompanyContext('p', { company_name: 'Pact Coffee' }, { product_description: 'Speciality coffee beans and coffee pods', geography_detail: 'United Kingdom',
+    business_facts: { dependencies: [{ text: 'It relies on buying green coffee direct from farmers', origin: 'research_accepted' }, { text: 'which it calls a direct-trade supply chain', origin: 'research_accepted' }, { text: 'instead of buying on the commodity market.', origin: 'research_accepted' }] } });
+  for (const title of ['Blue Owl sees higher private credit returns as AI financing tightens', "Saudi PIF secures $3bn financing backed by Italy's export credit agency", 'Cinven acquires Theramex for €2.6bn as Carlyle and PAI secure exit', 'Private equity executives defend continuation funds amid LP concerns'])
+    assert.equal(connectionFor({ title, content: '' }, ctx).candidate, false, title);
+  assert.equal(connectionFor({ title: 'Green coffee prices hit a record as harvests fall', content: '' }, ctx).candidate, true);
 });

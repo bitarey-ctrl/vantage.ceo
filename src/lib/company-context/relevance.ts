@@ -114,8 +114,9 @@ export function exposureTerms(c: CompanyContext) {
     // Suppliers, platforms and inputs: a name ("AWS", "Stripe") or a distinctive word ("aluminium", "barley").
     dependencies: c.dependencies.map((d) => {
       const name = d.text.match(/\b[A-Z][A-Za-z0-9&.-]{1,}(?:\s+[A-Z][A-Za-z0-9&.-]+)*\b/)?.[0] ?? null;
-      const ws = [...new Set(words(d.text).map(stem))].filter((w) => w.length >= 5 && !GENERIC.has(w) && !geoWords.has(w));
-      return { text: d.text, name: name && name.length >= 3 ? name : null, words: ws, public: d.origin === 'research_accepted' };
+      // A dependency matches by its name ("AWS", "Stripe") or by one of its own two-word phrases ("green coffee",
+      // "natural gas") — never by a single common word ("calls", "supply", "green"), which matched unrelated news.
+      return { text: d.text, name: name && name.length >= 3 ? name : null, phrases: phrases(d.text), public: d.origin === 'research_accepted' };
     }),
   };
 }
@@ -149,7 +150,7 @@ export function connectionFor(signal: { title?: string | null; content?: string 
   for (const w of buyerHits) { matched.push({ kind: 'buyers', term: w }); score += 1.5; }
   for (const w of priorityHits.slice(0, 2)) { matched.push({ kind: 'priority', term: w }); score += 1; }
   const marketHits = t.markets.filter((m) => m.aliases.some((a) => has(hay, a.startsWith(' ') ? a : a)));
-  const dependencyHits = t.dependencies.filter((d) => (d.name && has(hay, norm(d.name).trim())) || d.words.some((w) => hayStems.has(w)));
+  const dependencyHits = t.dependencies.filter((d) => (d.name && has(hay, norm(d.name).trim())) || d.phrases.some((p) => has(hay, p)));
   const businessHits = matched.length;
   // A specific term: a two-word phrase from your details, or a word that is not common business vocabulary.
   const specificHits = matched.filter((m) => m.term.includes(' ') || !GENERIC.has(m.term)).length;
@@ -181,7 +182,7 @@ export function connectionFor(signal: { title?: string | null; content?: string 
   // your own phrases appears with anything else of yours. The check decides; the strict rule above stands alone.
   const anyPhrase = matched.some((m) => (m.kind === 'product' || m.kind === 'priority') && m.term.includes(' '));
   // Something you depend on (a supplier, platform or input) changing is a candidate even with no other match.
-  for (const d of dependencyHits) matched.push({ kind: 'dependency', term: d.name ?? d.words.find((w) => hayStems.has(w)) ?? d.text });
+  for (const d of dependencyHits) matched.push({ kind: 'dependency', term: d.name && has(hay, norm(d.name).trim()) ? d.name : d.phrases.find((p) => has(hay, p)) ?? d.text });
   // One distinctive word alone is too weak to spend an assessment on: it takes one of your own phrases, or two words.
   const specificWords = matched.filter((m) => (m.kind === 'product' || m.kind === 'buyers' || m.kind === 'priority') && !m.term.includes(' ') && !GENERIC.has(m.term)).length;
   const candidate = connected || Boolean(companyHit) || competitorHits.length > 0 || dependencyHits.length > 0 || anyPhrase || specificWords >= 2;

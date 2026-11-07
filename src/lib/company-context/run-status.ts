@@ -100,6 +100,6 @@ export function composeRunStatus(stages: StageRecord[]): RunStatus {
   const parts = stages.filter((s) => s.failed > 0).map((s) => `${STAGE_TEXT[s.stage]}: ${s.failed} of ${s.attempted} ${s.attempted === 1 ? 'step' : 'steps'} failed because ${why(s)}`);
   const message = status === 'complete'
     ? 'Every check finished.'
-    : `${status === 'failed' ? 'The update failed' : 'The update was only partly checked'} — ${parts.join('. ')}. Items that were not checked are not judged unimportant, and your earlier results are unchanged.`;
+    : `${status === 'failed' ? 'The update failed' : 'The update was only partly checked'}. ${parts.map((p) => p[0].toUpperCase() + p.slice(1)).join('. ')}. Items that were not checked are not judged unimportant, and your earlier results are unchanged.`;
   return { status, stages, affected, message };
 }
