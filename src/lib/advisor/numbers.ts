@@ -184,7 +184,40 @@ export function traceNumbers(answer: string, suppliedText: string): { claims: Nu
   return { claims, unsupported: claims.filter((c) => UNSUPPORTED.has(c.kind)) };
 }
 
-export const REMOVED_MARK = '[unsupported figure removed]';
+/**
+ * How an unsupported figure is taken out of a sentence. No placeholder and no substitute number: hedge words that only
+ * served the figure go with it ("to, say, 15%" → "to a different rate"), a share of people becomes "some"
+ * ("8% of your buyers" → "some of your buyers"), an adjectival figure is dropped ("a 10% rise" → "a rise"), otherwise
+ * the figure becomes a neutral phrase for its unit. The phrases state no size and no direction, so the sentence makes
+ * no quantitative claim and its conclusion is not strengthened.
+ */
+const NEUTRAL: Record<Unit, string> = { percent: 'a different rate', money: 'a different amount', multiple: 'a different multiple', duration: 'a different period', count: 'a different number' };
+const HEDGE = /(,\s*(?:say|perhaps|maybe),\s*|\b(?:say|about|around|roughly|approximately|nearly|almost|some|perhaps|maybe)\s+|~\s*)$/i;
+const SHARE_OF = /^\s+of\s+(?:(your|the|their|our|all)\s+)?/i;
+export function rephraseFigure(text: string, pos: number, claim: Pick<NumericClaim, 'text' | 'unit'>): { from: number; to: number; replacement: string } {
+  let from = pos;
+  const to = pos + claim.text.length;
+  const before = text.slice(0, from);
+  const hedge = HEDGE.exec(before);
+  let lead = '';
+  if (hedge) { from -= hedge[0].length; lead = hedge[0].startsWith(',') ? ' ' : ''; }
+  const after = text.slice(to);
+  const share = claim.unit === 'percent' ? SHARE_OF.exec(after) : null;
+  if (share && POPULATION.test(after)) {
+    // "8% of your buyers" → "some of your buyers"; "3.4% of visitors" → "some visitors".
+    return { from, to: to + share[0].length, replacement: `${lead}some ${share[1] ? `of ${share[1]} ` : ''}` };
+  }
+  const article = /\b(a|an)\s+$/i.exec(text.slice(0, from));
+  if (article && /^[\s-]+[a-z]/i.test(after)) {
+    // "a 10% rise" → "a rise": drop the figure and the space after it; fix "a"/"an" for the next word.
+    const gap = /^[\s-]+/.exec(after)![0].length;
+    const next = after.slice(gap);
+    const art = /^[aeiou]/i.test(next) ? 'an' : 'a';
+    const artFrom = from - article[0].length;
+    return { from: artFrom, to: to + gap, replacement: `${article[1][0] === article[1][0].toUpperCase() ? art[0].toUpperCase() + art.slice(1) : art} ` };
+  }
+  return { from, to, replacement: `${lead}${NEUTRAL[claim.unit]}` };
+}
 /** How the closing removal note starts (graders and replay split the answer here). */
 export const REMOVAL_NOTE_START = '\n\nI removed ';
 
@@ -218,7 +251,7 @@ export function createNumberGate(suppliedText: string) {
       if (chunk.slice(pos, pos + c.text.length) === c.text) cuts.push({ pos, claim: c });
     }
     let out = chunk;
-    for (const { pos, claim } of [...cuts].reverse()) out = out.slice(0, pos) + REMOVED_MARK + out.slice(pos + claim.text.length);
+    for (const { pos, claim } of [...cuts].reverse()) { const r = rephraseFigure(out, pos, claim); out = out.slice(0, r.from) + r.replacement + out.slice(r.to); }
     removed.push(...cuts.map((x) => x.claim));
     released += chunk;
     return out;
@@ -237,7 +270,7 @@ export function createNumberGate(suppliedText: string) {
       if (!removed.length) return null;
       const figures = [...new Set(removed.map((r) => r.text))].slice(0, 6);
       // Plain text: the app renders **bold** only, so single asterisks would show literally.
-      return `${REMOVAL_NOTE_START}${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.`;
+      return `${REMOVAL_NOTE_START}${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them, so the advice above is qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.`;
     },
   };
 }

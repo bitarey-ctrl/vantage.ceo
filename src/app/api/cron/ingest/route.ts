@@ -12,7 +12,7 @@
  *   4. Return summary
  */
 
-import { beginRunStatus, composeRunStatus } from '@/lib/company-context/run-status';
+import { beginRunStatus, classifyFailure, composeRunStatus, failureCause, recordStage } from '@/lib/company-context/run-status';
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processSignalsForProfile } from '@/lib/signals/signal-processor';
@@ -120,12 +120,18 @@ export async function POST(request: NextRequest) {
 
         // Same relevance rules as a manual refresh: the gate's survivors are linked only after the company assessment.
         const company = normaliseCompanyContext(profile.id, profile, context);
-        const result = await processSignalsForProfile(
-          profile,
-          context,
-          recentDecisions ?? [],
-          company
-        );
+        // A failed shared-news check must not skip this company's own sources or leave the run unrecorded: its
+        // failure is in the stage record, and collection and status storage below still happen.
+        let result: { signalsProcessed: number; consequencesGenerated: number } = { signalsProcessed: 0, consequencesGenerated: 0 };
+        let pipelineError: string | undefined;
+        try {
+          result = await processSignalsForProfile(profile, context, recentDecisions ?? [], company);
+        } catch (err) {
+          pipelineError = err instanceof Error ? err.message : 'Unknown error';
+          console.error(`[cron/ingest] Shared news check failed for ${profile.id}:`, failureCause(err));
+          // A failure that did not record its own stage (configuration, database) is still not a complete run.
+          if (composeRunStatus(stagesOf()).status === 'complete') recordStage('gate', { ok: false, kind: classifyFailure(err) });
+        }
 
         let collected: number | undefined, collection: string | undefined, runId: string | null = null, planReport: object | null = null;
         if (Date.now() - startedAt < BUDGET_MS - COLLECTION_MS) {
@@ -143,8 +149,8 @@ export async function POST(request: NextRequest) {
         const pipeline = composeRunStatus(stagesOf());
         if (runId && planReport) await supabase.from('source_collection_runs').update({ status: pipeline.status === 'complete' ? 'done' : pipeline.status, report: { ...planReport, pipeline } }).eq('id', runId);
 
-        // Served — go to the back of the queue.
-        await markProfileIngested(profile.id);
+        // Served — go to the back of the queue. A profile whose shared news check failed keeps its place at the front.
+        if (!pipelineError) await markProfileIngested(profile.id);
 
         results.push({
           profileId: profile.id,
@@ -154,6 +160,7 @@ export async function POST(request: NextRequest) {
           collection,
           status: pipeline.status,
           ...(pipeline.status !== 'complete' ? { statusMessage: pipeline.message } : {}),
+          ...(pipelineError ? { error: pipelineError } : {}),
         });
       } catch (err) {
         console.error(`[cron/ingest] Failed for profile ${profile.id}:`, err);

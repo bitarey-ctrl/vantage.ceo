@@ -5,7 +5,7 @@ import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeDb } from './fake-db.mjs';
 
-const { traceNumbers, createNumberGate, REMOVED_MARK } = await import('../../src/lib/advisor/numbers.ts');
+const { traceNumbers, createNumberGate, rephraseFigure } = await import('../../src/lib/advisor/numbers.ts');
 const kinds = (answer, supplied) => traceNumbers(answer, supplied).claims.map((c) => `${c.text}=${c.kind}`);
 
 test('correct number, wrong business meaning: the account\'s 20% commission cannot support "20% of walkers leave"', () => {
@@ -54,21 +54,33 @@ test('real retest answers (Sonnet 5.5, 2026-11-07): the founder\'s own figures a
 
 test('the gate removes the unsupported figure at its own position when the same figure is supported elsewhere', () => {
   const run = (...pieces) => { const g = createNumberGate('How they make money: Commission on each order (8%)'); return pieces.map((p) => g.push(p)).join('') + g.flush(); };
-  assert.equal(run('You take 8% of each order, and 8% of your buyers will leave. '), `You take 8% of each order, and ${REMOVED_MARK} of your buyers will leave. `);
-  assert.equal(run('Expect 8% of your buyers to leave. You keep 8% of each order. '), `Expect ${REMOVED_MARK} of your buyers to leave. You keep 8% of each order. `);
+  assert.equal(run('You take 8% of each order, and 8% of your buyers will leave. '), 'You take 8% of each order, and some of your buyers will leave. ');
+  assert.equal(run('Expect 8% of your buyers to leave. You keep 8% of each order. '), 'Expect some of your buyers to leave. You keep 8% of each order. ');
   // The same sentence twice, across chunks and within one: each occurrence handled once.
   const twice = 'You keep 8% of each order, and 8% of your buyers leave. ';
-  assert.equal(run(twice, twice), `You keep 8% of each order, and ${REMOVED_MARK} of your buyers leave. `.repeat(2));
-  assert.equal(run(twice + twice), `You keep 8% of each order, and ${REMOVED_MARK} of your buyers leave. `.repeat(2));
+  assert.equal(run(twice, twice), 'You keep 8% of each order, and some of your buyers leave. '.repeat(2));
+  assert.equal(run(twice + twice), 'You keep 8% of each order, and some of your buyers leave. '.repeat(2));
+});
+
+test('an unsupported figure is taken out without a placeholder, a substitute number or a stronger claim', () => {
+  const at = (text, fig, unit = 'percent') => { const pos = text.indexOf(fig); const r = rephraseFigure(text, pos, { text: fig, unit }); return text.slice(0, r.from) + r.replacement + text.slice(r.to); };
+  assert.equal(at("Dropping to, say, 15% doesn't change that math much.", '15%'), "Dropping to a different rate doesn't change that math much.");
+  assert.equal(at('Expect about 8% of your buyers to leave.', '8%'), 'Expect some of your buyers to leave.');
+  assert.equal(at('Most camera shops convert 3.4% of visitors.', '3.4%'), 'Most camera shops convert some visitors.');
+  assert.equal(at('A 10% rise in costs would hurt.', '10%'), 'A rise in costs would hurt.');
+  assert.equal(at('Expect an 11% drop in orders.', '11%'), 'Expect a drop in orders.');
+  assert.equal(at('Charge owners £5 per walk.', '£5', 'money'), 'Charge owners a different amount per walk.');
+  for (const t of ['Dropping to a different rate', 'some of your buyers', 'a different amount']) assert.doesNotMatch(t, /\d|more|less|higher|lower|at least/);
 });
 
 test('the gate replaces unsupported figures in place, keeps the qualitative advice and states what was removed', () => {
   const gate = createNumberGate('How they make money: Commission on each order (8%)');
   const out = gate.push('You take 8% today. Charge 2-3% on first orders and 12-15% on repeats, but only if you handle payment risk. ') + gate.flush();
   assert.match(out, /You take 8% today\./);
-  assert.ok(out.includes(`Charge ${REMOVED_MARK} on first orders and ${REMOVED_MARK} on repeats, but only if you handle payment risk.`), out);
+  assert.ok(out.includes('Charge a different rate on first orders and a different rate on repeats, but only if you handle payment risk.'), out);
+  assert.doesNotMatch(out, /\[|\]/, 'no placeholder');
   assert.doesNotMatch(out, /2-3%|12-15%/);
-  assert.match(gate.summary(), /I removed 2 figures that aren't supported.*Treat the advice above as qualitative/);
+  assert.match(gate.summary(), /I removed 2 figures that aren't supported.*so the advice above is qualitative/);
   assert.doesNotMatch(gate.summary(), /2-3%|12-15%/, 'the note does not repeat the removed figures');
   assert.equal(createNumberGate('').summary(), null);
 });
@@ -115,7 +127,7 @@ test('an unsupported figure never reaches the founder as a recommendation; suppo
   const ev = await ask({ pieces: ['Lower it to 15% and charge owners £5 per walk. ', 'Compare it with walkers going direct for free.'] });
   const text = textOf(ev);
   assert.doesNotMatch(text, /15%|£5/);
-  assert.match(text, /Lower it to \[unsupported figure removed\]/);
+  assert.match(text, /Lower it to a different rate and charge owners a different amount per walk\./);
   assert.match(text, /Compare it with walkers going direct for free\./);
   assert.match(text, /I removed 2 figures/);
   assert.deepEqual(ev.find((e) => e.numbers).numbers.removed.map((r) => r.text), ['15%', '£5']);

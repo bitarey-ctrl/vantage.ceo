@@ -104,7 +104,12 @@ const STAGE_TEXT: Record<StageName, string> = {
   persistence: 'saving results',
 };
 
-const why = (r: StageRecord) => Object.entries(r.kinds).sort((a, b) => b[1] - a[1]).map(([k]) => KIND_TEXT[k as FailureKind]).join('; and ');
+// Collection and writes do not talk to the AI service, so their failures are described as what they are.
+const STAGE_KIND_TEXT: Partial<Record<StageName, Partial<Record<FailureKind, string>>>> = {
+  collection: { connection: 'a source could not be reached', timeout: 'a source did not answer in time', other: 'a source could not be read' },
+  persistence: { connection: 'the database could not be reached', timeout: 'the database did not answer in time', other: 'a result could not be saved' },
+};
+const why = (r: StageRecord) => Object.entries(r.kinds).sort((a, b) => b[1] - a[1]).map(([k]) => STAGE_KIND_TEXT[r.stage]?.[k as FailureKind] ?? KIND_TEXT[k as FailureKind]).join('; and ');
 
 /**
  * One status for the whole refresh. Complete: every stage that had work finished. Partial: something failed but some

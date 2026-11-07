@@ -28,7 +28,7 @@ mock.module('@/lib/supabase/server', { namedExports: {
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: A } }, error: null }), signOut: async () => ({ error: null }) }, from: (t) => db.client.from(t), rpc: db.client.rpc }),
   createAdminClient: async () => db.client,
 } });
-const { REMOVED_MARK, REMOVAL_NOTE_START } = await import('../../src/lib/advisor/numbers.ts');
+const { REMOVAL_NOTE_START } = await import('../../src/lib/advisor/numbers.ts');
 const chat = await import('../../src/app/api/advisor/chat/route.ts');
 const sessions = await import('../../src/app/api/advisor/sessions/route.ts');
 const sessionById = await import('../../src/app/api/advisor/sessions/[id]/route.ts');
@@ -78,7 +78,8 @@ async function replay(c, raw = c.raw, size = 17) {
 const cases = retestCases();
 const byId = Object.fromEntries(cases.map((c) => [c.id, c]));
 const count = (s, x) => s.split(x).length - 1;
-const restore = (text, removed) => { let i = 0; return text.split(REMOVAL_NOTE_START)[0].replaceAll(REMOVED_MARK, () => removed[i++]); };
+// The one rewrite the final checker makes in these nine answers (the model's unlabelled "say, 15%").
+const REWRITES = { 'fresh-commission-direct': ["Dropping to, say, 15% doesn't", "Dropping to a different rate doesn't"] };
 const escHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 test('replay fixture: 9 answers, all served by claude-sonnet-5-5, raw text reconstructed exactly from the live record', () => {
@@ -97,11 +98,13 @@ for (const c of cases) {
     assert.equal(r.reloaded.content, r.shown.content, 'reloaded text equals what was shown');
     assert.equal(r.reloaded.status, 'complete');
     const delivered = r.shown.content;
-    const expectRemoved = c.id === 'fresh-commission-direct' ? ['15%'] : [];
-    assert.equal(count(delivered, REMOVED_MARK), expectRemoved.length, 'removed exactly the unsupported figures');
+    const rewrite = REWRITES[c.id];
+    assert.doesNotMatch(delivered, /\[unsupported|\[\s*\]|figure removed\]/, 'no placeholder');
     // Everything else (caveats, sources, calculations, questions, next steps) is the model's text, character for character.
-    assert.equal(restore(delivered, expectRemoved), c.raw.trim());
-    assert.equal(delivered.includes(REMOVAL_NOTE_START), expectRemoved.length > 0, 'note only when something was removed');
+    const expected = rewrite ? c.raw.trim().replace(rewrite[0], rewrite[1]) : c.raw.trim();
+    if (rewrite) assert.ok(c.raw.includes(rewrite[0]), 'rewrite applies to the captured text');
+    assert.equal(delivered.split(REMOVAL_NOTE_START)[0], expected);
+    assert.equal(delivered.includes(REMOVAL_NOTE_START), Boolean(rewrite), 'note only when something was removed');
     // Rendered as the founder sees it: the text is in the page, and the note has no stray markdown.
     assert.ok(r.view.includes(escHtml(delivered.split('\n\n')[0])), 'first paragraph rendered');
     assert.doesNotMatch(r.view, /\*I removed/);
@@ -122,11 +125,10 @@ test("the founder's own figures survive with their meaning: 8% commission, 3.4% 
   assert.ok(count(premiumOut, '£12') >= 2);
 });
 
-test('the one unsupported figure is removed without breaking the sentence or changing the advice', async () => {
+test('the one unsupported figure is taken out with a readable sentence and unchanged advice', async () => {
   const out = (await replay(byId['fresh-commission-direct'])).shown.content;
-  assert.match(out, /Dropping to, say, \[unsupported figure removed\] doesn't change that math much\. It still costs them something versus free/);
-  assert.doesNotMatch(out, /15%/);
-  assert.doesNotMatch(out, /[\w%£$€]\[unsupported|removed\][\w%]/, 'no unit or digit glued to the mark');
+  assert.match(out, /They can text each other\. Dropping to a different rate doesn't change that math much\. It still costs them something versus free/);
+  assert.doesNotMatch(out, /15%|\[/);
   // The recommendation is the model's: diagnose first, a lower fee does not beat zero, call the last ten walkers.
   assert.match(out, /a lower fee won't stop it/);
   assert.match(out, /contact the last ten walkers who left/);
@@ -138,14 +140,14 @@ test('a supported number reused in an unrelated claim is still removed; its legi
   const inject = (c, after, sentence) => { assert.ok(c.raw.includes(after), c.id); return c.raw.replace(after, `${after} ${sentence}`); };
   const bypass = byId['bypass-vs-churn:b'];
   let out = (await replay(bypass, inject(bypass, 'the platform costs 8% of each order.', 'Expect about 8% of your buyers to leave for a competitor this year.'))).shown.content;
-  assert.match(out, /the platform costs 8% of each order\. Expect about \[unsupported figure removed\] of your buyers to leave/);
+  assert.match(out, /the platform costs 8% of each order\. Expect some of your buyers to leave/);
   const fee = byId['fresh2-fee-benchmark'];
   out = (await replay(fee, inject(fee, 'which I don\'t have.', 'Most camera shops convert 3.4% of visitors.'))).shown.content;
-  assert.match(out, /Most camera shops convert \[unsupported figure removed\] of visitors\./);
+  assert.match(out, /Most camera shops convert some visitors\./);
   assert.match(out, /Whether 3\.4% hurts depends on your margin/);
   const premium = byId['fresh2-premium-price'];
   out = (await replay(premium, inject(premium, 'not from the £12 plus some arbitrary uplift.', 'Premium members typically spend £12 a week on prints.'))).shown.content;
-  assert.match(out, /Premium members typically spend \[unsupported figure removed\] a week on prints\./);
+  assert.match(out, /Premium members typically spend a different amount a week on prints\./);
   assert.match(out, /not from the £12 plus some arbitrary uplift/);
 });
 
