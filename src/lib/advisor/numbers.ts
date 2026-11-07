@@ -185,38 +185,126 @@ export function traceNumbers(answer: string, suppliedText: string): { claims: Nu
 }
 
 /**
- * How an unsupported figure is taken out of a sentence. No placeholder and no substitute number: hedge words that only
- * served the figure go with it ("to, say, 15%" → "to a different rate"), a share of people becomes "some"
- * ("8% of your buyers" → "some of your buyers"), an adjectival figure is dropped ("a 10% rise" → "a rise"), otherwise
- * the figure becomes a neutral phrase for its unit. The phrases state no size and no direction, so the sentence makes
- * no quantitative claim and its conclusion is not strengthened.
+ * What happens to a sentence that holds an unsupported figure. Taking out the number must not leave its proposition
+ * stated as fact, so the treatment depends on what the figure does there:
+ * - An option the answer proposes ("lower it to 15%", "dropping to, say, 15%", "charge £20", an illustration): the
+ *   option stays and only its size goes, with no direction added ("dropping to a different rate").
+ * - A statement about the business or the world: its qualitative part stays only when what the founder supplied states
+ *   that direction for that kind of quantity ("a 15% rise in packaging costs" → "a rise in packaging costs" when a
+ *   supplied signal says the supplier is raising prices). A share of people ("8% of your buyers will leave") becomes an
+ *   explicit unknown ("I don't know whether any of your buyers would leave"). Otherwise the clause carrying it is
+ *   removed; a caveat clause after it is kept, and the closing note says the effect is unknown.
  */
 const NEUTRAL: Record<Unit, string> = { percent: 'a different rate', money: 'a different amount', multiple: 'a different multiple', duration: 'a different period', count: 'a different number' };
 const HEDGE = /(,\s*(?:say|perhaps|maybe),\s*|\b(?:say|about|around|roughly|approximately|nearly|almost|some|perhaps|maybe)\s+|~\s*)$/i;
-const SHARE_OF = /^\s+of\s+(?:(your|the|their|our|all)\s+)?/i;
-export function rephraseFigure(text: string, pos: number, claim: Pick<NumericClaim, 'text' | 'unit'>): { from: number; to: number; replacement: string } {
+// Words right before a figure that make it a parameter of an option the answer proposes.
+const OPTION_GOVERNOR = [
+  /(?:\bsay|\be\.g\.|\bfor example|\bfor instance|\bsuch as)[,:]?\s*$/i,
+  /\b(?:lower|lowering|drop|dropping|cut|cutting|raise|raising|reduce|reducing|move|moving|set|setting|price|pricing|bring|bringing)\b(?:\s+\w+){0,3}\s+(?:to|at)\s*$/i,
+  /\b(?:charge|charging|offer|offering|try|trying|test|testing)\b(?:\s+\w+){0,2}\s*$/i,
+];
+// A clause that starts with a recommended action: every figure in it is that action's parameter.
+const IMPERATIVE = /^\s*(?:(?:then|so|and|or|instead)\s+)?(?:lower|raise|cut|drop|charge|set|price|offer|try|test|keep|move|reduce|increase|start|introduce|add|run)\b/i;
+const UP = /\b(rise|rises|rising|rose|raise|raises|raising|raised|increase|increases|increasing|increased|higher|grow|grows|growing|growth|jump|jumps|hike|hikes|more expensive)\b/i;
+const DOWN = /\b(fall|falls|falling|fell|drop|drops|dropping|dropped|cut|cuts|cutting|lower|lowers|lowering|decrease|decreases|decreasing|decline|declines|declining|shrink|shrinks|cheaper|reduce|reduces|reduction)\b/i;
+// A follow-on that only acts on the statement before it ("Plan for that.", "That means you should…").
+const DEPENDENT = /^\s*(?:(?:so|then)\s+)?(?:(?:plan|prepare|budget|account|allow)\s+for\s+(?:that|this|it)\b|(?:that|this|which)\s+(?:means|would mean|implies|is why)\b)/i;
+const CAVEAT = /\b(I don['’]t|I do not|I can['’]t|I cannot|not sure|unless|depends|uncertain|unknown|without your|hard to say|no way to know)\b/i;
+const SUBORDINATE = /^\s*(?:if|when|unless|although|though|because|while|once|since|as long as)\b/i;
+const CLAUSE_SPLIT = /(,\s+(?:and|but|so|while|which|yet)\s+|;\s+|\s+[—–]\s+)/;
+const GROUPS = 'customers|users|walkers|buyers|clients|subscribers|members|visitors|owners|contractors|makers|sellers|people|staff|leads|shoppers';
+const meaningsOf = (text: string) => new Set(MEANINGS.filter(([, re]) => re.test(text)).map(([k]) => k));
+
+/** Remove a figure's magnitude in place (options and supported directions only). */
+export function stripMagnitude(text: string, pos: number, claim: Pick<NumericClaim, 'text' | 'unit'>): { from: number; to: number; replacement: string } {
   let from = pos;
   const to = pos + claim.text.length;
-  const before = text.slice(0, from);
-  const hedge = HEDGE.exec(before);
+  const hedge = HEDGE.exec(text.slice(0, from));
   let lead = '';
   if (hedge) { from -= hedge[0].length; lead = hedge[0].startsWith(',') ? ' ' : ''; }
   const after = text.slice(to);
-  const share = claim.unit === 'percent' ? SHARE_OF.exec(after) : null;
-  if (share && POPULATION.test(after)) {
-    // "8% of your buyers" → "some of your buyers"; "3.4% of visitors" → "some visitors".
-    return { from, to: to + share[0].length, replacement: `${lead}some ${share[1] ? `of ${share[1]} ` : ''}` };
-  }
   const article = /\b(a|an)\s+$/i.exec(text.slice(0, from));
   if (article && /^[\s-]+[a-z]/i.test(after)) {
-    // "a 10% rise" → "a rise": drop the figure and the space after it; fix "a"/"an" for the next word.
+    // "a 10% rise" → "a rise" (used only when the rise itself is supported); fix "a"/"an" for the next word.
     const gap = /^[\s-]+/.exec(after)![0].length;
-    const next = after.slice(gap);
-    const art = /^[aeiou]/i.test(next) ? 'an' : 'a';
-    const artFrom = from - article[0].length;
-    return { from: artFrom, to: to + gap, replacement: `${article[1][0] === article[1][0].toUpperCase() ? art[0].toUpperCase() + art.slice(1) : art} ` };
+    const art = /^[aeiou]/i.test(after.slice(gap)) ? 'an' : 'a';
+    return { from: from - article[0].length, to: to + gap, replacement: `${article[1][0] === 'A' ? art[0].toUpperCase() + art.slice(1) : art} ` };
   }
   return { from, to, replacement: `${lead}${NEUTRAL[claim.unit]}` };
+}
+
+function isOption(sentence: string, clause: string, at: number): boolean {
+  if (ILLUSTRATION.test(sentence) || IMPERATIVE.test(clause)) return true;
+  const before = sentence.slice(0, at);
+  return OPTION_GOVERNOR.some((re) => re.test(before) || re.test(before.replace(HEDGE, '')));
+}
+/** The direction this clause states for a kind of quantity is stated in what was supplied. */
+function directionSupported(clause: string, supplied: string[]): boolean {
+  const dir = UP.test(clause) ? UP : DOWN.test(clause) ? DOWN : null;
+  const m = meaningsOf(clause);
+  if (!dir || !m.size) return false;
+  return supplied.some((s) => dir.test(s) && sharesMeaning(m, meaningsOf(s)));
+}
+/** "8% of your buyers will leave" → "I don't know whether any of your buyers would leave." (null if not that shape). */
+function unknownShare(clause: string, figure: string): string | null {
+  const m = new RegExp(`^\\s*(?:(?:and|but|so)\\s+)?(?:(?:expect|about|around|roughly|maybe|perhaps|only|up to|nearly|almost)\\s+)*${escapeRe(figure)}\\s+of\\s+(?:(your|the|their|our|all)\\s+)?(${GROUPS})\\b\\s*(.*?)[.!?]*\\s*$`, 'i').exec(clause);
+  if (!m) return null;
+  const group = `${m[1] ? `${m[1].toLowerCase()} ` : ''}${m[2]}`;
+  const rest = m[3].replace(/^(?:will|are going to|are likely to|to|could|might|may|would|should)\s+/i, '').replace(/^(?:are|is|were)\b/i, 'be').trim();
+  return rest ? `I don't know whether any of ${group} would ${rest}.` : `I don't know how many of ${group} this applies to.`;
+}
+
+/**
+ * Rewrite one sentence that holds unsupported figures (offsets `at` are within the sentence). Returns the new text
+ * ('' when nothing of it can stay) and whether a proposition was removed or turned into an explicit unknown.
+ */
+export function rewriteSentence(sentence: string, claims: Pick<NumericClaim, 'text' | 'unit' | 'at'>[], supplied: string[]): { text: string; unknown: boolean } {
+  const parts = sentence.split(CLAUSE_SPLIT);
+  const segs: { text: string; sep: string; start: number }[] = [];
+  for (let k = 0, off = 0; k < parts.length; k += 2) {
+    const sep = k ? parts[k - 1] : '';
+    off += sep.length;
+    segs.push({ text: parts[k], sep, start: off });
+    off += parts[k].length;
+  }
+  const segOf = (at: number) => segs.findIndex((g) => at >= g.start && at < g.start + g.text.length);
+  const prop = new Set<number>(); const keep: { seg: number; c: Pick<NumericClaim, 'text' | 'unit' | 'at'> }[] = [];
+  for (const c of claims) {
+    const i = segOf(c.at);
+    if (i < 0) continue;
+    if (isOption(sentence, segs[i].text, c.at) || directionSupported(segs[i].text, supplied)) keep.push({ seg: i, c });
+    else prop.add(i);
+  }
+  // Magnitudes out of the clauses that stay (right to left, so offsets hold).
+  const texts = segs.map((g) => g.text);
+  for (const { seg, c } of [...keep].sort((a, b) => b.c.at - a.c.at)) {
+    if (prop.has(seg)) continue;
+    const local = c.at - segs[seg].start;
+    const r = stripMagnitude(texts[seg], local, c);
+    texts[seg] = texts[seg].slice(0, r.from) + r.replacement + texts[seg].slice(r.to);
+  }
+  if (!prop.size) return { text: segs.map((g, i) => g.sep + texts[i]).join(''), unknown: false };
+
+  const first = Math.min(...prop);
+  const unknowns: string[] = [];
+  for (const i of [...prop].sort((a, b) => a - b)) {
+    const c = claims.find((x) => segOf(x.at) === i)!;
+    const u = unknownShare(segs[i].text, c.text);
+    if (u) unknowns.push(u);
+  }
+  // Keep clauses before the removed one (unless all that is left is a dangling "If …" clause), and caveats after it.
+  const kept = segs.map((_, i) => !prop.has(i) && (i < first || CAVEAT.test(texts[i])));
+  if (kept.every((k, i) => !k || (i < first && SUBORDINATE.test(texts[i])))) for (let i = 0; i < first; i++) kept[i] = false;
+  let out = '';
+  for (let i = 0; i < segs.length; i++) {
+    if (!kept[i]) continue;
+    let t = texts[i];
+    if (!out) { t = t.replace(/^\s*(?:and|but|so|yet|while|which)\s+/i, ''); t = t.charAt(0).toUpperCase() + t.slice(1); out = t; }
+    else out += (kept[i - 1] ? segs[i].sep : segs[i].sep.replace(/\s+(?:and|so|which)\s+$/i, ', ')) + t;
+  }
+  const end = /[.!?]\s*$/.exec(sentence)?.[0].trim() ?? '.';
+  if (out && !/[.!?]\s*$/.test(out)) out = out.replace(/[,;:\s—–-]+$/, '') + end;
+  return { text: [out, ...unknowns].filter(Boolean).join(' '), unknown: true };
 }
 /** How the closing removal note starts (graders and replay split the answer here). */
 export const REMOVAL_NOTE_START = '\n\nI removed ';
@@ -229,30 +317,60 @@ export const REMOVAL_NOTE_START = '\n\nI removed ';
 export function createNumberGate(suppliedText: string) {
   let buffer = '', released = '';
   const removed: NumericClaim[] = [];
+  const suppliedSentences = sentencesOf(suppliedText);
+  let unknownCount = 0;
+  // The previous sentence's proposition was removed or made an explicit unknown (carried across chunks).
+  let afterUnknown = false;
   const process = (chunk: string): string => {
     const t = traceNumbers(released + chunk, suppliedText);
-    // Replace each unsupported figure at its own position (the same figure can be supported elsewhere in the
-    // sentence: "You take 8% of each order, and 8% of your buyers will leave").
-    const cuts: { pos: number; claim: NumericClaim }[] = [];
-    // Claims come in sentence order; each sentence is found in this chunk once, after the previous one.
     // Claims from text already released come first; skip them (an identical later sentence must not match them).
     const fresh = t.claims.slice(released ? traceNumbers(released, suppliedText).claims.length : 0);
-    let cursor = 0, sentence: string | null = null, start = -1, lastAt = -1;
+    // Every sentence of this chunk with its position; claims attach to their own occurrence of the sentence.
+    const sents: { start: number; text: string; claims: NumericClaim[] }[] = [];
+    let cursor = 0;
+    for (const text of sentencesOf(chunk)) {
+      const start = chunk.indexOf(text, cursor);
+      if (start < 0) continue;
+      sents.push({ start, text, claims: [] });
+      cursor = start + text.length;
+    }
+    // Claims arrive in sentence order. Stay on a sentence occurrence while offsets increase; a repeated sentence
+    // (offsets restart) or a new text moves to the next matching sentence.
+    let si = -1, lastAt = -1;
     for (const c of fresh) {
-      // A new sentence, or the same sentence text repeated (offsets restart).
-      if (c.sentence !== sentence || c.at <= lastAt) {
-        sentence = c.sentence;
-        start = chunk.indexOf(sentence, cursor);
-        if (start >= 0) cursor = start + sentence.length;
+      if (si < 0 || sents[si].text !== c.sentence || c.at <= lastAt) {
+        si++;
+        while (si < sents.length && sents[si].text !== c.sentence) si++;
       }
+      if (si >= sents.length) break;
       lastAt = c.at;
-      if (start < 0 || !UNSUPPORTED.has(c.kind)) continue;
-      const pos = start + c.at;
-      if (chunk.slice(pos, pos + c.text.length) === c.text) cuts.push({ pos, claim: c });
+      if (UNSUPPORTED.has(c.kind) && chunk.slice(sents[si].start + c.at, sents[si].start + c.at + c.text.length) === c.text) sents[si].claims.push(c);
+    }
+    const edits: { start: number; end: number; text: string }[] = [];
+    const batch: NumericClaim[] = [];
+    for (const g of sents) {
+      const bad = g.claims;
+      if (bad.length) {
+        const r = rewriteSentence(g.text, bad, suppliedSentences);
+        if (r.unknown) unknownCount++;
+        edits.push({ start: g.start, end: g.start + g.text.length, text: r.text });
+        batch.push(...bad);
+        afterUnknown = r.unknown;
+      } else if (afterUnknown && DEPENDENT.test(g.text) && !CAVEAT.test(g.text)) {
+        // A short follow-on that only acts on the removed proposition ("Plan for that.") goes with it.
+        edits.push({ start: g.start, end: g.start + g.text.length, text: '' });
+        afterUnknown = false;
+      } else afterUnknown = false;
     }
     let out = chunk;
-    for (const { pos, claim } of [...cuts].reverse()) { const r = rephraseFigure(out, pos, claim); out = out.slice(0, r.from) + r.replacement + out.slice(r.to); }
-    removed.push(...cuts.map((x) => x.claim));
+    for (const e of [...edits].reverse()) {
+      let start = e.start, end = e.end;
+      // A sentence removed entirely takes one adjoining space with it.
+      if (!e.text && out[end] === ' ') end++;
+      else if (!e.text && out[start - 1] === ' ') start--;
+      out = out.slice(0, start) + e.text + out.slice(end);
+    }
+    removed.push(...batch);
     released += chunk;
     return out;
   };
@@ -270,7 +388,7 @@ export function createNumberGate(suppliedText: string) {
       if (!removed.length) return null;
       const figures = [...new Set(removed.map((r) => r.text))].slice(0, 6);
       // Plain text: the app renders **bold** only, so single asterisks would show literally.
-      return `${REMOVAL_NOTE_START}${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them, so the advice above is qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.`;
+      return `${REMOVAL_NOTE_START}${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them, so the advice above is qualitative.${unknownCount ? " Where a statement rested only on such a figure, I left it out or said so: whether that effect happens, and how large it would be, isn't known from what you've shared." : ''} If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.`;
     },
   };
 }

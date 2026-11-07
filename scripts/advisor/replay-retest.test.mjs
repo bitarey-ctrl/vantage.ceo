@@ -136,19 +136,51 @@ test('the one unsupported figure is taken out with a readable sentence and uncha
   assert.match(out, /20% buys them very little/, 'the supplied 20% stays');
 });
 
-test('a supported number reused in an unrelated claim is still removed; its legitimate use in the same answer stays', async () => {
-  const inject = (c, after, sentence) => { assert.ok(c.raw.includes(after), c.id); return c.raw.replace(after, `${after} ${sentence}`); };
-  const bypass = byId['bypass-vs-churn:b'];
-  let out = (await replay(bypass, inject(bypass, 'the platform costs 8% of each order.', 'Expect about 8% of your buyers to leave for a competitor this year.'))).shown.content;
-  assert.match(out, /the platform costs 8% of each order\. Expect some of your buyers to leave/);
-  const fee = byId['fresh2-fee-benchmark'];
-  out = (await replay(fee, inject(fee, 'which I don\'t have.', 'Most camera shops convert 3.4% of visitors.'))).shown.content;
-  assert.match(out, /Most camera shops convert some visitors\./);
-  assert.match(out, /Whether 3\.4% hurts depends on your margin/);
-  const premium = byId['fresh2-premium-price'];
-  out = (await replay(premium, inject(premium, 'not from the £12 plus some arbitrary uplift.', 'Premium members typically spend £12 a week on prints.'))).shown.content;
-  assert.match(out, /Premium members typically spend a different amount a week on prints\./);
-  assert.match(out, /not from the £12 plus some arbitrary uplift/);
+// Targeted replay checks: one sentence is injected into a REAL captured answer, and the whole delivered answer must equal
+// the captured text with only that sentence changed as expected, so the surrounding reasoning, recommendation and
+// caveats are provably untouched, and the edit itself adds no certainty.
+const injectAndDeliver = async (id, after, sentence) => {
+  const c = byId[id];
+  assert.ok(c.raw.includes(after), `${id}: anchor present`);
+  const out = (await replay(c, c.raw.replace(after, `${after} ${sentence}`))).shown.content;
+  return { out, body: out.split(REMOVAL_NOTE_START)[0], expect: (replacement) => c.raw.trim().replace(after, replacement ? `${after} ${replacement}` : after) };
+};
+
+test('replay: a supported number reused as a forecast of customer loss becomes an explicit unknown; nothing around it changes', async () => {
+  const r = await injectAndDeliver('bypass-vs-churn:b', 'the platform costs 8% of each order.', 'Expect about 8% of your buyers to leave for a competitor this year.');
+  assert.equal(r.body, r.expect("I don't know whether any of your buyers would leave for a competitor this year."));
+  assert.doesNotMatch(r.out, /some of your buyers|buyers (will|to) leave/, 'no forecast of loss without evidence');
+  // The recommendation and the caveats that followed are the model's, unchanged.
+  assert.match(r.out, /Cutting the rate won't fix that, because no rate beats zero\./);
+  assert.match(r.out, /Next step: pull a list of buyers whose second-order volume dropped, and call five of them\./);
+  assert.match(r.out, /I don't know your costs, capabilities or what buyers value/);
+  assert.match(r.out, /whether that effect happens, and how large it would be, isn't known/);
+});
+
+test('replay: an invented benchmark is removed whole; the founder\'s 3.4% and the advice around it stay', async () => {
+  const r = await injectAndDeliver('fresh2-fee-benchmark', "Whether 3.4% hurts depends on your margin per camera, which I don't have.", 'Most camera shops convert 3.4% of visitors.');
+  assert.equal(r.body, r.expect(null));
+  assert.doesNotMatch(r.out, /convert/);
+  assert.match(r.out, /Whether 3\.4% hurts depends on your margin per camera, which I don't have\./);
+});
+
+test('replay: a reused figure with the wrong period is removed; the price reasoning around it stays', async () => {
+  const r = await injectAndDeliver('fresh2-premium-price', 'not from the £12 plus some arbitrary uplift.', 'Premium members typically spend £12 a week on prints.');
+  assert.equal(r.body, r.expect(null));
+  assert.match(r.out, /not from the £12 plus some arbitrary uplift\./);
+});
+
+test('replay: an unsupported rise followed by a caveat keeps the caveat, drops the claim, adds no direction', async () => {
+  const r = await injectAndDeliver('fresh2-fee-benchmark', "Whether 3.4% hurts depends on your margin per camera, which I don't have.", "A 20% rise in your fees would hurt badly, but I can't know that without your margin.");
+  assert.equal(r.body, r.expect("I can't know that without your margin."));
+  assert.doesNotMatch(r.out, /rise in your fees|would hurt badly/);
+});
+
+test('replay: a forecast and the step that only acted on it go together; the next independent step stays', async () => {
+  const r = await injectAndDeliver('bypass-vs-churn:b', 'the platform costs 8% of each order.', '8% of your buyers will leave next quarter. Plan for that.');
+  assert.equal(r.body, r.expect("I don't know whether any of your buyers would leave next quarter."));
+  assert.doesNotMatch(r.out, /Plan for that/);
+  assert.match(r.out, /Cutting the rate won't fix that/);
 });
 
 test('delivery does not depend on how the provider splits the stream (1, 4, 50 characters, one piece)', async () => {

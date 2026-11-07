@@ -5,8 +5,9 @@ import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeDb } from './fake-db.mjs';
 
-const { traceNumbers, createNumberGate, rephraseFigure } = await import('../../src/lib/advisor/numbers.ts');
+const { traceNumbers, createNumberGate } = await import('../../src/lib/advisor/numbers.ts');
 const kinds = (answer, supplied) => traceNumbers(answer, supplied).claims.map((c) => `${c.text}=${c.kind}`);
+const gated = (supplied, text) => { const g = createNumberGate(supplied); return g.push(text) + g.flush(); };
 
 test('correct number, wrong business meaning: the account\'s 20% commission cannot support "20% of walkers leave"', () => {
   const facts = 'How they make money: 20% commission on each booked walk';
@@ -54,23 +55,45 @@ test('real retest answers (Sonnet 5.5, 2026-11-07): the founder\'s own figures a
 
 test('the gate removes the unsupported figure at its own position when the same figure is supported elsewhere', () => {
   const run = (...pieces) => { const g = createNumberGate('How they make money: Commission on each order (8%)'); return pieces.map((p) => g.push(p)).join('') + g.flush(); };
-  assert.equal(run('You take 8% of each order, and 8% of your buyers will leave. '), 'You take 8% of each order, and some of your buyers will leave. ');
-  assert.equal(run('Expect 8% of your buyers to leave. You keep 8% of each order. '), 'Expect some of your buyers to leave. You keep 8% of each order. ');
+  assert.equal(run('You take 8% of each order, and 8% of your buyers will leave. '), "You take 8% of each order. I don't know whether any of your buyers would leave. ");
+  assert.equal(run('Expect 8% of your buyers to leave. You keep 8% of each order. '), "I don't know whether any of your buyers would leave. You keep 8% of each order. ");
   // The same sentence twice, across chunks and within one: each occurrence handled once.
   const twice = 'You keep 8% of each order, and 8% of your buyers leave. ';
-  assert.equal(run(twice, twice), 'You keep 8% of each order, and some of your buyers leave. '.repeat(2));
-  assert.equal(run(twice + twice), 'You keep 8% of each order, and some of your buyers leave. '.repeat(2));
+  assert.equal(run(twice, twice), "You keep 8% of each order. I don't know whether any of your buyers would leave. ".repeat(2));
+  assert.equal(run(twice + twice), "You keep 8% of each order. I don't know whether any of your buyers would leave. ".repeat(2));
 });
 
-test('an unsupported figure is taken out without a placeholder, a substitute number or a stronger claim', () => {
-  const at = (text, fig, unit = 'percent') => { const pos = text.indexOf(fig); const r = rephraseFigure(text, pos, { text: fig, unit }); return text.slice(0, r.from) + r.replacement + text.slice(r.to); };
-  assert.equal(at("Dropping to, say, 15% doesn't change that math much.", '15%'), "Dropping to a different rate doesn't change that math much.");
-  assert.equal(at('Expect about 8% of your buyers to leave.', '8%'), 'Expect some of your buyers to leave.');
-  assert.equal(at('Most camera shops convert 3.4% of visitors.', '3.4%'), 'Most camera shops convert some visitors.');
-  assert.equal(at('A 10% rise in costs would hurt.', '10%'), 'A rise in costs would hurt.');
-  assert.equal(at('Expect an 11% drop in orders.', '11%'), 'Expect a drop in orders.');
-  assert.equal(at('Charge owners £5 per walk.', '£5', 'money'), 'Charge owners a different amount per walk.');
-  for (const t of ['Dropping to a different rate', 'some of your buyers', 'a different amount']) assert.doesNotMatch(t, /\d|more|less|higher|lower|at least/);
+test('a figure that only sizes an option loses its size; the option stays and no direction is added', () => {
+  const walk = 'How they make money: 20% commission on each booked walk';
+  assert.equal(gated(walk, "Dropping to, say, 15% doesn't change that math much. "), "Dropping to a different rate doesn't change that math much. ");
+  assert.equal(gated(walk, 'Lower it to 15% and charge owners £5 per walk. '), 'Lower it to a different rate and charge owners a different amount per walk. ');
+  assert.equal(gated('Monthly membership at £12', 'Illustration, not a benchmark: charge £20 for the premium tier. '), 'Illustration, not a benchmark: charge a different amount for the premium tier. ');
+});
+
+test('an unsupported proposition is never kept as fact without its number: removed, or stated as unknown', () => {
+  const trade = 'How they make money: Commission on each order (8%)';
+  // Customer loss with no evidence: not "some of your buyers will leave", but an explicit unknown.
+  const loss = gated(trade, 'Expect about 8% of your buyers to leave for a competitor this year. ');
+  assert.equal(loss, "I don't know whether any of your buyers would leave for a competitor this year. ");
+  assert.doesNotMatch(loss, /some of your buyers|will leave/);
+  // A rise nobody supplied: not "a rise in costs would hurt" — the clause goes; the next step stays.
+  assert.equal(gated('x', 'A 10% rise in costs would hurt your margin. Check your supplier terms. '), 'Check your supplier terms. ');
+  // A benchmark from nowhere goes; the founder's own figure and the following advice stay.
+  assert.equal(gated('Our payment provider charges us 3.4% per transaction.', 'Whether 3.4% hurts depends on margin. Most camera shops convert 3.4% of visitors. If your margins are thin, ask. '),
+    'Whether 3.4% hurts depends on margin. If your margins are thin, ask. ');
+  // A wrong calculation and the conclusion drawn from it both go.
+  assert.equal(gated('Commission on each order (8%). Average order value £400.', 'At 8% of £400 you earn £40 per order, so a fee cut matters. Talk to sellers first. ').trim(), 'Talk to sellers first.');
+  // A follow-on that only acts on the removed forecast goes with it; independent advice stays.
+  assert.equal(gated(trade, 'You take 8% today, and 8% of your buyers will leave. Plan for that. Call five buyers this week. '),
+    "You take 8% today. I don't know whether any of your buyers would leave. Call five buyers this week. ");
+});
+
+test('a supported direction keeps its qualitative claim without the unsupported size; the caveat is kept', () => {
+  assert.equal(gated('Signal: your packaging supplier is raising prices next month.', 'A 15% rise in packaging costs would hurt your margin. '), 'A rise in packaging costs would hurt your margin. ');
+  // Without that signal the same sentence is not kept as a claim.
+  assert.equal(gated('x', 'A 15% rise in packaging costs would hurt your margin. ').trim(), '');
+  // The caveat after an unsupported clause survives on its own.
+  assert.equal(gated('x', "If buyers leave, roughly 30% could go, but I can't know that without your data. "), "I can't know that without your data. ");
 });
 
 test('the gate replaces unsupported figures in place, keeps the qualitative advice and states what was removed', () => {
