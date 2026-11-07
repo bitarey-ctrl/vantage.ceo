@@ -13,7 +13,7 @@
 
 export type NumberKind = 'supplied' | 'calculated' | 'illustration' | 'unsupported' | 'mismatched-meaning' | 'miscalculated' | 'illustration-as-target' | 'illustration-reused';
 export const UNSUPPORTED: ReadonlySet<NumberKind> = new Set(['unsupported', 'mismatched-meaning', 'miscalculated', 'illustration-as-target', 'illustration-reused']);
-export interface NumericClaim { text: string; values: number[]; unit: Unit; kind: NumberKind; sentence: string; why?: string }
+export interface NumericClaim { text: string; values: number[]; unit: Unit; kind: NumberKind; sentence: string; why?: string; /** offset of `text` within `sentence` */ at: number }
 
 type Unit = 'percent' | 'money' | 'multiple' | 'duration' | 'count';
 interface Quantity { text: string; values: number[]; unit: Unit; currency: string | null; period: string | null; meanings: Set<string>; index: number }
@@ -161,7 +161,7 @@ export function traceNumbers(answer: string, suppliedText: string): { claims: Nu
     for (const q of quantities(sentence)) {
       // Bare durations in a next step ("in two weeks") are planning, not claims, unless they carry a business meaning.
       if (q.unit === 'duration' && !q.meanings.size) continue;
-      const base = { text: q.text, values: q.values, unit: q.unit, sentence };
+      const base = { text: q.text, values: q.values, unit: q.unit, sentence, at: q.index };
       const sameValue = supplied.filter((s) => supports(s, q));
       const calc = checkCalculation(q, sentence, supplied);
       let kind: NumberKind; let why: string | undefined;
@@ -198,12 +198,28 @@ export function createNumberGate(suppliedText: string) {
   const removed: NumericClaim[] = [];
   const process = (chunk: string): string => {
     const t = traceNumbers(released + chunk, suppliedText);
-    let out = chunk;
-    for (const c of t.unsupported.filter((u) => chunk.includes(u.sentence) || u.sentence.includes(chunk.trim()))) {
-      if (!out.includes(c.text)) continue;
-      out = out.replace(c.text, REMOVED_MARK);
-      removed.push(c);
+    // Replace each unsupported figure at its own position (the same figure can be supported elsewhere in the
+    // sentence: "You take 8% of each order, and 8% of your buyers will leave").
+    const cuts: { pos: number; claim: NumericClaim }[] = [];
+    // Claims come in sentence order; each sentence is found in this chunk once, after the previous one.
+    // Claims from text already released come first; skip them (an identical later sentence must not match them).
+    const fresh = t.claims.slice(released ? traceNumbers(released, suppliedText).claims.length : 0);
+    let cursor = 0, sentence: string | null = null, start = -1, lastAt = -1;
+    for (const c of fresh) {
+      // A new sentence, or the same sentence text repeated (offsets restart).
+      if (c.sentence !== sentence || c.at <= lastAt) {
+        sentence = c.sentence;
+        start = chunk.indexOf(sentence, cursor);
+        if (start >= 0) cursor = start + sentence.length;
+      }
+      lastAt = c.at;
+      if (start < 0 || !UNSUPPORTED.has(c.kind)) continue;
+      const pos = start + c.at;
+      if (chunk.slice(pos, pos + c.text.length) === c.text) cuts.push({ pos, claim: c });
     }
+    let out = chunk;
+    for (const { pos, claim } of [...cuts].reverse()) out = out.slice(0, pos) + REMOVED_MARK + out.slice(pos + claim.text.length);
+    removed.push(...cuts.map((x) => x.claim));
     released += chunk;
     return out;
   };

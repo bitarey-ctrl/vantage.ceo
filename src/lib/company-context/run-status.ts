@@ -113,7 +113,7 @@ const why = (r: StageRecord) => Object.entries(r.kinds).sort((a, b) => b[1] - a[
  */
 export function composeRunStatus(recorded: StageRecord[]): RunStatus {
   // Diagnostics are stored with the run but kept out of `stages`, which the routes return to the browser.
-  const stages = recorded.map(({ diagnostics: _d, ...s }) => s);
+  const stages = recorded.map((r) => { const s = { ...r }; delete s.diagnostics; return s; });
   const diagnostics = recorded.flatMap((s) => s.diagnostics ?? []);
   const affected = stages.filter((s) => s.failed > 0).map((s) => s.stage);
   const analysis = stages.filter((s) => s.stage !== 'collection' && s.stage !== 'persistence');

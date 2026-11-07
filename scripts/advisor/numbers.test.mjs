@@ -52,6 +52,16 @@ test('real retest answers (Sonnet 5.5, 2026-11-07): the founder\'s own figures a
   assert.deepEqual(kinds("Dropping to, say, 15% doesn't change that math much.", 'How they make money: 20% commission on each booked walk'), ['15%=unsupported']);
 });
 
+test('the gate removes the unsupported figure at its own position when the same figure is supported elsewhere', () => {
+  const run = (...pieces) => { const g = createNumberGate('How they make money: Commission on each order (8%)'); return pieces.map((p) => g.push(p)).join('') + g.flush(); };
+  assert.equal(run('You take 8% of each order, and 8% of your buyers will leave. '), `You take 8% of each order, and ${REMOVED_MARK} of your buyers will leave. `);
+  assert.equal(run('Expect 8% of your buyers to leave. You keep 8% of each order. '), `Expect ${REMOVED_MARK} of your buyers to leave. You keep 8% of each order. `);
+  // The same sentence twice, across chunks and within one: each occurrence handled once.
+  const twice = 'You keep 8% of each order, and 8% of your buyers leave. ';
+  assert.equal(run(twice, twice), `You keep 8% of each order, and ${REMOVED_MARK} of your buyers leave. `.repeat(2));
+  assert.equal(run(twice + twice), `You keep 8% of each order, and ${REMOVED_MARK} of your buyers leave. `.repeat(2));
+});
+
 test('the gate replaces unsupported figures in place, keeps the qualitative advice and states what was removed', () => {
   const gate = createNumberGate('How they make money: Commission on each order (8%)');
   const out = gate.push('You take 8% today. Charge 2-3% on first orders and 12-15% on repeats, but only if you handle payment risk. ') + gate.flush();
