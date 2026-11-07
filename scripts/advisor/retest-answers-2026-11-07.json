@@ -1,0 +1,109 @@
+{
+ "note": "Captured Sonnet 5.5 Advisor answers from the approved targeted retest (2026-11-07, served by claude-sonnet-5-5). `delivered` is the text the founder received after the live number gate at commit 5989634 (including its closing note); `removed` is the list the live gate reported, in order. The raw model text is reconstructed by dropping the note and putting each removed figure back at its mark, in order. No raw SSE was stored.",
+ "gateCommit": "5989634",
+ "cases": [
+  {
+   "id": "subscription-vs-commission:b",
+   "kind": "regression",
+   "at": "2026-11-07T14:32:31.692Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Probably not as your first move, and I'd hold off until you know what is actually limiting volume.\n\nYou earn a commission on each booked job. For an HVAC contractor, the comparison that decides this isn't your rate versus a competitor's. It's your rate versus zero: scheduling their own techs with a spreadsheet, a phone, or whatever they use today, and paying you nothing. A lower commission shrinks the gap but never closes it. If a contractor doesn't see why routing jobs through you beats doing it directly, a smaller cut won't change that. If they do see it, a smaller cut gives away margin on jobs they'd have booked anyway.\n\nThere's also a risk specific to commission models: the better you are at filling a contractor's schedule, the more tempting it is to take repeat customers off-platform. Cutting price doesn't solve that. It makes each booked job worth less to you while leaving the incentive to go direct in place.\n\nI don't have your commission rate, your per-job contribution, or why contractors who pass on you pass. Those decide the answer:\n\n- If they decline because they don't trust you to bring enough jobs, price is the wrong lever. Show them booked-job volume first.\n- If they sign up but book few jobs through you, the problem is activation or lead flow, not price.\n- If they say the rate is too high compared with doing it themselves, a cut might work, but only if your contribution per job stays positive after it.\n\nOne question: when a contractor you wanted says no or goes quiet, what reason do they give you?",
+   "removed": []
+  },
+  {
+   "id": "contribution-vs-cash:b",
+   "kind": "regression",
+   "at": "2026-11-07T14:32:51.390Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Not yet, and probably not at a larger scale. \"Each order makes money\" and \"the business survives\" are different tests. With about three months of cash left, the question isn't whether an ad pays back eventually, it's whether it pays back in cash before the money runs out. An order that's profitable on paper can still drain you if the ad cost lands now and the margin arrives later, or if stock has to be bought up front.\n\nSo the real number to find is how many days from ad spend to cash back in your account for a typical order. If that's well inside three months, a small, stoppable test is defensible. If you don't know it, spending more is a guess with your runway as the stake.\n\nI don't have your margins, ad cost per order, or how many customers come back, so I can't tell you which case you're in. Here's how I'd split it:\n\n- **If ads already return cash within weeks:** raise spend in small steps, a week at a time, with a daily cap you can cut instantly. No prepaid campaigns, no agency retainer, no extra stock bought on the strength of a hoped-for surge.\n- **If you're unsure:** hold ad spend flat and look at the cheaper route to growth. For a specialty tea shop that's your existing buyers: tea enthusiasts reorder, so an email or a reorder nudge to past customers costs almost nothing and pays back fast.\n\nIf paid ads were off the table entirely, I'd put the effort into repeat purchases from people who already bought. That's quicker feedback and lower risk at this cash level.\n\nOne question that decides this: after you pay for the ad, the product, and shipping, how much cash does a first order leave you with, and how long until you have it?",
+   "removed": []
+  },
+  {
+   "id": "future-vs-feasible:b",
+   "kind": "regression",
+   "at": "2026-11-07T14:33:09.241Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Not before Q3, and probably not as a feature at all yet. Your hard limit is no engineering capacity until Q3, so anything that needs build work waits. The more useful question is whether inspection solves your real problem, and I don't know that yet.\n\nTwo things to separate. Making buyers feel safer about used equipment is a trust problem. Taking responsibility for condition is a liability problem. If you offer inspections, you're moving from introducing buyer and seller to vouching for machinery. I don't know what that would cost you, what insurance or liability exposure it creates, or who would do the inspecting. Those would need answers before any build.\n\nThere's also the commission angle. A small factory buyer can go direct to a seller and pay nothing. The thing that keeps them paying you is something they can't get off-platform: finding the right machine, trust in the seller, protection if it's misrepresented. Inspection might be that reason, or it might be a feature buyers like but still take offline once they've met the seller. I can't tell which without evidence.\n\nYou can test this now without engineers. Pick the next handful of deals where a buyer hesitates and offer an inspection manually: a partner or independent inspector, a checklist, a call with the seller on video. Track whether it closes more deals and whether buyers still complete on-platform afterward.\n\nIf inspection were off the table entirely, I'd look at seller verification and clearer condition disclosure, which are cheaper ways to build the same trust.\n\nWhat are buyers actually telling you when they walk away from a deal? That answer should decide this.",
+   "removed": []
+  },
+  {
+   "id": "bypass-vs-churn:b",
+   "kind": "regression",
+   "at": "2026-11-07T14:33:27.881Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Your own note points at the likely cause: buyers often contact makers directly after their first order. If that's what's happening, repeat orders aren't shrinking, they're moving off-platform. That's a different problem from ordinary churn, and it needs a different fix.\n\nCheck this first. For your repeat buyers who ordered less, ask whether the maker kept shipping to them. If you can see that a hotel and a maker ordered through you once and then went quiet on the platform, the demand probably still exists. You just aren't being paid for it. If the buyers have truly stopped buying furniture, that's a product or service issue instead.\n\nIf it's leakage, the real comparison is the zero-fee alternative: once a buyer has a maker's contact, going direct costs them nothing, while the platform costs [unsupported figure removed] of each order. Cutting the rate won't fix that, because no rate beats zero. The question is what a hotel gets from you on repeat orders that it can't get from a direct relationship. I don't know what you offer beyond the introduction. Candidates could be consolidated invoicing across makers, vetted maker quality, or a protected payment arrangement, but I don't know your costs, capabilities or what buyers value, so I can't say which of those you can credibly deliver. Taking on payment protection or quality assurance means taking on liability and cash risk, so confirm you can carry that before promising it.\n\nNext step: pull a list of buyers whose second-order volume dropped, and call five of them. Ask directly how they reorder now and what would make them reorder through you. That tells you whether you have a retention problem or a leakage problem.\n\nDo you currently have anything the buyer or maker needs from you after the first order, or does your value end at the introduction?\n\n*I removed a figure that isn't supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.*",
+   "removed": [
+    {
+     "text": "8%",
+     "kind": "mismatched-meaning",
+     "why": "the supplied 8% means commission, not cost"
+    }
+   ]
+  },
+  {
+   "id": "fresh-design-capacity",
+   "kind": "fresh",
+   "at": "2026-11-07T14:33:43.937Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Not yet. Before deciding on a redesign, find out why people stop at step two, because \"redesign\" is only one of several possible fixes and it's the one your constraints make hardest.\n\nYour only designer is on leave until January, so a full redesign can't start until then. That doesn't mean waiting. Most drop-off causes are fixable without a designer, and you don't yet know which one you have.\n\nFor a booking app sold to clinic owners, step two is often where the product asks for real work: connecting a calendar, entering practitioners and opening hours, or importing existing patients. Owners who are mid-day between patients may simply abandon it. If that's your step two, the fix is probably removing or deferring the ask (skip for now, pre-fill defaults, or have your team do the setup), not new visuals. Those are copy and flow-order changes a developer or you can make.\n\nNext step, this week: talk to five owners who dropped at step two. Ask what they were trying to do and what stopped them. Also check whether they dropped on the page itself or came back later. Together that tells you whether it's friction, confusion, or lack of urgency.\n\nTwo things would change my answer. If step two is a long data-entry task, simplify it now. If people are confused by the screen itself, a designer-led fix in January makes sense, and a quick copy fix can hold the line until then.\n\nWhat does step two actually ask the owner to do, and roughly how many people reach it versus finish it? I don't have your funnel numbers, so I can't judge how big the leak is.",
+   "removed": []
+  },
+  {
+   "id": "fresh-benchmark-bait",
+   "kind": "fresh",
+   "at": "2026-11-07T14:33:59.536Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "I can't give you a number to expect, and I'd be wary of anyone who does. Conversion rates for a candle shop swing with traffic source, price point, whether visitors are first-timers or repeat buyers, and how well the product page does its job. A figure from general knowledge would just be a guess dressed up as a benchmark, and you might end up judging your shop against the wrong yardstick.\n\nWhat I'd do instead: measure your own rate now, split by traffic source (email, organic, social, paid, direct). That split matters more than the blended number, because a decent overall rate can hide one weak channel dragging it down, or one strong channel making the rest look better than it is.\n\nThen the useful comparison is you against you: is each channel trending up or down over several weeks, and what changed when it moved? For a home decor buyer, the usual suspects are product photography, how well the scent is described (people can't smell a candle online), shipping cost surprise at checkout, and reviews.\n\nI don't have your traffic, order counts, average order value, or margins, so I can't tell you whether a given rate is good for your economics. A low rate with a high order value and strong repeat purchase can beat a high rate on discounted one-off sales.\n\nIf you tell me your monthly sessions, orders, and where the traffic comes from, I can help you work out where the biggest gap is. What's your current rate, and do you know it by channel?",
+   "removed": []
+  },
+  {
+   "id": "fresh-commission-direct",
+   "kind": "fresh",
+   "at": "2026-11-07T14:34:18.258Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "Probably not as a first move, and not until you know where they're going. A fee cut only helps if walkers are leaving because of the fee.\n\nThe comparison that matters is the walker's zero-fee alternative: keeping the owner and booking walks directly, paying you nothing. On a marketplace like yours, that's the real risk. Once a walker and owner have met through you, the 20% buys them very little on repeat walks. They can text each other. Dropping to, say, [unsupported figure removed] doesn't change that math much. It still costs them something versus free, and you've given up revenue on every walk, including the ones that would have stayed anyway.\n\nSo the first question is whether they're leaving to go direct, leaving for a competitor, or quitting walking altogether. Those need different fixes:\n\n- **Going direct with your owners:** a lower fee won't stop it. What stops it is what you provide that direct doesn't: new client flow, payment protection, insurance or cancellation handling, scheduling. Your fee should buy something they can't easily replicate.\n- **Going to a competitor:** then price may matter, but I don't know who your competitors are, so I can't say how your 20% compares.\n- **Leaving for lack of work:** a lower fee is pointless. That's a demand problem on the owner side.\n\nI don't have your numbers: how many walkers leave, after how many bookings, or what share of their walks come from repeat owners. That last one is the key signal. If walkers leave mostly after building a repeat client base, it's leakage.\n\nNext step: contact the last ten walkers who left and ask where their walks go now. That takes days and is fully reversible, unlike a fee cut, which is hard to walk back.\n\nDo you know whether departing walkers have mostly repeat owners, or are they leaving early with few bookings?\n\n*I removed a figure that isn't supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.*",
+   "removed": [
+    {
+     "text": "15%",
+     "kind": "unsupported"
+    }
+   ]
+  },
+  {
+   "id": "fresh2-premium-price",
+   "kind": "fresh",
+   "at": "2026-11-07T14:34:34.383Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "I can't give you a number yet, and I'd be wary of anyone who does without knowing three things: what the premium tier adds, who would pay for it, and what the £12 membership currently costs you to serve. I also haven't confirmed that £12 monthly membership is actually how you make money, so that's the first thing to check.\n\nWhat I can say is how to set it. The price should come from what hobby photographers will pay for the extra value, not from the £12 plus some arbitrary uplift. The useful question is what premium replaces for them. If it's live feedback on their photos from a working photographer, the comparison is a paid critique or workshop. If it's just more courses, the comparison is the £12 tier, and you'll struggle to justify a big gap.\n\nTwo things to be careful about. First, hobbyists spend on enthusiasm, not necessity, so price sensitivity may be high; test it, don't assume it. Second, any premium that involves your time or an instructor's (feedback, mentoring, live sessions) has a real cost per member that caps how many you can serve. If it's purely digital, that constraint mostly disappears.\n\nThe cheapest next step is to ask your existing members. Describe the premium offer to 15-20 of them and ask what they'd expect to pay, then ask what price would be too high and what would be so cheap they'd doubt it. Then run a pre-sale or waitlist at one price before building anything. That's reversible and gives you real feedback within weeks.\n\nTo help you narrow it down, what's in the premium tier, and does it depend on someone's time or is it all self-serve content?",
+   "removed": []
+  },
+  {
+   "id": "fresh2-fee-benchmark",
+   "kind": "fresh",
+   "at": "2026-11-07T14:34:48.215Z",
+   "servedModel": "claude-sonnet-5-5",
+   "status": "complete",
+   "delivered": "I can't tell you whether 3.4% is normal. Processing rates vary by provider, card type, country and sales volume, and I don't have reliable benchmarks to quote. I also don't know where you sell, your average order value, or your monthly volume, and those all affect what a fair rate looks like.\n\nWhat I can say is what matters for your business specifically. You sell refurbished cameras, which are typically higher-ticket items, so even a small difference in rate adds up quickly per sale. Whether [unsupported figure removed] hurts depends on your margin per camera, which I don't have. If your refurb margins are thin after sourcing, testing and shipping, a payment fee is a meaningful slice of what's left.\n\nAlso check what the 3.4% actually covers. Is it all-in, or is there a fixed per-transaction fee on top? Does it apply to every payment method, or are some cheaper? And does it include chargeback fees? For a shop selling used equipment to enthusiasts, disputes and \"not as described\" claims are a real exposure, so the dispute terms may matter as much as the headline rate.\n\nNext step: pull your last three months of statements and calculate your effective rate, meaning total fees paid divided by total sales processed. Then get one or two competing quotes using your real volume and average order value, and compare effective rate to effective rate, not headline to headline.\n\nIf you tell me your rough monthly sales volume and average camera price, I can show you what [unsupported figure removed] costs in absolute terms and how much a rate change would be worth.\n\n*I removed a figure that isn't supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.*",
+   "removed": [
+    {
+     "text": "3.4%",
+     "kind": "mismatched-meaning",
+     "why": "the supplied 3.4% means price/payment, not margin"
+    },
+    {
+     "text": "3.4%",
+     "kind": "mismatched-meaning",
+     "why": "the supplied 3.4% means price/payment, not cost"
+    }
+   ]
+  }
+ ]
+}

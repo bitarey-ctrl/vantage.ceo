@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ModelRefusalError, SONNET_MODEL, sonnetSettings, tokenizerCap } from "./model";
-import { recordProviderFailure, recordProviderUsage, reserveProviderCall } from "./provider-budget";
-import { classifyFailure, failureCause } from "@/lib/company-context/run-status";
+import { createHash } from "node:crypto";
+import { recordProviderDiagnostic, recordProviderFailure, recordProviderUsage, reserveProviderCall } from "./provider-budget";
+import { classifyFailure, failureCause, type ModelDiagnostic } from "@/lib/company-context/run-status";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -75,4 +76,81 @@ export async function callClaude<T>(
       `Failed to parse Claude response as JSON: ${finalJson.slice(0, 300)}`
     );
   }
+}
+
+/**
+ * Why a schema-constrained answer could not be used. The API guarantees schema-valid output only when the model
+ * finishes normally (`end_turn`); a refusal or a length stop can break it, so each is reported as itself.
+ * `invalid` means it parsed but failed our structural check.
+ */
+export class StructuredOutputError extends Error {
+  readonly kind: "refusal" | "truncated" | "empty" | "parse" | "invalid";
+  readonly diagnostic: ModelDiagnostic;
+  constructor(kind: StructuredOutputError["kind"], diagnostic: ModelDiagnostic) {
+    super(`Structured output unusable (${kind})${diagnostic.failure ? `: ${diagnostic.failure}` : ""}`);
+    this.name = "StructuredOutputError";
+    this.kind = kind;
+    this.diagnostic = diagnostic;
+  }
+}
+
+/**
+ * Schema-constrained JSON call (structured outputs: `output_config.format` with a JSON schema whose root is an
+ * object; platform.claude.com/docs/en/build-with-claude/structured-outputs, checked 2026-11-07). Returns the parsed
+ * value and bounded diagnostics, or throws StructuredOutputError (refusal, truncation, empty, unparseable, invalid
+ * structure). Network and provider failures are thrown as the SDK raised them. `validate` checks structure only;
+ * callers still judge content.
+ */
+export async function callClaudeStructured<T>(
+  prompt: string,
+  options: { maxTokens: number; schema: Record<string, unknown>; schemaVersion: string; validate: (value: unknown) => string | null }
+): Promise<{ data: T; diagnostic: ModelDiagnostic }> {
+  const cap = tokenizerCap(options.maxTokens);
+  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL, { inputBytes: Buffer.byteLength(prompt, "utf8"), maxTokens: cap });
+  const settings = sonnetSettings("high");
+  let response: Anthropic.Message;
+  try {
+    response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: cap,
+      thinking: settings.thinking,
+      output_config: { ...settings.output_config, format: { type: "json_schema", schema: options.schema } },
+      messages: [{ role: "user", content: prompt }],
+    });
+  } catch (err) {
+    recordProviderFailure(slot, classifyFailure(err), failureCause(err));
+    throw err;
+  }
+  recordProviderUsage(slot, response.usage, response.model);
+
+  const text = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+  const diagnostic: ModelDiagnostic = {
+    ok: false,
+    model: response.model ?? null,
+    requestId: (response as { _request_id?: string | null })._request_id ?? null,
+    stopReason: response.stop_reason ?? null,
+    usage: response.usage ? { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens } : null,
+    schemaVersion: options.schemaVersion,
+    outputChars: text.length,
+    outputSha256: createHash("sha256").update(text).digest("hex").slice(0, 16),
+  };
+  const fail = (kind: StructuredOutputError["kind"], failure: string): never => {
+    const d = { ...diagnostic, failure };
+    recordProviderDiagnostic(slot, { ...d }, text);
+    throw new StructuredOutputError(kind, d);
+  };
+
+  if (response.stop_reason === "refusal") fail("refusal", "stop_reason refusal");
+  if (response.stop_reason === "max_tokens") fail("truncated", `stop_reason max_tokens at ${cap} output tokens`);
+  if (response.stop_reason !== "end_turn" && response.stop_reason !== "stop_sequence") fail("truncated", `stop_reason ${response.stop_reason ?? "none"}`);
+  if (!text.trim()) fail("empty", "no text in the response");
+  let value: unknown;
+  // Only the position: the parser's message can quote the output, which must not reach the run record.
+  try { value = JSON.parse(text); } catch (err) { fail("parse", `not valid JSON${/position (\d+)/.exec((err as Error).message)?.[1] ? ` at position ${/position (\d+)/.exec((err as Error).message)![1]}` : ""}`); }
+  const problem = options.validate(value);
+  if (problem) fail("invalid", problem.slice(0, 200));
+
+  const ok = { ...diagnostic, ok: true };
+  recordProviderDiagnostic(slot, { ...ok });
+  return { data: value as T, diagnostic: ok };
 }

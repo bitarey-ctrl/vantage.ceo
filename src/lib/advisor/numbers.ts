@@ -80,7 +80,13 @@ function adjacent(text: string, start: number, end: number): string {
 // "20% of your walkers" is a share of a group of people or things, not a rate charged or paid.
 const POPULATION = /^\s*of\s+(your|the|their|all|our)?\s*(customers|users|walkers|buyers|clients|subscribers|members|visitors|owners|contractors|makers|sellers|people|staff|team|leads|traffic|sign-?ups|shoppers)\b/i;
 
-function quantities(text: string): Quantity[] {
+/**
+ * Every quantity in `text` with its unit, currency, period and meanings. Claims take meaning from adjacent words only
+ * (a wider window misread "Whether 3.4% hurts depends on your margin" as a margin claim). Supplied facts are often
+ * labelled further away ("Commission on each order (8%)"), so `source` falls back to the number's whole clause when
+ * adjacent words carry no meaning; otherwise a meaning-free source would support a claim of any meaning.
+ */
+function quantities(text: string, source = false): Quantity[] {
   const out: Quantity[] = [];
   for (const m of text.matchAll(QUANTITY)) {
     const g = m.groups ?? {};
@@ -90,7 +96,8 @@ function quantities(text: string): Quantity[] {
     if (!values.length) continue;
     const ctx = clauseAround(text, m.index ?? 0, (m.index ?? 0) + raw.length);
     const near = adjacent(text, m.index ?? 0, (m.index ?? 0) + raw.length);
-    const meanings = new Set(MEANINGS.filter(([, re]) => re.test(near)).map(([k]) => k));
+    let meanings = new Set(MEANINGS.filter(([, re]) => re.test(near)).map(([k]) => k));
+    if (source && !meanings.size) meanings = new Set(MEANINGS.filter(([, re]) => re.test(ctx)).map(([k]) => k));
     if (POPULATION.test(text.slice((m.index ?? 0) + raw.length))) meanings.add('population-share');
     if (unit === 'duration' && /\b(cash|runway)\b/i.test(ctx)) meanings.add('cash');
     out.push({ text: raw.trim(), values, unit, currency: raw.match(/[£$€]/)?.[0] ?? null, period: PERIOD.find(([, re]) => re.test(ctx))?.[0] ?? null, meanings, index: m.index ?? 0 });
@@ -146,7 +153,7 @@ const sharesMeaning = (a: Set<string>, b: Set<string>) => [...a].some((m) => b.h
 
 /** Classify every quantitative claim in `answer` against the material the model was given. */
 export function traceNumbers(answer: string, suppliedText: string): { claims: NumericClaim[]; unsupported: NumericClaim[] } {
-  const supplied = quantities(suppliedText);
+  const supplied = quantities(suppliedText, true);
   const claims: NumericClaim[] = [];
   const illustrationValues: number[] = [];
   for (const sentence of sentencesOf(answer)) {
@@ -164,7 +171,8 @@ export function traceNumbers(answer: string, suppliedText: string): { claims: Nu
       // number shares one meaning (unambiguous); a claim with meaning words must share one with its source.
       else if (sameValue.length && (q.meanings.size === 0
         ? [...sameValue[0].meanings].some((m) => sameValue.every((s) => s.meanings.has(m))) || sameValue.every((s) => s.meanings.size === 0)
-        : sameValue.some((s) => sharesMeaning(s.meanings, q.meanings) || s.meanings.size === 0))) kind = 'supplied';
+        // A share of people ("8% of your buyers") is only supported by a share of people, never by a rate.
+        : sameValue.some((s) => sharesMeaning(s.meanings, q.meanings) || (s.meanings.size === 0 && !q.meanings.has('population-share'))))) kind = 'supplied';
       else if (sameValue.length) { kind = 'mismatched-meaning'; why = `the supplied ${q.text} means ${[...sameValue[0].meanings].join('/') || 'something else'}, not ${[...q.meanings].join('/')}`; }
       else if (labelled && !DIRECTIVE.test(sentence)) { kind = 'illustration'; illustrationValues.push(...q.values); }
       else if (labelled) { kind = 'illustration-as-target'; why = 'an illustrative figure phrased as a recommendation'; }
@@ -177,6 +185,8 @@ export function traceNumbers(answer: string, suppliedText: string): { claims: Nu
 }
 
 export const REMOVED_MARK = '[unsupported figure removed]';
+/** How the closing removal note starts (graders and replay split the answer here). */
+export const REMOVAL_NOTE_START = '\n\nI removed ';
 
 /**
  * Streaming enforcement: text is released sentence by sentence; an unsupported figure is replaced in place, so the
@@ -210,7 +220,8 @@ export function createNumberGate(suppliedText: string) {
     summary(): string | null {
       if (!removed.length) return null;
       const figures = [...new Set(removed.map((r) => r.text))].slice(0, 6);
-      return `\n\n*I removed ${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.*`;
+      // Plain text: the app renders **bold** only, so single asterisks would show literally.
+      return `${REMOVAL_NOTE_START}${figures.length === 1 ? 'a figure' : `${figures.length} figures`} that ${figures.length === 1 ? "isn't" : "aren't"} supported by your details, your signals or a correct calculation from them. Treat the advice above as qualitative. If you share the numbers you'd use — for example your current price, volumes or costs — I can work them out.`;
     },
   };
 }

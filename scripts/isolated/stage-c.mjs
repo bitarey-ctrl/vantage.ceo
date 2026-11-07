@@ -362,10 +362,10 @@ if (mode === 'regression') {
     const a = await step(`R ${r.id}`, () => ask('R', q.session, q.turnId), MAX_COST.advisor);
     const text = a.text.split('[[VANTAGE_MEMORY]]')[0].trim();
     const company = normaliseCompanyContext(R.id, {}, ctx);
-    const answer = text.split('\n\n*I removed ')[0];
+    const answer = text.split(/\n\n\*?I removed /)[0];
     const supplied = `${companyContextBlock(company)}\n${r.question}`;
     const out = { id: r.id, kind: r.kind, rubric: r.rubric, status: statusOf(a), text, error: a.error, check: checkAnswer(answer, company, supplied),
-      numbers: traceNumbers(answer, supplied).claims.map((c) => ({ text: c.text, kind: c.kind })), removalNoteShown: text.includes('*I removed ') };
+      numbers: traceNumbers(answer, supplied).claims.map((c) => ({ text: c.text, kind: c.kind })), removalNoteShown: /\n\n\*?I removed /.test(text) };
     const served = ledger().calls.at(-1)?.servedModel ?? null;
     report.regression.push({ ...out, run: runLabel, at: new Date().toISOString(), servedModel: served, removedFigures: a.numbers?.removed ?? [] }); saveReport();
     // Real-provider compatibility gate: the first answer must come from the migrated model, and a rejected request

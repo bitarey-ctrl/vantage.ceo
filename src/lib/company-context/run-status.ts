@@ -6,10 +6,21 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-export type FailureKind = 'connection' | 'timeout' | 'budget' | 'auth' | 'provider' | 'parse' | 'other';
+export type FailureKind = 'connection' | 'timeout' | 'budget' | 'auth' | 'provider' | 'refusal' | 'truncated' | 'parse' | 'other';
 export type StageName = 'collection' | 'reassessment' | 'company-assessment' | 'gate' | 'survivor-assessment' | 'persistence';
-export interface StageRecord { stage: StageName; attempted: number; succeeded: number; failed: number; items: number; kinds: Partial<Record<FailureKind, number>> }
-export interface RunStatus { status: 'complete' | 'partial' | 'failed'; stages: StageRecord[]; affected: StageName[]; message: string }
+export interface StageRecord { stage: StageName; attempted: number; succeeded: number; failed: number; items: number; kinds: Partial<Record<FailureKind, number>>; diagnostics?: ModelDiagnostic[] }
+/**
+ * Bounded evidence about one model call, kept on the stored run record (never sent to the browser, never logged in
+ * full). No prompt text, no model output: only its length and hash. The raw output excerpt goes to the protected
+ * test ledger only (provider-budget.ts).
+ */
+export interface ModelDiagnostic {
+  stage?: StageName; ok: boolean; model: string | null; requestId: string | null; stopReason: string | null;
+  usage: { input_tokens?: number; output_tokens?: number } | null; schemaVersion: string | null;
+  failure?: string; outputChars?: number; outputSha256?: string;
+}
+export interface RunStatus { status: 'complete' | 'partial' | 'failed'; stages: StageRecord[]; affected: StageName[]; message: string; diagnostics?: ModelDiagnostic[] }
+const MAX_DIAGNOSTICS_PER_STAGE = 12;
 
 const store = new AsyncLocalStorage<Map<StageName, StageRecord>>();
 
@@ -33,7 +44,7 @@ export function beginRunStatus(): () => StageRecord[] {
 }
 
 /** Record one attempt of a stage (a call, a batch, a write). Outside a recorder this does nothing. */
-export function recordStage(stage: StageName, outcome: { ok: boolean; kind?: FailureKind; items?: number; count?: number }) {
+export function recordStage(stage: StageName, outcome: { ok: boolean; kind?: FailureKind; items?: number; count?: number; diagnostic?: ModelDiagnostic }) {
   const m = store.getStore();
   if (!m) return;
   const r = m.get(stage) ?? { stage, attempted: 0, succeeded: 0, failed: 0, items: 0, kinds: {} };
@@ -41,6 +52,7 @@ export function recordStage(stage: StageName, outcome: { ok: boolean; kind?: Fai
   r.attempted += n;
   if (outcome.ok) r.succeeded += n; else { r.failed += n; const k = outcome.kind ?? 'other'; r.kinds[k] = (r.kinds[k] ?? 0) + n; }
   r.items += outcome.items ?? 0;
+  if (outcome.diagnostic && (r.diagnostics ??= []).length < MAX_DIAGNOSTICS_PER_STAGE) r.diagnostics.push({ stage, ...outcome.diagnostic });
   m.set(stage, r);
 }
 
@@ -52,6 +64,11 @@ export function recordStage(stage: StageName, outcome: { ok: boolean; kind?: Fai
 export function classifyFailure(err: unknown): FailureKind {
   const e = err as { name?: string; status?: number; code?: string; cause?: { code?: string; name?: string } } | null;
   if (e?.name === 'ProviderBudgetError') return 'budget';
+  if (e?.name === 'ModelRefusalError') return 'refusal';
+  if (e?.name === 'StructuredOutputError') {
+    const k = (err as { kind?: string }).kind;
+    return k === 'refusal' ? 'refusal' : k === 'truncated' ? 'truncated' : 'parse';
+  }
   if (e?.status === 401 || e?.status === 403 || e?.name === 'AuthenticationError' || e?.name === 'PermissionDeniedError') return 'auth';
   if (e?.name === 'APIConnectionTimeoutError' || e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'timeout';
   if (e?.status === 429 || (typeof e?.status === 'number' && e.status >= 500) || e?.name === 'RateLimitError' || e?.name === 'InternalServerError') return 'provider';
@@ -73,6 +90,8 @@ const KIND_TEXT: Record<FailureKind, string> = {
   budget: 'the model-call budget for this environment was reached (nothing was sent)',
   auth: "the AI service did not accept this server's credentials",
   provider: 'the AI service was busy or returned an error',
+  refusal: 'the AI service declined to answer',
+  truncated: "the AI service's answer was cut off before it finished",
   parse: "the AI service's answer could not be read",
   other: 'of an unexpected error',
 };
@@ -92,7 +111,10 @@ const why = (r: StageRecord) => Object.entries(r.kinds).sort((a, b) => b[1] - a[
  * analysis completed. Failed: no analysis stage completed any of its work. Earlier results are never removed by a
  * failed stage, and the message says so.
  */
-export function composeRunStatus(stages: StageRecord[]): RunStatus {
+export function composeRunStatus(recorded: StageRecord[]): RunStatus {
+  // Diagnostics are stored with the run but kept out of `stages`, which the routes return to the browser.
+  const stages = recorded.map(({ diagnostics: _d, ...s }) => s);
+  const diagnostics = recorded.flatMap((s) => s.diagnostics ?? []);
   const affected = stages.filter((s) => s.failed > 0).map((s) => s.stage);
   const analysis = stages.filter((s) => s.stage !== 'collection' && s.stage !== 'persistence');
   const anyAnalysisDone = analysis.some((s) => s.succeeded > 0);
@@ -101,5 +123,5 @@ export function composeRunStatus(stages: StageRecord[]): RunStatus {
   const message = status === 'complete'
     ? 'Every check finished.'
     : `${status === 'failed' ? 'The update failed' : 'The update was only partly checked'}. ${parts.map((p) => p[0].toUpperCase() + p.slice(1)).join('. ')}. Items that were not checked are not judged unimportant, and your earlier results are unchanged.`;
-  return { status, stages, affected, message };
+  return { status, stages, affected, message, ...(diagnostics.length ? { diagnostics } : {}) };
 }

@@ -1,8 +1,8 @@
-import { callClaude } from "@/lib/ai/claude";
+import { callClaudeStructured, StructuredOutputError } from "@/lib/ai/claude";
 import { classifyFailure, failureCause, recordStage, type FailureKind } from "@/lib/company-context/run-status";
 import { buildGatePrompt, type GateCandidate } from "@/lib/ai/prompts/triage";
 import { GATE_ENV, requireEnv } from "@/lib/env";
-import { isSignalCategory, type SignalCategory } from "./icp";
+import { isSignalCategory, SIGNAL_CATEGORIES, type SignalCategory } from "./icp";
 
 /** A candidate article, before the gate has seen it. */
 export interface RawCandidate {
@@ -47,6 +47,50 @@ const BATCH_SIZE = 25;
 const MIN_WHY_LENGTH = 40;
 
 /**
+ * Schema-constrained gate output (structured outputs). The API requires an object at the root, so the prompt's array
+ * is wrapped as `{"signals": [...]}`. The schema guarantees shape only on a normal finish; content is still judged
+ * below (index, category, field substance), and a schema-valid answer is not taken as a correct relevance judgement.
+ */
+export const GATE_SCHEMA_VERSION = "gate-v1";
+export const GATE_SCHEMA = {
+  type: "object",
+  properties: {
+    signals: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer" },
+          category: { type: "string", enum: [...SIGNAL_CATEGORIES] },
+          what_happened: { type: "string" },
+          why_it_matters: { type: "string" },
+          what_to_consider: { type: "string" },
+        },
+        required: ["index", "category", "what_happened", "why_it_matters", "what_to_consider"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["signals"],
+  additionalProperties: false,
+} as const;
+const ENVELOPE_NOTE = `\n\nOutput envelope: put the array described above in an object as {"signals": [...]}. If nothing survives, return {"signals": []}.`;
+
+/** Structure only (the schema should already guarantee it; a refusal or cut-off answer may not follow it). */
+export function gateStructureProblem(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "root is not an object";
+  const list = (value as { signals?: unknown }).signals;
+  if (!Array.isArray(list)) return "signals is not an array";
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i] as Record<string, unknown> | null;
+    if (!r || typeof r !== "object") return `signals[${i}] is not an object`;
+    if (!Number.isInteger(r.index)) return `signals[${i}].index is not an integer`;
+    for (const f of ["category", "what_happened", "why_it_matters", "what_to_consider"]) if (typeof r[f] !== "string") return `signals[${i}].${f} is not a string`;
+  }
+  return null;
+}
+
+/**
  * Run the five-category gate over a set of candidates.
  *
  * Returns only the survivors. Anything the model does not return, returns
@@ -64,6 +108,8 @@ const FAILURE_TEXT: Record<GateFailureKind, string> = {
   connection: "the connection to the AI service failed",
   timeout: "the AI service did not answer in time",
   provider: "the AI service was busy or returned an error — try again later",
+  refusal: "the AI service declined to answer",
+  truncated: "the AI service's answer was cut off before it finished",
   parse: "the AI service's answer could not be read",
   other: "of an unexpected error",
 };
@@ -102,11 +148,15 @@ export async function gateSignals(
         url: c.url ?? "",
         published_at: c.published_at,
       } satisfies GateCandidate))
-    );
+    ) + ENVELOPE_NOTE;
 
     let results: GateResponse[];
     try {
-      results = await callClaude<GateResponse[]>(prompt, { maxTokens: 4000 });
+      const out = await callClaudeStructured<{ signals: GateResponse[] }>(prompt, {
+        maxTokens: 4000, schema: GATE_SCHEMA, schemaVersion: GATE_SCHEMA_VERSION, validate: gateStructureProblem,
+      });
+      results = out.data.signals;
+      recordStage("gate", { ok: true, items: batch.length, diagnostic: out.diagnostic });
     } catch (err) {
       // A failed batch drops its candidates rather than passing them through.
       // Silence is the safe default for a filter whose job is to discard —
@@ -114,13 +164,12 @@ export async function gateSignals(
       batchesFailed++;
       const kind = gateFailureKind(err);
       failureKinds.push(kind);
-      recordStage("gate", { ok: false, kind });
-      console.error(`[gate] Batch failed (${kind}; ${failureCause(err)}), dropping its candidates.`);
+      const diagnostic = err instanceof StructuredOutputError ? err.diagnostic : undefined;
+      recordStage("gate", { ok: false, kind, ...(diagnostic ? { diagnostic } : {}) });
+      // Metadata only: no prompt, no model output.
+      console.error(`[gate] Batch failed (${kind}; ${failureCause(err)}${diagnostic ? `; ${diagnostic.failure}; request ${diagnostic.requestId ?? "unknown"}; schema ${diagnostic.schemaVersion}` : ""}), dropping its candidates.`);
       continue;
     }
-
-    recordStage("gate", { ok: true, items: batch.length });
-    if (!Array.isArray(results)) continue;
 
     for (const r of results) {
       const candidate = batch[r?.index];

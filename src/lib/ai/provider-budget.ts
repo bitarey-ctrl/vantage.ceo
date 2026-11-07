@@ -10,7 +10,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
-interface Call { at: string; kind: string; model: string; servedModel?: string; worstUsd?: number; usage?: Record<string, unknown>; failure?: { kind: string; cause: string; at: string } }
+interface Call { at: string; kind: string; model: string; servedModel?: string; worstUsd?: number; usage?: Record<string, unknown>; failure?: { kind: string; cause: string; at: string }; diagnostic?: Record<string, unknown> }
 interface Ledger {
   limit: number; calls: Call[];
   dollarLimit?: number;
@@ -90,5 +90,19 @@ export function recordProviderFailure(slot: number | null, kind: string, cause: 
   const l = load();
   if (!l || !l.calls[slot]) return;
   l.calls[slot].failure = { kind, cause: cause.slice(0, 120), at: new Date().toISOString() };
+  writeFileSync(file()!, JSON.stringify(l, null, 1), { mode: 0o600 });
+}
+
+/**
+ * Diagnostic evidence for one call (model, request id, stop reason, schema version, validation failure). The ledger
+ * is a mode-600 file outside the repository, so a bounded excerpt of the raw output may be kept here for diagnosis;
+ * it is never logged. Inactive outside the isolated test environment.
+ */
+export const RAW_EXCERPT_CHARS = 4000;
+export function recordProviderDiagnostic(slot: number | null, diagnostic: Record<string, unknown>, rawOutput?: string): void {
+  if (slot === null) return;
+  const l = load();
+  if (!l || !l.calls[slot]) return;
+  l.calls[slot].diagnostic = { ...diagnostic, ...(rawOutput !== undefined ? { rawExcerpt: rawOutput.slice(0, RAW_EXCERPT_CHARS) } : {}) };
   writeFileSync(file()!, JSON.stringify(l, null, 1), { mode: 0o600 });
 }

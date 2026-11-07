@@ -14,7 +14,7 @@ mock.module('@/lib/supabase/server', { namedExports: { createClient: async () =>
 
 // Scripted model: the gate keeps concrete business developments (account-neutral); the per-account assessment keeps
 // an item only when it touches that account's own stated facts, read back from the prompt it was given.
-mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaude: async (prompt) => {
+const scripted = async (prompt) => {
   prompts.push(prompt);
   const items = [...prompt.matchAll(/\[(\d+)\] (?:\([^)]*\) )?([^\n]+)/g)].map((m) => ({ i: Number(m[1]), title: m[2] }));
   if (prompt.includes('You are the relevance gate')) {
@@ -27,7 +27,10 @@ mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaud
     return hit ? { i: x.i, decision: 'relevant', exposure: 'direct', what_changed: x.title, connection: 'You named this as something you depend on.', basis_fact: basis, effect: 'If it applies to you, your costs rise.', unknowns: 'Your contract terms.', next_step: 'Check your next bill.', watch_for: null, quantified: null }
       : { i: x.i, decision: 'reject', reject_reason: 'no_plausible_effect' };
   });
-} } });
+};
+// The gate uses the schema-constrained call ({"signals": [...]}); assessments use the plain JSON call.
+mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaude: scripted, StructuredOutputError: class extends Error {},
+  callClaudeStructured: async (prompt) => ({ data: { signals: await scripted(prompt) }, diagnostic: { ok: true, model: 'test', requestId: null, stopReason: 'end_turn', usage: null, schemaVersion: 'gate-v1' } }) } });
 
 const NOW = new Date().toUTCString();
 const rss = (titles) => `<rss><channel>${titles.map((t, i) => `<item><title>${t}</title><link>https://news.example.com/${encodeURIComponent(t)}-${i}</link><pubDate>${NOW}</pubDate><description>${t}. Details in the article.</description></item>`).join('')}</channel></rss>`;

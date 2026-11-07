@@ -45,6 +45,9 @@ test('real retest answers (Sonnet 5.5, 2026-11-07): the founder\'s own figures a
   const shop = 'Our payment provider charges us 3.4% per transaction. Is that normal?';
   assert.deepEqual(kinds('Whether 3.4% hurts depends on your margin per camera, which I don\'t have.', shop), ['3.4%=supplied']);
   assert.deepEqual(kinds('If you tell me your rough monthly sales volume and average camera price, I can show you what 3.4% costs in absolute terms and how much a rate change would be worth.', shop), ['3.4%=supplied']);
+  // Found by the replay: a source labelled away from its number ("Commission on each order (8%)") still has a meaning,
+  // so it cannot support a share of buyers.
+  assert.deepEqual(kinds('Expect about 8% of your buyers to leave for a competitor this year.', tradeloop), ['8%=mismatched-meaning']);
   // The model's genuinely unsupported figure in the same run stays removed.
   assert.deepEqual(kinds("Dropping to, say, 15% doesn't change that math much.", 'How they make money: 20% commission on each booked walk'), ['15%=unsupported']);
 });

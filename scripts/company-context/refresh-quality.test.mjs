@@ -4,7 +4,9 @@ import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 let gateScript = [];
-mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaude: async () => { const s = gateScript.shift(); if (s instanceof Error) throw s; return s; } } });
+const next = () => { const s = gateScript.shift(); if (s instanceof Error) throw s; return s; };
+mock.module('@/lib/ai/claude', { namedExports: { CLAUDE_MODEL: 'test', callClaude: async () => next(), StructuredOutputError: class extends Error {},
+  callClaudeStructured: async () => ({ data: { signals: next() }, diagnostic: { ok: true, model: 'test', requestId: null, stopReason: 'end_turn', usage: null, schemaVersion: 'gate-v1' } }) } });
 mock.module('@/lib/env', { namedExports: { GATE_ENV: [], requireEnv: () => {} } });
 const { withRunStatus, composeRunStatus, classifyFailure, recordStage } = await import('../../src/lib/company-context/run-status.ts');
 const { gateSignals } = await import('../../src/lib/signals/gate.ts');

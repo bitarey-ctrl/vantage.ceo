@@ -64,7 +64,8 @@ export function createFakeDb(seed = {}, { missing = [] } = {}) {
       else if (st.op === 'insert') {
         const list = Array.isArray(st.payload) ? st.payload : [st.payload];
         for (const p of list) if (keys && all.some((r) => sameKey(p, r))) return { data: null, error: { code: '23505', message: 'duplicate key' } };
-        out = list.map((p) => ({ created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...p }));
+        // Like the table defaults (advisor_sessions.id defaults to gen_random_uuid()).
+        out = list.map((p) => ({ ...(table === 'advisor_sessions' ? { id: crypto.randomUUID() } : {}), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...p }));
         all.push(...out);
       } else if (st.op === 'upsert') {
         const list = Array.isArray(st.payload) ? st.payload : [st.payload]; out = [];
