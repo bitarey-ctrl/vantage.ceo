@@ -1,159 +1,141 @@
-# Limited founder pilot — release package (corrected 2026-11-07; nothing deployed or applied)
+# Release package: privacy remediation, restricted pilot, model continuity (2026-11-08; nothing deployed or applied)
 
-**What the pilot is:** company-aware research and decision support, under evaluation. It is not verified strategic
-advice, automatic monitoring, a promise of revenue improvement, or a complete chief of staff.
+Three separate releases share one production database. No paid calls were made in this preparation.
 
-## 1. Exact builds
-
-| | Commit | Notes |
-|---|---|---|
-| **Release candidate** | `codex/advisor-reliability`, the commit that adds this file | Its code is identical to `8a2b72a`; later commits are documents only. Local; not pushed. |
-| **Safe rollback build** | `rollback/1d31b02-isolation` at **`40da4ed`** | Today's production `1d31b02` plus two fixes: no unscoped service-role fallback in `/api/signals/raw`, and conversation saves keep unknown message fields. Typechecks and builds. Still `claude-sonnet-4-5`, so it works only until 2026-11-30. Local; not pushed. |
-| **Not a rollback target at any stage** | `1d31b02` (production now, `dpl_Dqiu6KijqifCXsdfV6VUv4YPAvyw`) | Its fallback can return other accounts' signals whatever the database rules, and its saves strip new conversation fields. |
-| **Migrations** | `040_company_intelligence.sql` … `045_signal_read_scope.sql` | Applied in the order in §2, not numeric order. |
-
-## 2. Corrected release sequence
-
-**Why 045 goes first.** The earlier plan put 045 after the deploy only to keep Vercel's instant rollback to
-`1d31b02` available. That target is unacceptable, so the reason is gone. Meanwhile, today's production rules let **every
-signed-in user read every account's signals** through the API. In the emulated starting state, the Pact test account
-saw all 19 signals, could read another account's signal by id, and could edit any column of its own consequences. 045 closes
-that, needs only tables that exist today, and works with both the running build and the rollback build. So it goes first.
-
-**Verified on the isolated project**, in one transaction that rolled back. Isolated `public` was unwound to production's
-starting state using each file's own rollback statements, and then the queries the old and rollback builds make with the
-user's session were replayed after each step, as the Pact account's database role:
-
-| State | Own signals | Other accounts' signals | App writes (respond, brief, profile save through trigger, conversation save with new fields) | Edit other consequence columns / link to another signal |
+| | Build | Commit | Who gets it | Model |
 |---|---|---|---|---|
-| **S0: production today** | 5 | **all visible (19)** | all work | **allowed** / denied |
-| **S0 + 045** | 5 | none (0) | all work | denied / denied |
-| **S0 + 045 + 040–044** | 5 | none (0) | all work | denied / denied |
+| **A. Privacy remediation** | `rollback/1d31b02-isolation` (pushed) | **`055c2fe`** | everyone, on the main address | `claude-sonnet-4-5` (until 2026-11-30) |
+| **C. Model continuity** | `release/baseline-sonnet55` (local; push not yet authorized) | **`675d017`** = A + model port | everyone, on the main address | `claude-sonnet-5-5` |
+| **B. Restricted pilot** | `codex/advisor-reliability` (pushed) | the commit adding this file (code = **`b79405e`**) | only accounts listed in `PILOT_ACCOUNT_IDS`, on a separate pilot address | `claude-sonnet-5-5` |
+| Migrations | `045_signal_read_scope.sql`, then `040`–`044` | | all accounts (one database) | |
 
-- **Same end state.** Applying 045 first and then 040–044 reproduces the current catalog exactly: grants, functions, policies, RLS,
-  triggers, indexes, columns, constraints and column grants. One function hash differed only because blank lines were stripped from the test copy; re-created from the unmodified file, it is identical.
-- **Old code tolerates hidden signals.** Its embedded-signal reads are null-safe, which matters for consequences whose signal isn't linked to the same account; 045 reports how many such rows exist.
-- **The rollback build's two fixes are application-level.** It runs the same queries as `1d31b02`, minus the unscoped admin read.
+**Not acceptable at any stage:** `1d31b02`, today's production build. It has the admin-key fallback, and its saves strip new conversation fields.
 
-**Sequence (each step is yours to run; I have done none of them):**
+## Why two builds, not one app with flags
 
-| Step | Action | State afterwards | If it fails |
-|---|---|---|---|
-| 0 | Run `docs/advisor/production-preflight.sql` (read-only; expected values inside). Take a backup and note the time (§3). | unchanged | stop |
-| 1 | Apply **045**. | S0+045, running `1d31b02` (verified compatible). The API-level exposure is closed for everyone. | It runs in one transaction and rolls itself back. Fix and re-run. **Never run its rollback block.** |
-| 2 | Deploy the **rollback build `40da4ed`** to production. Record its deployment id. | S0+045 + rollback build. The fallback leak is closed. | Production stays on `1d31b02` + 045 (verified compatible). Fix and redeploy. |
-| 3 | Apply **040, 041, 042, 043, 044** in that order. | S2 + rollback build (verified compatible). | Each file rolls itself back. The rollback build ignores the new objects. |
-| 4 | Deploy the **candidate**. Smoke test (§7). | S2 + candidate | Instant rollback **only to the step-2 deployment** (`40da4ed`), never further back. Keep every migration and all data. |
+The candidate differs from production in 59 files: refresh, Advisor, workspace API, onboarding, client UI and the
+signal pipeline. Restricting it inside one deployment would mean re-creating today's behaviour behind per-account
+flags in most of those files. That is two applications in one codebase, with a new, untested "flags off" combination.
 
-- **Why the rollback build goes before 040–044:** from step 2 on, Vercel's previous deployment is the safe build, so no accidental instant rollback can reach `1d31b02`.
-- **After 2026-11-30** the rollback build loses its model, so recovery from the candidate means fixing forward.
+Instead:
+- the **main address** runs the existing app (A, then C). It is frozen except for privacy and model fixes;
+- the **pilot address** runs the candidate, which refuses every account not on its list.
 
-## 3. Backup and restore
+Both builds work against the same schema states (verified, §A). The cost: any future privacy fix must go into both until the pilot
+ends. Merging the pilot into the main app is a later, separate decision.
 
-- **Backup:** before step 1, check the dashboard backups (production → Database → Backups), and also take your own dump to a private local file:
-  - `supabase db dump --db-url "<connection string>" -f prod-schema.sql`
-  - `supabase db dump --data-only --db-url "…" -f prod-data.sql`
+## A. Privacy remediation
 
-  You paste the connection string yourself.
-- **Don't restore the whole database** to undo a code or migration problem: that deletes work saved since the backup.
-- **Code problems:** roll the code back (step 4 row).
-- **A failed migration:** it rolls itself back.
-- **Real data damage:** restore into a **new** project first, then copy across the rows written since the backup.
+**What it fixes:**
+1. **045:** a signed-in user can read only signals linked to their own account; user-side writes to links and consequences are closed off.
+2. **The patched build `055c2fe`** (today's app plus three fixes):
+   - **No admin-key fallback:** `/api/signals/raw` returns "could not be loaded" instead of other accounts' signals.
+   - **Conversation saves keep the newer message fields:** turn ids, status and earlier attempts.
+   - **New in this pass:** the backfill no longer copies Google News items into every refreshing account. Those can come from another account's competitor search, and the build doesn't record feed provenance. An account still gets them from its own refresh. **Functional cost:** non-pilot accounts no longer receive shared generic Google News items that another account fetched first.
 
-## 4. Who receives the new behaviour
+**Verified (offline and isolated):**
+- **Role-level SQL replay on the isolated project, rolled back:**
+  - in production's starting state, any signed-in user saw all 19 signals;
+  - with 045, the account saw only its own 5;
+  - the old app's operations all work, and the negative controls are denied;
+  - applying 045 first and then 040–044 gives the identical catalog.
+- **A-build checks** (`scripts/baseline/privacy.test.mjs`, 3 checks, against the real routes):
+  - backfill skips Google News items and items without a URL;
+  - a failed link read returns 503 with no other account's data;
+  - a conversation re-save keeps the newer fields.
+- **Typecheck and build:** pass.
 
-- **There is no existing server-enforced way to limit the candidate to invited accounts:**
-  - plan gating is switched off (`getPlanAccess` gives everyone Pro, and `canAccess` always returns true);
-  - sign-up is open;
-  - invite codes are only recorded (`invite_codes`), and no route checks them.
-- **So the production deployment in step 4 changes behaviour for every account** (about 17 today) and every new sign-up. The changes:
-  - answers come from `claude-sonnet-5-5`;
-  - unsupported figures are reworded or removed;
-  - refresh statuses are truthful;
-  - a manual refresh also collects the company's own sources (paid calls);
-  - onboarding answers go to their proper columns;
-  - Advisor memory protections apply.
+**Done only when both are active and verified in production:** 045 applied, and `055c2fe` deployed. Then smoke-test with two accounts (§Sequence).
 
-  Steps 1–3 also change data access for everyone: signals are visible only through the account's own links.
-- **This is unavoidable before November 30 in any case.** `1d31b02` and the rollback build both stop working for AI features that day.
-- **The smallest practical arrangement (recommended):** one deployment for everyone.
-  - **The pilot cohort** is 3–5 founders you invite, onboard and ask for feedback. Everyone else keeps access and gets the same build without pilot support.
-  - **Sign-up:** public sign-up stays open unless you decide otherwise.
-- **Alternatives, not implemented:**
-  - **Separate pilot address** (candidate on its own Vercel alias; production stays on the rollback build until November 30). This needs a Supabase Auth redirect URL and a Vercel protection setting, and it **is not access control**: anyone who signs in there gets it. It also splits support and still ends on November 30.
-  - **A server-side allowlist** (for example, accounts whose email used an invite code). This is new access-control code and needs your approval first.
+**If the A deployment fails:** stop. Production would then be `1d31b02` + 045, which still has two exposures. That is **not private**:
+- the fallback returns the 20 newest signals of all accounts whenever a link read errors;
+- the blanket backfill links Google News items into any refreshing account.
 
-## 5. Scheduled jobs
+**Remaining after A (your decision):**
+- **Existing links stay readable.** Links the old blanket backfill already created in production stay readable to the accounts that hold them. They can't be told apart from an account's own links, because both carry the same reason text.
+- **Measuring it first:** this read-only query counts items linked to more than one account, the likely spread:
+  `select count(*) from (select signal_id from public.signal_triages t join public.signals s on s.id = t.signal_id where s.url like 'https://news.google.com/%' group by signal_id having count(*) > 1) x;`
+- **Removing them** is a production data change, and I haven't prepared one.
 
-- **Today:** Vercel Cron calls `/api/cron/ingest` and `/api/cron/brief` with GET, and both builds accept only POST. A GET with Vercel Cron's headers and the correct secret gets **405** on the candidate and runs nothing. Production holds 0 briefs, which fits.
-- **During the pilot:** the jobs stay inert. No schedule or job is changed. The pilot is **manual refresh only**.
-- **Testing done:** the handler was exercised only with **scripted providers** (see §6). Turning scheduling on is a separate, approved change with one evaluated real run.
+## B. Restricted intelligence pilot
 
-## 6. Evidence, by source
+- **Enforcement (server-side, fail closed):**
+  - `src/lib/supabase/server.ts` wraps `getUser()`, which every signed-in page and API route uses. An account not in `PILOT_ACCOUNT_IDS` is treated as not signed in.
+  - Paid operations are covered too: Advisor answers, manual refresh, company research.
+  - No list, an empty list or a single malformed entry admits nobody.
+- **New sign-ups are refused on the pilot address,** so a new account is never enrolled.
+- **A refused account sees an explanation page** (`/pilot-access`). That page holds no account data.
+- **Existing customers** are untouched: they keep using the main address.
+- **Checks** (`scripts/advisor/pilot-access.test.mjs`, 5 checks, real `createClient` and real routes):
+  - a non-listed account gets 401 or 403 from 9 operations, with no data, no model call and no database write;
+  - a listed account passes;
+  - the list fails closed;
+  - sign-up is refused;
+  - the app page sends a refused account to the explanation page.
+- **Staging on the isolated project, with the real Supabase session of the signed-in Pact test account:**
+  - **Not listed:** `/api/pilot/access` → 403 with the explanation; workspace, sessions, refresh and research → 401; the page shows the explanation.
+  - **Listed:** access, workspace and sessions → 200; the full pilot app loads.
+  - **Defect found and fixed in this staging run:** a refused account first hit a redirect loop through `/login` (middleware) before the explanation page existed. Data was never exposed.
+- **All candidate tests:** 150 + 43 offline tests pass; build passes.
+- **Cohort:** 3–5 founders you choose. Their account ids go in `PILOT_ACCOUNT_IDS` on the pilot deployment only.
+- **Pilot hosting** needs a deployment target other than production, which needs your settings:
+  - **either** a Vercel preview of this branch with branch-scoped Preview environment variables (production Supabase and Anthropic keys, `PILOT_ACCOUNT_IDS`; leave `CRON_SECRET` unset), plus a stable alias;
+  - **or** a second Vercel project.
 
-| Source | What it covers | Not evidence of |
+  Either way, deployment protection stays off for that address only if you want founders to reach it without Vercel login. The allowlist is the access control.
+
+## C. Model continuity (non-pilot accounts)
+
+- **The port:** `675d017` moves the six model callers of the existing app (Advisor, `callClaude`, assessment, report, strategies, digital twin) to `claude-sonnet-5-5`. It uses the settings already accepted in real calls on 2026-11-07: no up-front thinking, explicit effort, tokenizer-adjusted caps, text read by block, refusals handled.
+- **Checks:** `scripts/baseline/model.test.mjs`, 5 checks, real routes with a scripted SDK:
+  - the request settings for each caller;
+  - a thinking block before the text;
+  - a refusal returns 422, or an empty digital-twin summary, or an Advisor error with no memory write;
+  - no reference to a retired model remains.
+
+  The existing 42 client tests still pass; typecheck and build pass.
+- **What this doesn't cover:** the existing app's own prompts have not been re-run on Sonnet 5.5 for quality. No paid evaluation was authorized.
+- **Recovery beyond November 30:**
+  1. Once C is deployed, the previous C deployment is always the instant-rollback target. It keeps working after November 30, because its model is supported.
+  2. If C itself misbehaves before November 30, roll back to A (`055c2fe`, still private). After November 30, roll back to the last good C deployment instead.
+  3. If the pilot build fails, take the pilot address down or roll it back; nobody loses access, because everyone has the main address on C.
+  4. If Sonnet 5.5 has a provider outage, AI features show their existing "unavailable" errors while everything else works. There is no automatic switch to another model, because that would be an untested request shape.
+
+## Minimal production sequence (each step is yours; none has been done)
+
+| # | Action | Done when |
 |---|---|---|
-| **Real provider** (Sonnet 5.5) | 9 Advisor answers (2026-11-07, on `5989634`); one browser refresh on Pact (15:14 UTC, `d88bc19`, partial: 1 of 6 gate batches unreadable); one structured gate call on 25 real RSS items (`05dcf8b`, schema-valid, 2 survivors, 1 weak) | the current number-rewriting rule; any scheduled run |
-| **Replay** (captured real answers, scripted provider, real route, client, save and reload) | the final rewriting on the nine answers (only the dog-walker "say, 15%" changes, to "Dropping to a different rate"); five targeted injections into real answers (§8) | how the model would answer again |
-| **Scripted** (real handler and isolated database, scripted model and network) | the scheduled handler: authorization, rotation, time-budget deferral, cost ceiling, partial-failure storage | live collection. **Pact's latest status on the isolated project comes from a scripted scheduled run, not a completed live refresh.** |
-| **Role-level SQL replay** (isolated, rolled back) | old and rollback builds' database access in each schema state (§2) | browser rendering of the old build |
+| 0 | Read-only preflight (`docs/advisor/production-preflight.sql`, expected values inside), then a backup | hashes match; backup time noted |
+| 1 | Apply **045** | its own verification passes |
+| 2 | Deploy **A (`055c2fe`)** to production; record the deployment id | Two accounts each see only their own signals. A conversation saved before and after shows the same history. **Remediation A is complete only now.** |
+| 3 | Apply **040–044** | each file's checks pass; the main app still works (A is compatible) |
+| 4 | Deploy **C (`675d017`)** to production | one Advisor answer and one strategy generation succeed; rollback target = step-2 deployment |
+| 5 | Deploy **B** to the pilot address with `PILOT_ACCOUNT_IDS` set | a listed account loads the app; a non-listed account gets the explanation page |
 
-## 7. Pilot cohort, founder test and questions
+Steps 4–5 must be finished before 2026-11-30. Production deploys from `main`, so A and C reach production by merging, or by a CLI deploy of the exact commit.
 
-- **Cohort:** 3–5 invited founders you know personally, one company each, for 2–3 weeks. Pick different business types, for example subscription consumer, two-sided marketplace and small B2B service.
-- **In scope:** company details, **manual** "Check for updates", signals with what was checked, the Advisor, decisions.
-- **Out of scope:** scheduled monitoring, regulator coverage, email briefs.
-- **Your smoke test after step 4:**
-  1. Sign in and open Signals; the status line appears.
-  2. Ask the Advisor a question containing one of your own numbers. It should keep your number and add none.
-  3. Run one "Check for updates"; the status should be truthful.
-  4. Reload; the conversation and status should still be there.
-  5. Sign in to a second account and confirm it sees none of the first account's signals.
-- **Founder test:**
-  1. Fill in what you sell, who buys, how you make money, and one or two limits.
-  2. Check for updates once and read what was and wasn't checked.
-  3. Open one signal. Is the reason specific and correct?
-  4. Ask about a real decision this month, including one number you know.
-  5. Record the decision with what you'll watch for.
-- **Questions after week one:**
-  1. Which item told you something new, and which was wrong or irrelevant?
-  2. Did any answer state something about your business or market that you hadn't said and isn't true?
-  3. When it said it couldn't give a number or didn't know an effect, was that useful?
-  4. Did you change, delay or confirm a decision because of it?
-  5. What would you need before relying on it weekly?
+## Evidence, by source
 
-## 8. How unsupported figures are handled now (final rule, replay-verified)
+| Source | Covers |
+|---|---|
+| **Real provider** | 9 Advisor answers; 1 browser refresh (partial); 1 structured gate call (2 survivors, 1 weak). All on the candidate's request settings, before the current number rewriting. |
+| **Replay** | the final number rewriting, on the nine captured answers and five targeted injections |
+| **Scripted** | the scheduled handler (inert in production: GET → 405). Pact's latest isolated status comes from a scripted run, not a live refresh. |
+| **Role-level SQL replay** (isolated, rolled back) | A/C database compatibility in every schema state |
+| **Offline checks** | access boundary (B), privacy fixes (A), model port (C) |
 
-- **An option the answer proposes** ("lower it to 15%", "dropping to, say, 15%", "charge £20", an illustration): the option stays, its size goes, and no direction is added.
-- **A statement of fact or forecast:**
-  - **Supported direction:** the qualitative claim stays only if what you supplied states that direction for that kind of quantity. "A 15% rise in packaging costs…" becomes "A rise in packaging costs…" only when a supplied signal says prices are rising.
-  - **Share of people:** this becomes an explicit unknown. "8% of your buyers will leave" becomes "I don't know whether any of your buyers would leave", never "some of your buyers will leave".
-  - **Otherwise** the clause goes. A caveat clause after it is kept, and a follow-on that only acted on it ("Plan for that.") goes too.
-  - **The closing note** says the effect is unknown.
-- **Replay checks on real answers:** the whole delivered answer must equal the captured text with only the injected sentence changed as expected, so the surrounding recommendation and caveats are untouched. Covered:
-  - a customer-loss forecast;
-  - a benchmark from nowhere;
-  - a figure with the wrong period;
-  - an unsupported rise followed by a caveat;
-  - a forecast plus a dependent step.
+## Remaining material limitations
 
-## 9. Remaining material limitations
+- **Unsupported qualitative claims** aren't detected, and the number rewriting is rule-based.
+- **Evaluation coverage is small**, and the existing app's prompts haven't been quality-checked on Sonnet 5.5.
+- **Existing blanket-backfill links** remain readable until you decide on them (§A).
+- **Non-pilot accounts lose some shared Google News items** (§A).
+- **No scheduled monitoring, regulator coverage or email briefs.**
+- **Two builds must receive any future privacy fix** until the pilot ends.
 
-- **Unsupported qualitative claims aren't detected.** Example: "typically higher-ticket items". Only numbers are checked.
-- **The rewriting is rule-based.** It can't judge whether the remaining advice is still sound, and an unusual sentence shape may be removed rather than reworded.
-- **Evaluation coverage is small:**
-  - 9 real Advisor answers (raw: 7 clean, 1 with a qualitative claim, 1 partial);
-  - 1 real gate batch, with 1 of 2 survivors weak;
-  - 1 real browser refresh;
-  - no evaluation of thinking or effort settings.
-- **Assessment calls aren't schema-constrained;** a parse failure shows as "partial".
-- **No scheduled monitoring, no regulator coverage, no email briefs.**
-- **The rollback build** is privacy-safe but works only until November 30.
-- **Every account receives the candidate** (§4); there is no technical pilot fence.
+## Approval needed
 
-## 10. Authorization needed to stage or release
-
-1. **Push both branches to GitHub:** `codex/advisor-reliability` and `rollback/1d31b02-isolation`. Production deploys from the repository.
-2. **Run steps 0–4 on production, in order.** This means applying 045, then 040–044, and two production deployments (rollback build, then candidate), all before 2026-11-30.
-3. **Accept** that the candidate reaches all accounts, or choose an alternative in §4 instead (each needs its own approval).
-4. **Choose** the 3–5 founders. Sign-up stays open unless you say otherwise.
+1. **Push** `release/baseline-sonnet55` (C) for review. Only A and B were authorized.
+2. **Production release:** steps 0–4 in order (045, A, 040–044, C), before 2026-11-30.
+3. **Pilot hosting:** choose a preview alias or a second project, and set its environment variables, including the 3–5 `PILOT_ACCOUNT_IDS`. Then deploy B there (step 5).
+4. **Historical links:** decide whether to measure and clean up links created by the old blanket backfill (§A).

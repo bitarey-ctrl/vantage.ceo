@@ -1802,3 +1802,19 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; lint clean; 145 + 43 = 188 offline tests pass; build passes.
 **Pending your action:** push both branches; steps 0–4 in `PILOT_RELEASE_PACKAGE.md` §2 before 2026-11-30; accept all-account rollout or choose an alternative; choose the cohort.
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-08 — Restricted pilot, privacy remediation and model continuity split (no paid calls; nothing deployed or applied)
+**New files:** `src/lib/pilot/access.ts`; `src/app/api/pilot/access/route.ts`; `src/app/pilot-access/route.ts`; `scripts/advisor/pilot-access.test.mjs`; on the baseline branches: `scripts/baseline/{privacy,model}.test.mjs` (+ test helpers), `src/lib/ai/model.ts`.
+**Files changed:**
+- **Candidate (`codex/advisor-reliability`):** `src/lib/supabase/server.ts` (fail-closed allowlist at `getUser`); `src/app/api/auth/signup/route.ts` (no sign-ups on the pilot build); `src/lib/workspace/page.ts`; `src/app/(dashboard)/layout.tsx`; `public/comparison/client.js` (refusal message); `vercel.json` (branch auto-deploys off); `scripts/isolated/with-isolated-env.mjs`.
+- **A (`rollback/1d31b02-isolation`, `055c2fe`):** `src/lib/signal-linking/backfill.ts` (no blanket linking of Google News items); `vercel.json`.
+- **C (`release/baseline-sonnet55`, `675d017`):** model port in `src/lib/ai/claude.ts`, `src/app/api/advisor/chat/route.ts` (protected; earlier grant for the model switch), and the assessment, report, strategies and digital-twin routes.
+**What was done:**
+- **Architecture:** two builds (existing app on the main address, candidate on a pilot address) instead of per-account flags across 59 files.
+- **Pilot allowlist:** server-side, fail closed, including paid operations. Verified offline (5 checks) and in staging on the isolated project with a real session, refused and allowed. A redirect-loop defect was found and fixed.
+- **Privacy remediation:** completed with the backfill fix. A residual issue, existing blanket-backfill links, is reported for decision.
+- **Model continuity:** the existing app moved to Sonnet 5.5, with offline checks; recovery after November 30 is documented.
+- **Push:** the two authorized branches went to GitHub with auto-deploy disabled; Vercel created no deployments.
+**Verification:** candidate 150 + 43 tests, A/C 8 + 42 tests, all pass; typecheck clean; all three builds pass.
+**Pending your action:** see `docs/advisor/PILOT_RELEASE_PACKAGE.md` "Approval needed".
+**Status:** two branches pushed for review; nothing deployed; no production migration applied.
