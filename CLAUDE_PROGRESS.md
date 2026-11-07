@@ -1753,3 +1753,13 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; lint clean on changed files; 73 + 37 + 43 tests pass; build passes; browser refresh with a zero-call ledger shows the same failed status as the stored run (0 calls).
 **Pending your action:** approve or reject the targeted retest (18 calls, $1.00 ceiling) and choose its model; approve Sonnet 5.5 migration work; production migrations remain yours.
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-07 — Sonnet 5.5 migration, stronger numeric support, targeted retest (approved 18 calls / $1.00)
+**New files:** `src/lib/ai/model.ts`; `docs/advisor/SONNET55_RETEST_2026-11-07.md`.
+**Files changed:** `src/app/api/advisor/chat/route.ts` (authorized); `src/lib/ai/{claude,provider-budget}.ts`; `src/lib/advisor/{stream,numbers}.ts`; `src/app/api/{strategies/generate,assessment/generate,report/generate,digital-twin}/route.ts`; `scripts/advisor/numbers.test.mjs`; harness. No new protected-file permissions used.
+**What was done:** all six model callers moved to `claude-sonnet-5-5` per the official guide (between_tools, explicit effort, caps ×1.3, text by block type, refusals, served model and pricing in the ledger). Numbers supported only by matching value/unit/period/meaning or a recomputed calculation; illustrations cannot become targets; unsupported figures replaced in the stream.
+**Real-model results:** 9 Advisor answers, all served by claude-sonnet-5-5 — 8 reasoning passes, 1 partial (unlabelled "15%", removed by the gate); the gate wrongly removed supported figures in 2 answers (fixed in d88bc19, verified offline by replay only). Browser refresh: partial (1 of 6 gate batches unparseable), intended reassessments ran (Keurig → watch with trigger), browser and stored status agree.
+**Spend:** this budget 17 calls, $0.2491 recorded, no unknown usage; cumulative 64 calls, $1.7014 recorded, $2.1998 conservative.
+**Verification:** tsc clean; 162 offline tests pass; build passes.
+**Pending your action:** deploy decision before 2026-11-30 (model retirement); production migrations; structured outputs for gate JSON (not built).
+**Status:** LOCAL ONLY. Not pushed or deployed.
