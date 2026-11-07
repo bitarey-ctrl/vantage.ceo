@@ -1,3 +1,4 @@
+import { SONNET_MODEL, sonnetSettings, tokenizerCap } from "@/lib/ai/model";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
@@ -146,8 +147,9 @@ export async function GET() {
           .join("\n");
 
         const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-5",
-          max_tokens: 150,
+          model: SONNET_MODEL,
+          max_tokens: tokenizerCap(150),
+          ...sonnetSettings("high"),
           messages: [
             {
               role: "user",
@@ -156,7 +158,8 @@ export async function GET() {
           ],
         });
 
-        const text = response.content
+        // A refusal leaves the summary empty (no text), shown as not available.
+        const text = response.stop_reason === "refusal" ? "" : response.content
           .filter((b) => b.type === "text")
           .map((b) => (b as { type: "text"; text: string }).text)
           .join("")

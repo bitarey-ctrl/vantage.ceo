@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import { decisiveLimitsBlock, finalCheckBlock } from "@/lib/company-context/constraints";
-import { traceNumbers, unsupportedFiguresNote } from "@/lib/advisor/numbers";
+import { createNumberGate } from "@/lib/advisor/numbers";
+import { sonnetSettings } from "@/lib/ai/model";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { isMemoryField } from "@/lib/advisor/apply-memory";
@@ -154,7 +155,7 @@ Your role: Be a direct, honest advisor for THIS business. Reference their actual
 - Respect stated constraints. If the best answer breaks one, say so and give the best option inside it.
 - No statistics, benchmarks, thresholds, deadlines or legal, regulatory or provider claims unless they are in their context or signals — then say where they came from. No invented urgency. No certain predictions.
 - Every number you write (a percentage, an amount, a multiple, a range) must come from their details, the SIGNALS, or a calculation you show in the same sentence from their numbers. Never state commission rates, fee levels, price points, conversion rates or "typical" percentages from general knowledge, and do not swap one invented number for another.
-- When there is no supported number, give the advice in words and name the number they should measure or tell you. If a made-up figure genuinely helps to explain a mechanism, start that sentence with "Illustration, not a benchmark:" and keep it to one.
+- When there is no supported number, give the advice in words and name the number they should measure or tell you. If a made-up figure genuinely helps to explain a mechanism, start that sentence with "Illustration, not a benchmark:" and keep it to one. An illustration is never the price, budget, target or success threshold you recommend; keep the uncertainty next to the recommendation.
 - When a missing fact would change the answer, give the answer for each likely case in a sentence or two, then ask ONE focused question. Never recommend a commitment that rests on an assumption you made up.
 
 ## SELF-CHECK BEFORE ANSWERING
@@ -299,14 +300,16 @@ ${finalCheckBlock(company)}`.trimEnd();
           const messageStream = anthropic.messages.stream({
             model: ADVISOR_MODEL,
             max_tokens: maxTokens,
+            // No up-front thinking (as on 4.5), chat effort; the stream relays text events only.
+            ...sonnetSettings("medium"),
             system: systemPrompt,
             messages: messages.map((m) => ({ role: m.role, content: m.content })),
           }, { signal: request.signal });
           // Numbers in the answer must trace to what the model was given: their details, the signals and their own
           // messages (not the instructions above, whose examples would otherwise count as "supplied").
           const supplied = [companyContextBlock(company), signalContext.text, decisionsText, strategiesText, consequencesText, ...messages.filter((m) => m.role === "user").map((m) => m.content)].join("\n");
-          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply, onUsage: (u) => recordProviderUsage(slot, u),
-            afterReply: (reply) => unsupportedFiguresNote(traceNumbers(reply.split("[[VANTAGE_MEMORY]]")[0], supplied).unsupported) });
+          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply, onUsage: (u, model) => recordProviderUsage(slot, u, model),
+            numberGate: createNumberGate(supplied) });
         } finally {
           try { controller.close(); } catch { /* already closed */ }
         }

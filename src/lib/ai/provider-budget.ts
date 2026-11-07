@@ -10,7 +10,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
-interface Call { at: string; kind: string; model: string; worstUsd?: number; usage?: Record<string, unknown>; failure?: { kind: string; cause: string; at: string } }
+interface Call { at: string; kind: string; model: string; servedModel?: string; worstUsd?: number; usage?: Record<string, unknown>; failure?: { kind: string; cause: string; at: string } }
 interface Ledger {
   limit: number; calls: Call[];
   dollarLimit?: number;
@@ -37,7 +37,9 @@ export function usageCost(l: Pick<Ledger, 'prices' | 'searchUsd'>, model: string
   const [pin, pout] = l.prices?.[model] ?? [0, 0];
   const n = (k: string) => (typeof usage[k] === 'number' ? (usage[k] as number) : 0);
   const searches = ((usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests as number | undefined) ?? 0;
-  return ((n('input_tokens') + n('cache_creation_input_tokens') * 1.25 + n('cache_read_input_tokens') * 0.1) * pin + n('output_tokens') * pout) / 1e6 + searches * (l.searchUsd ?? 0.01);
+  // Thinking tokens are billed as output and included in output_tokens. Cache reads: 0.05x on Sonnet 5.5 / Opus 5.5.
+  const cacheRead = /^claude-(sonnet|opus)-5-5/.test(model) ? 0.05 : 0.1;
+  return ((n('input_tokens') + n('cache_creation_input_tokens') * 1.25 + n('cache_read_input_tokens') * cacheRead) * pin + n('output_tokens') * pout) / 1e6 + searches * (l.searchUsd ?? 0.01);
 }
 
 /** Money already committed: recorded usage, or the reserved worst case for calls without usage. */
@@ -69,11 +71,13 @@ export function reserveProviderCall(kind: string, model: string, estimate?: Call
   return l.calls.length - 1;
 }
 
-export function recordProviderUsage(slot: number | null, usage: unknown): void {
+export function recordProviderUsage(slot: number | null, usage: unknown, servedModel?: string): void {
   if (slot === null) return;
   const l = load();
   if (!l || !l.calls[slot]) return;
   l.calls[slot].usage = (usage ?? {}) as Record<string, unknown>;
+  // The model that actually answered (the migration check asserts it).
+  if (servedModel) l.calls[slot].servedModel = servedModel;
   writeFileSync(file()!, JSON.stringify(l, null, 1), { mode: 0o600 });
 }
 

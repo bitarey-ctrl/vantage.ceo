@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { ModelRefusalError, SONNET_MODEL, sonnetSettings, tokenizerCap } from "./model";
 import { recordProviderFailure, recordProviderUsage, reserveProviderCall } from "./provider-budget";
 import { classifyFailure, failureCause } from "@/lib/company-context/run-status";
 
@@ -8,7 +9,7 @@ const anthropic = new Anthropic({
   ...(process.env.ISOLATED_TEST === "1" ? { maxRetries: 0 } : {}),
 });
 
-export const CLAUDE_MODEL = "claude-sonnet-4-5";
+export const CLAUDE_MODEL = SONNET_MODEL;
 
 interface ClaudeOptions {
   maxTokens?: number;
@@ -26,12 +27,15 @@ export async function callClaude<T>(
 ): Promise<T> {
   const { maxTokens = 2048 } = options;
 
-  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL, { inputBytes: Buffer.byteLength(prompt, "utf8"), maxTokens });
+  // Same room for the same text under the new tokenizer; the cap also bounds the worst-case reservation.
+  const cap = tokenizerCap(maxTokens);
+  const slot = reserveProviderCall("callClaude", CLAUDE_MODEL, { inputBytes: Buffer.byteLength(prompt, "utf8"), maxTokens: cap });
   let response: Anthropic.Message;
   try {
     response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
+      max_tokens: cap,
+      ...sonnetSettings("high"),
       messages: [
         {
           role: "user",
@@ -45,8 +49,8 @@ export async function callClaude<T>(
     throw err;
   }
 
-  recordProviderUsage(slot, response.usage);
-  if (response.stop_reason === "refusal") throw new Error("The model declined this request (refusal).");
+  recordProviderUsage(slot, response.usage, response.model);
+  if (response.stop_reason === "refusal") throw new ModelRefusalError();
   // Read text blocks by type: newer models can start a response with thinking blocks.
   const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
   if (!textBlocks.length) {

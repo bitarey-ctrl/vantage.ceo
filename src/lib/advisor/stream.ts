@@ -13,11 +13,12 @@
  * There is no "[DONE]" sentinel: it was sent even after a token-limit cut-off, which is how truncated answers were
  * saved as complete.
  */
+import { SONNET_MODEL, tokenizerCap } from '@/lib/ai/model';
 import Anthropic from '@anthropic-ai/sdk';
 
-export const ADVISOR_MODEL = 'claude-sonnet-4-5';
+export const ADVISOR_MODEL = SONNET_MODEL;
 /** Output ceiling. The prompt asks for short answers well inside this; hitting it is reported, never hidden. */
-export const ADVISOR_MAX_TOKENS = 1000;
+export const ADVISOR_MAX_TOKENS = tokenizerCap(1000); // 1300: the same room as 1000 tokens on the old tokenizer
 /** The output cap actually used. A lower cap is honoured only in the isolated test environment (length-limit test). */
 export function advisorMaxTokens(requested?: string | null): number {
   const test = Number(requested ?? process.env.ADVISOR_MAX_TOKENS_TEST);
@@ -91,23 +92,30 @@ export interface MemoryReport { ok: boolean; [k: string]: unknown }
 export async function relayAdvisorStream(opts: {
   stream: ProviderStream; send: Send; clientGone: () => boolean;
   applyFromReply: (reply: string) => Promise<MemoryReport | null>;
-  onUsage?: (usage: unknown) => void;
-  /** Text appended to a finished answer before it ends (e.g. a note on unsupported figures). */
-  afterReply?: (reply: string) => string | null;
+  onUsage?: (usage: unknown, model?: string) => void;
+  /**
+   * Number enforcement (advisor/numbers.ts): text passes sentence by sentence, unsupported figures are replaced in place,
+   * and a closing note says what was removed. Applied to partial answers too, before an error or length stop.
+   */
+  numberGate?: { push(text: string): string; flush(): string; summary(): string | null; removed(): { text: string; kind: string; why?: string }[] };
 }): Promise<{ status: EndStatus | 'error' | 'disconnected'; memory: 'applied' | 'none' | 'skipped' | 'failed' }> {
   const { stream, send, clientGone, applyFromReply } = opts;
   const filter = createMarkerFilter();
+  const gate = opts.numberGate;
   try {
-    stream.on('text', (text) => { const visible = filter.push(text); if (visible) send({ delta: visible }); });
+    const pass = (t: string) => (gate ? gate.push(t) : t);
+    stream.on('text', (text) => { const visible = pass(filter.push(text)); if (visible) send({ delta: visible }); });
     const final = await stream.finalMessage();
-    opts.onUsage?.((final as { usage?: unknown }).usage);
-    const tail = filter.flush();
+    opts.onUsage?.((final as { usage?: unknown }).usage, (final as { model?: string }).model);
+    const tail = pass(filter.flush()) + (gate ? gate.flush() : '');
     if (tail) send({ delta: tail });
     const status = endStatus(final.stop_reason);
     const replyText = final.content.map((b) => (b.type === 'text' ? b.text ?? '' : '')).join('');
     let memory: 'applied' | 'none' | 'skipped' | 'failed' = 'none';
-    const note = status === 'complete' || status === 'max_tokens' ? opts.afterReply?.(replyText) ?? null : null;
+    const note = gate && (status === 'complete' || status === 'max_tokens') ? gate.summary() : null;
     if (note) send({ delta: note });
+    // For logs and grading (the browser ignores it): which figures were removed and why.
+    if (gate && gate.removed().length) send({ numbers: { removed: gate.removed().map(({ text, kind, why }) => ({ text, kind, why })) } });
     if (clientGone()) return { status: 'disconnected', memory: replyText.includes(MEMORY_TAG) ? 'skipped' : 'none' };
     if (status === 'complete') {
       try {
@@ -123,6 +131,8 @@ export async function relayAdvisorStream(opts: {
     return { status, memory };
   } catch (err) {
     if (clientGone()) return { status: 'disconnected', memory: 'none' };
+    // Keep the partial answer: release what the number gate still holds (checked) before the error.
+    if (gate) { const held = gate.flush(); if (held) send({ delta: held }); }
     const safe = safeError(err);
     console.error('[advisor] Stream error:', safe.kind);
     send({ error: safe });

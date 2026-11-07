@@ -1,10 +1,11 @@
+import { SONNET_MODEL, sonnetSettings, tokenizerCap } from "@/lib/ai/model";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { logEvent, EVENTS } from "@/lib/analytics/log-event";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = "claude-sonnet-4-5";
+const MODEL = SONNET_MODEL;
 
 interface ReportJson {
   growth_score: number;
@@ -61,7 +62,8 @@ export async function POST() {
 
     const message = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 600,
+      max_tokens: tokenizerCap(600),
+      ...sonnetSettings("high"),
       messages: [
         {
           role: "user",
@@ -82,6 +84,7 @@ Return JSON only — no markdown, no explanation, no code fences:
       ],
     });
 
+    if (message.stop_reason === "refusal") return NextResponse.json({ error: "The AI declined this request. Nothing was saved." }, { status: 422 });
     const raw = message.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
