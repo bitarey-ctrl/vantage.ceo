@@ -94,3 +94,22 @@ test('new sign-ups are never enrolled: the pilot build creates no accounts', asy
   assert.equal(res.status, 403);
   assert.equal(writes(), 0);
 });
+
+test('the app page sends a refused account to the explanation page (no redirect loop through /login), and a signed-out visitor to /login', async () => {
+  process.env.PILOT_ACCOUNT_IDS = PILOT;
+  const { workspaceResponse } = await import('../../src/lib/workspace/page.ts');
+  const page = await import('../../src/app/pilot-access/route.ts');
+  db = seed();
+  signedIn = OTHER;
+  let res = await workspaceResponse(new Request('http://localhost/app'));
+  assert.equal(new URL(res.headers.get('location')).pathname, '/pilot-access');
+  signedIn = null;
+  res = await workspaceResponse(new Request('http://localhost/app'));
+  assert.equal(new URL(res.headers.get('location')).pathname, '/login');
+  signedIn = PILOT;
+  res = await workspaceResponse(new Request('http://localhost/app'));
+  assert.equal(res.status, 200);
+  const why = page.GET();
+  assert.equal(why.status, 403);
+  assert.doesNotMatch(await why.text(), /Pilot Co|Coffee|secret/);
+});

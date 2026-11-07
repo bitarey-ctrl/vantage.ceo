@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { PilotAccessError } from '@/lib/pilot/access';
 
 /** Bump when the client assets change so browsers fetch the matching files. */
 export const ASSET_VERSION = '20261105-advisor';
@@ -11,6 +12,8 @@ export const ASSET_VERSION = '20261105-advisor';
 export async function workspaceResponse(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
+  // An account outside the pilot is signed in but refused: explain, rather than loop through /login.
+  if (error instanceof PilotAccessError) return NextResponse.redirect(new URL('/pilot-access', request.url));
   if (error || !user) return NextResponse.redirect(new URL('/login', request.url));
   const { data: profile } = await supabase.from('profiles').select('onboarding_completed').eq('id', user.id).maybeSingle();
   if (profile && !profile.onboarding_completed) return NextResponse.redirect(new URL('/onboarding', request.url));

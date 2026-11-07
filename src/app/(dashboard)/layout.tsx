@@ -53,6 +53,8 @@ export default function DashboardLayout({
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      // Restricted pilot build: a signed-in account outside the pilot gets an explanation (the APIs refuse it anyway).
+      if ((await fetch("/api/pilot/access", { cache: "no-store" }).catch(() => null))?.status === 403) { window.location.replace("/pilot-access"); return; }
 
       if (!user) {
         router.push("/login");
