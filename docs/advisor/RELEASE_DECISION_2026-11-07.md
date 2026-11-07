@@ -1,5 +1,7 @@
 # Release-candidate verification and release decision — 2026-11-07
 
+> **Superseded in part (2026-11-07):** the migration sequence and rollback plan in §4 are replaced by `PILOT_RELEASE_PACKAGE.md` §2–3. `1d31b02` is not an acceptable rollback target, and 045 now goes first. The number-rewriting description in §1 is replaced by `PILOT_RELEASE_PACKAGE.md` §8.
+
 **Final candidate:** `codex/advisor-reliability` at **`79fbc2d`**. **Migrations:** `040 → 045`.
 Nothing deployed, no production migration applied, production data untouched. Model configuration unchanged
 (`claude-sonnet-5-5`, `thinking: between_tools`, effort medium for chat and high for structured calls).

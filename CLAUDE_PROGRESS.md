@@ -1791,3 +1791,14 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; lint clean on changed files; 139 + 43 = 182 offline tests pass; build passes; candidate server on 3301 (no spend possible).
 **Pending your action:** release approval (preflight, backup, 040–044, deploy, 045, before 2026-11-30); push the rollback branch and create its preview deployment; choose the cohort and decide on public sign-up.
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-07 — Release sequence, claim rewriting and pilot boundary corrected (no paid calls; nothing deployed or applied)
+**Files changed:** `src/lib/advisor/numbers.ts` (clause-aware rewriting); `scripts/advisor/{numbers,replay-retest}.test.mjs` (targeted replay checks); `docs/advisor/PILOT_RELEASE_PACKAGE.md` (rewritten); `docs/advisor/RELEASE_DECISION_2026-11-07.md` (superseded note).
+**What was done:**
+- **Sequence:** 045 now goes first. Today's production rules expose every account's signals to any signed-in user, and 045 works with both the running and the rollback build. Verified on the isolated project in one rolled-back transaction that unwound to production's starting state and replayed the old/rollback builds' user-session queries after each step. Applying 045 first and then 040–044 ends in an identical catalog.
+- **Rollback:** `1d31b02` excluded at every stage. Safe rollback is `40da4ed` (`rollback/1d31b02-isolation`).
+- **Claim rewriting:** options lose only their size. Propositions stay only with a supplied direction; otherwise they are removed or stated as unknown ("8% of your buyers will leave" becomes "I don't know whether any of your buyers would leave"). Caveats are kept and dependent follow-ons removed.
+- **Pilot boundary:** no existing server-enforced control restricts the candidate to invited accounts (plan gating off, invite codes only recorded), so deploying changes behaviour for all accounts. Alternatives are listed, not implemented.
+**Verification:** tsc clean; lint clean; 145 + 43 = 188 offline tests pass; build passes.
+**Pending your action:** push both branches; steps 0–4 in `PILOT_RELEASE_PACKAGE.md` §2 before 2026-11-30; accept all-account rollout or choose an alternative; choose the cohort.
+**Status:** LOCAL ONLY. Not pushed or deployed.
