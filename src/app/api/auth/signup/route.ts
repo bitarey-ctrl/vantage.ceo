@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { claimInviteCode, normalizeInviteCode, releaseInviteCode } from "@/lib/invites";
 import { ensureProfileExists } from "@/lib/auth/ensure-profile";
+import { PILOT_BUILD } from "@/lib/pilot/access";
 
 interface SignupBody {
   email?: string;
@@ -39,6 +40,9 @@ interface AdminUser {
  * creation fails, so a failed signup never silently burns one.
  */
 export async function POST(request: NextRequest) {
+  // Restricted pilot build: new accounts are created on the main VANTAGE address, never here, so a new sign-up is
+  // never enrolled in the pilot.
+  if (PILOT_BUILD) return NextResponse.json({ error: "New accounts can't be created on the pilot address. Sign up on the main VANTAGE site instead." }, { status: 403 });
   // Hoisted so the outer catch can put a claimed code back if anything
   // throws unexpectedly between the claim and the account being created.
   let adminClient: Awaited<ReturnType<typeof createAdminClient>> | null = null;

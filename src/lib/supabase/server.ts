@@ -1,11 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { guardUserResult } from "@/lib/pilot/access";
 
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient(
+  const client = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -25,6 +26,11 @@ export async function createClient() {
       },
     }
   );
+  // Restricted pilot: every signed-in route reads its user here, so accounts outside the pilot are refused on the
+  // server (see @/lib/pilot/access).
+  const getUser = client.auth.getUser.bind(client.auth);
+  client.auth.getUser = (async (jwt?: string) => guardUserResult(await getUser(jwt))) as typeof client.auth.getUser;
+  return client;
 }
 
 /**
