@@ -23,7 +23,7 @@ const DOLLARS = { advisor: 0.5, candidate: 2.0, combined: 2.5 };
 const MAX_COST = { advisor: 0.06, research: 0.7, gate: 0.12, assessment: 0.18, analysis: 0.1 };
 const NEED = { candidateBeforeReasoning: 14, reasoning: 12 };
 // $ per million input/output tokens — official prices checked 2026-11-05 (platform.claude.com/docs/en/about-claude/pricing).
-const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-opus-5-5': [4, 20] };
+const PRICES = { 'claude-sonnet-4-5': [3, 15], 'claude-sonnet-5-5': [2, 10], 'claude-opus-5-5': [4, 20] };
 const SEARCH_PRICE = 0.01; // $ per web search request
 
 const PLAN = [
@@ -96,7 +96,7 @@ async function addQuestion(who, session, text) {
 }
 async function ask(who, session, turnId, { maxTokens, onFirstDelta, abortAfterFirstDelta } = {}) {
   const messages = (session.messages ?? []).filter((m) => !(m.role === 'assistant' && m.incomplete) && m.content).map(({ role, content }) => ({ role, content }));
-  const ctl = new AbortController(); let text = '', end = null, error = null, memory = null, first = true, aborted = false;
+  const ctl = new AbortController(); let text = '', end = null, error = null, memory = null, numbers = null, first = true, aborted = false;
   try {
     const res = await fetch(base + '/api/advisor/chat', { method: 'POST', signal: ctl.signal, headers: { cookie: S[who].cookie, origin, 'content-type': 'application/json', ...(maxTokens ? { 'x-test-max-tokens': String(maxTokens) } : {}) }, body: JSON.stringify({ messages, turnId, sessionId: session.id }) });
     if (!res.ok) return { text, end, error: { status: res.status, body: await res.text() }, memory };
@@ -105,11 +105,11 @@ async function ask(who, session, turnId, { maxTokens, onFirstDelta, abortAfterFi
       const { done, value } = await reader.read(); buf += done ? dec.decode() : dec.decode(value, { stream: true });
       let i; while ((i = buf.indexOf('\n\n')) !== -1) { const line = buf.slice(0, i); buf = buf.slice(i + 2); if (!line.startsWith('data: ')) continue; const e = JSON.parse(line.slice(6));
         if (e.delta) { text += e.delta; if (first) { first = false; if (onFirstDelta) await onFirstDelta(); if (abortAfterFirstDelta) { aborted = true; ctl.abort(); } } }
-        if (e.end) end = e.end; if (e.error) error = e.error; if (e.memory) memory = e.memory; }
+        if (e.end) end = e.end; if (e.error) error = e.error; if (e.memory) memory = e.memory; if (e.numbers) numbers = e.numbers; }
       if (done) break;
     }
   } catch (err) { if (err.name !== 'AbortError') error = { message: err.message }; }
-  return { text, end, error, memory, aborted };
+  return { text, end, error, memory, numbers, aborted };
 }
 const statusOf = (r) => (r.aborted ? 'cancelled' : r.error ? 'error' : r.end?.status ?? 'transport');
 async function saveAnswer(who, sessionId, turnId, r, prior = null) {
@@ -362,11 +362,16 @@ if (mode === 'regression') {
     const a = await step(`R ${r.id}`, () => ask('R', q.session, q.turnId), MAX_COST.advisor);
     const text = a.text.split('[[VANTAGE_MEMORY]]')[0].trim();
     const company = normaliseCompanyContext(R.id, {}, ctx);
-    const answer = text.split('\n\n*Check before relying on')[0];
+    const answer = text.split('\n\n*I removed ')[0];
     const supplied = `${companyContextBlock(company)}\n${r.question}`;
     const out = { id: r.id, kind: r.kind, rubric: r.rubric, status: statusOf(a), text, error: a.error, check: checkAnswer(answer, company, supplied),
-      numbers: traceNumbers(answer, supplied).claims.map((c) => ({ text: c.text, kind: c.kind })), figuresNoteShown: text.includes('*Check before relying on') };
-    report.regression.push({ ...out, run: runLabel, at: new Date().toISOString() }); saveReport();
+      numbers: traceNumbers(answer, supplied).claims.map((c) => ({ text: c.text, kind: c.kind })), removalNoteShown: text.includes('*I removed ') };
+    const served = ledger().calls.at(-1)?.servedModel ?? null;
+    report.regression.push({ ...out, run: runLabel, at: new Date().toISOString(), servedModel: served, removedFigures: a.numbers?.removed ?? [] }); saveReport();
+    // Real-provider compatibility gate: the first answer must come from the migrated model, and a rejected request
+    // (a 4xx such as an unsupported parameter) stops the run before more is spent.
+    if (process.env.EXPECT_MODEL && out.status === 'complete' && served && !served.startsWith(process.env.EXPECT_MODEL)) { console.error(`STOP: served by ${served}, expected ${process.env.EXPECT_MODEL}`); process.exit(5); }
+    if (a.error?.kind === 'bad_request' || a.error?.kind === 'unavailable') { console.error(`STOP: request rejected (${a.error.kind}): ${a.error.message}`); process.exit(6); }
     console.log(`\n=== ${r.id} (${r.kind})\nRubric: ${r.rubric}\nCheck: ${JSON.stringify(out.check)}\n--- ${text}`);
   }
   process.exit(0);
