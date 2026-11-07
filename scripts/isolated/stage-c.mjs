@@ -333,12 +333,18 @@ if (mode === 'regression') {
   const { checkAnswer } = await import('../../src/lib/company-context/constraints.ts');
   const { normaliseCompanyContext, companyContextBlock } = await import('../../src/lib/company-context/context.ts');
   const { pairs } = JSON.parse(readFileSync(new URL('../advisor/reasoning-pairs.json', import.meta.url), 'utf8'));
-  const { cases } = JSON.parse(readFileSync(new URL('../advisor/reasoning-fresh-cases.json', import.meta.url), 'utf8'));
+  const freshFile = JSON.parse(readFileSync(new URL('../advisor/reasoning-fresh-cases.json', import.meta.url), 'utf8'));
+  const cases = [...freshFile.cases, ...(freshFile.round2?.cases ?? [])];
+  const { traceNumbers } = await import('../../src/lib/advisor/numbers.ts');
   const IDS = ['subscription-vs-commission', 'contribution-vs-cash', 'future-vs-feasible', 'bypass-vs-churn'];
   const runs = [
     ...IDS.map((id) => pairs.find((p) => p.id === id)).map((p) => { const ctx = { business_facts: {}, ...p.base }; if (p.differ.field.startsWith('business_facts.')) ctx.business_facts = { [p.differ.field.split('.')[1]]: p.differ.b }; else ctx[p.differ.field] = p.differ.b; return { id: `${p.id}:b`, kind: 'regression', question: p.question, ctx, rubric: p.rubric }; }),
     ...cases.map((c) => ({ id: c.id, kind: 'fresh', question: c.question, ctx: { business_facts: {}, ...c.context }, rubric: c.rubric })),
   ];
+  // REGRESSION_SET=retest: the approved targeted retest (corrected failures, earlier fresh numeric cases, round 2).
+  const RETEST = ['subscription-vs-commission:b', 'contribution-vs-cash:b', 'future-vs-feasible:b', 'bypass-vs-churn:b', 'fresh-design-capacity', 'fresh-benchmark-bait', 'fresh-commission-direct', 'fresh2-premium-price', 'fresh2-fee-benchmark'];
+  if (process.env.REGRESSION_SET === 'retest') runs.splice(0, runs.length, ...RETEST.map((id) => runs.find((r) => r.id === id)).filter(Boolean));
+  else runs.splice(0, runs.length, ...runs.filter((r) => !r.id.startsWith('fresh2-')));
   // REGRESSION_ONLY=id runs just that case (a case that was never sent; never used to re-send a sent request).
   if (process.env.REGRESSION_ONLY) runs.splice(0, runs.length, ...runs.filter((r) => r.id === process.env.REGRESSION_ONLY));
   if (!runs.length) { console.error('No such case.'); process.exit(3); }
@@ -347,6 +353,7 @@ if (mode === 'regression') {
   phaseStart = ledger().calls.length; phaseDollars = dollars;
   setCeiling(ledger().calls.length + runs.length);
   report.regression = report.regression ?? [];
+  const runLabel = process.env.REGRESSION_SET ?? 'regression';
   for (const r of runs) {
     const ctx = { product_description: null, target_customer: null, revenue_model: null, additional_context: null, ...r.ctx };
     await admin.from('ceo_context').update(ctx).eq('profile_id', R.id);
@@ -355,8 +362,11 @@ if (mode === 'regression') {
     const a = await step(`R ${r.id}`, () => ask('R', q.session, q.turnId), MAX_COST.advisor);
     const text = a.text.split('[[VANTAGE_MEMORY]]')[0].trim();
     const company = normaliseCompanyContext(R.id, {}, ctx);
-    const out = { id: r.id, kind: r.kind, rubric: r.rubric, status: statusOf(a), text, error: a.error, check: checkAnswer(text, company, `${companyContextBlock(company)}\n${r.question}`) };
-    report.regression.push(out); saveReport();
+    const answer = text.split('\n\n*Check before relying on')[0];
+    const supplied = `${companyContextBlock(company)}\n${r.question}`;
+    const out = { id: r.id, kind: r.kind, rubric: r.rubric, status: statusOf(a), text, error: a.error, check: checkAnswer(answer, company, supplied),
+      numbers: traceNumbers(answer, supplied).claims.map((c) => ({ text: c.text, kind: c.kind })), figuresNoteShown: text.includes('*Check before relying on') };
+    report.regression.push({ ...out, run: runLabel, at: new Date().toISOString() }); saveReport();
     console.log(`\n=== ${r.id} (${r.kind})\nRubric: ${r.rubric}\nCheck: ${JSON.stringify(out.check)}\n--- ${text}`);
   }
   process.exit(0);

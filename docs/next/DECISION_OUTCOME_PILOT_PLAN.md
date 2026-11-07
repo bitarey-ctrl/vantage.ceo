@@ -1,8 +1,10 @@
 # Next phase: dependable judgment and measured outcomes (plan for approval)
 
 Status: **proposal only**. Nothing here is built. No deployment, no paid run, no production change until approved.
+Revised 2026-11-07: storage claims verified against the code (§3a); pricing is a *candidate*, not an adopted direction;
+founder conversation guide added (§2a).
 
-## 0. Release blockers carried from the current candidate (unresolved)
+## 0. Release blockers (see docs/advisor/CORRECTION_PASS_3.md for the current list; the list below is from 2026-11-06)
 
 1. **Partial gate failure is silent.** When some gate batches fail, the refresh response and coverage line say "Available
    records checked" (`signal-processor.ts` does not pass the gate's partial status on; protected file).
@@ -35,7 +37,10 @@ files), then apply the migrations on your schedule. Blocker 2 is addressed by ph
 | Reminder channel | `notification_preferences.decision_nudges` flag and Resend templates (no sender exists yet) |
 | Past outcomes in the Advisor | `actual_outcome` is already passed as one line, unstructured |
 
-## 2. Pilot decision type (proposed): changing a price or commission on an existing offer
+## 2. Candidate pilot decision type: changing a price or commission on an existing offer
+
+This is a candidate to test, not an adopted product direction. Existing decision counts can show what founders already
+log; they cannot show demand, willingness to act or willingness to pay.
 
 Why: it is common for the target customer (SaaS, fintech, e-commerce), it has a measurable result within weeks
 (conversion, revenue per customer, churn, margin), it has a natural staged rollout (new customers first, one segment),
@@ -48,11 +53,27 @@ it already has the scenario tool, and two of the three corrected reasoning failu
 
 If neither supports pricing, the fallback is "spend more on one acquisition channel under a cash limit".
 
+### 2a. Founder conversation guide (prepared, not sent — no one has been contacted)
+
+Ask about past behaviour, not opinions of VANTAGE. 20 minutes each; take notes in their words.
+1. What is the last pricing or commission change you made or seriously considered? What happened?
+2. What were you planning to do before you looked for advice, and what changed your mind, if anything?
+3. How did you (or would you) know whether it worked? Which number, from where, and how soon?
+4. What stopped you acting, or slowed you down (data, people, cash, fear of churn, a customer contract)?
+5. Who would have to do the work, and when could they?
+6. How much would a wrong call have cost you: revenue, margin, cash or customers?
+7. If someone prepared the plan and reminded you to check the result, what would you have paid for that, and how did you
+   pay for similar help before (adviser, tool, freelancer)?
+8. Is there a decision like this coming up in the next 60 days?
+
+Selection signal: a pilot type qualifies only if most founders describe a real upcoming decision, a measurable result
+within 4–8 weeks, and a way to act without new engineering.
+
 ## 3. Workflow inside the existing decision screen (no new screens)
 
 Question → **VANTAGE drafts the plan** → founder confirms → act → measured result → review → updated guidance.
 
-The draft fills the existing fields plus one stored block (`support.outcomePlan`, kept in the existing JSON; no migration):
+The draft fills the existing fields plus one stored block, `support.outcomePlan` (see §3a for what this requires):
 - the result sought and its measure (for example "new-customer conversion on the Pro plan");
 - the baseline, its **source** and its date, or "not available yet: how to get it";
 - the action, or a proportionate test (staged: new sign-ups only, or one segment), and its **cost** (money and time);
@@ -65,6 +86,19 @@ The draft fills the existing fields plus one stored block (`support.outcomePlan`
 At review, the existing review form gains an **actual value, its source (retrieved or manually reported), and the cost incurred**.
 The manual path is the default for the pilot, and the screen says so. Nothing is committed or sent externally automatically.
 The founder confirms only the commitments and consequential assumptions, in one step of the existing "record" dialog.
+
+### 3a. Verified storage constraints (checked in code, 2026-11-07)
+
+- **No database migration is needed.** `decision_workspaces.support` is JSON, and the 039 trigger only enforces an immutable
+  `snapshot` and append-only `reviews`. Both fit: founder-confirmed commitments belong in the snapshot, and actual results in reviews.
+- **The code does need changes.**
+  - `src/lib/workspace/contract.ts` validates `support` with `.strip()`, so an unknown key such as `outcomePlan` or `priorIntent`
+    would be **silently dropped** on save.
+  - `choiceSnapshot` has fixed fields (no owner, baseline, guardrails or forecast label).
+  - `reviewEntry` has no actual value, source or cost of action.
+  - Evidence kinds are `business` / `external` / `assumption` / `unknown`, with no observed / founder-reported / calculation /
+    forecast distinction.
+  - These schemas and their mirror in `public/comparison/engine.js` must be extended together, with tests that old records still load.
 
 ## 4. Evidence adequate for the decision
 
