@@ -1763,3 +1763,18 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Verification:** tsc clean; 162 offline tests pass; build passes.
 **Pending your action:** deploy decision before 2026-11-30 (model retirement); production migrations; structured outputs for gate JSON (not built).
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-07 — Release-candidate verification pass (1 real gate call, within the approved 18 calls / $1.00)
+**New files:** `scripts/advisor/{replay-lib.mjs,replay-retest.test.mjs,retest-answers-2026-11-07.json}`; `scripts/company-context/gate-structured.test.mjs`; `scripts/isolated/gate-probe.mjs`; `docs/advisor/RELEASE_DECISION_2026-11-07.md`; `docs/advisor/production-preflight.sql`.
+**Files changed:** `src/lib/signals/gate.ts` (protected; earlier explicit grant for this file, used here for the gate fix the prompt asked for: schema-constrained call, refusal and truncation text, diagnostics); `src/lib/ai/{claude,provider-budget}.ts`; `src/lib/company-context/run-status.ts`; `src/lib/advisor/numbers.ts`; `scripts/advisor/{fake-db,numbers.test,shared-collection.test}.mjs`; `scripts/company-context/refresh-quality.test.mjs`; `scripts/isolated/{stage-c,with-isolated-env}.mjs`; `docs/advisor/SONNET55_RETEST_2026-11-07.md` ("8 of 9" corrected). `src/lib/ai/prompts/triage.ts` NOT changed.
+**What was done:**
+- Nine captured real answers replayed through the real chat route, browser client, save and reload: founder's 8%, 3.4% and £12 kept; only "15%" removed; shown = saved = reloaded.
+- Found and fixed three number-checker defects: meaning-free bracket-labelled sources; the wrong copy of a repeated figure removed; literal asterisks in the note.
+- Gate on structured output (`output_config.format`, object root `{"signals": [...]}`). Refusal, truncation, empty, unparseable and wrong-structure answers are each handled; successful batches are kept; status stays truthful. Bounded diagnostics are stored on the run (no output text); a raw excerpt of failures goes only to the mode-600 test ledger.
+- One real gate call accepted and schema-valid (end_turn, $0.0219). 2 of 25 kept, one of them weak (Fal).
+- Production catalog read-only: matches the rehearsed baseline; no 040–045 objects present.
+**Spend:** retest budget 18 of 18 calls, $0.2710 recorded (budget closed); cumulative 65 calls, $1.7233 recorded, $2.2217 conservative.
+**Verification:** tsc clean; lint clean on changed src files; 138 + 43 = 181 offline tests pass; build passes; browser on the final build shows the stored status.
+**Recommendation:** limited founder pilot with manual refresh after 040–045 are applied and `79fbc2d` is deployed before 2026-11-30; not a general release.
+**Pending your action:** production migrations (sequence and rollback in the release decision); deploy; decide whether the 05:00 UTC ingest cron stays on during the pilot (deploying changes what it runs; not changed by me).
+**Status:** LOCAL ONLY. Not pushed or deployed.

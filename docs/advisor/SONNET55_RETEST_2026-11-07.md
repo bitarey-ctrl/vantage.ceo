@@ -54,6 +54,15 @@ detected and removed anything. A removal is a detection pass, not a quality pass
 | premium price | fresh, new | **Pass**: only the supplied £12 | none | nothing removed |
 | payment fee benchmark | fresh, new | **Pass**, with a minor unsupported generalisation ("typically higher-ticket items") | none numeric | **false positive**: removed the founder's own 3.4% twice |
 
+> **Correction (release-candidate pass, `RELEASE_DECISION_2026-11-07.md` §1).** "8 of 9" counted only the model's own
+> figures. Graded separately:
+> - **Raw reasoning:** 7 of 9 clean passes. The payment-fee answer passes on reasoning but contains an unsupported
+>   qualitative claim ("typically higher-ticket items"), which no rule catches and which remains a limitation. The
+>   dog-walker answer is partial.
+> - **Delivered by the live run:** 6 of 9 were intact; 2 were damaged by checker false positives.
+> - **Delivered on the final candidate `79fbc2d`** (verified by replay): 7 of 9 clean; 1 acceptable only because the checker
+>   removed its figure; 1 still carrying the qualitative claim.
+
 **Prevented or removed afterwards?**
 - **Prevented by the model** in 8 of 9 answers: no invented figures, including the two cases that invented them on 4.5.
 - **Removed afterwards** in 1 of 9: the dog-walker "15%". The founder never saw it as a recommendation, but the model did produce it.
