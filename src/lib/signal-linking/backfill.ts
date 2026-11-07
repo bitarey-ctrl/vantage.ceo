@@ -36,7 +36,17 @@ import { createAdminClient } from "@/lib/supabase/server";
  */
 
 /** Only link signals that actually made it through the five-category gate. */
-const GATED_COLUMNS = "id, why_it_matters";
+const GATED_COLUMNS = "id, why_it_matters, url";
+
+/**
+ * Privacy: items from Google News searches can come from one account's own competitor queries (feed provenance is not
+ * stored on signals), so linking them to every account would show other accounts which companies someone monitors.
+ * They are linked only to the account whose own refresh fetched them (signal-processor), never by this backfill.
+ */
+export function accountDerivedOrUnknown(url: string | null | undefined): boolean {
+  if (!url) return true;
+  try { return new URL(url).hostname.toLowerCase().endsWith("news.google.com"); } catch { return true; }
+}
 
 /*
  * Hedged openers, rejected at LINK time.
@@ -101,8 +111,8 @@ export async function backfillTriagesForProfile(
   }
 
   // Never hand a new account a hedged opener, whenever it was gated.
-  const usable = recent.filter((s) => !isHedged(s.why_it_matters as string | null));
-  const rejectedHedged = recent.length - usable.length;
+  const usable = recent.filter((s) => !isHedged(s.why_it_matters as string | null) && !accountDerivedOrUnknown(s.url as string | null));
+  const rejectedHedged = recent.filter((s) => isHedged(s.why_it_matters as string | null)).length;
   if (rejectedHedged > 0) {
     console.log(`[backfill] Skipped ${rejectedHedged} hedged signal(s) for ${profileId}`);
   }

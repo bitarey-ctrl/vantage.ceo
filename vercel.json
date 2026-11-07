@@ -8,5 +8,12 @@
       "path": "/api/cron/brief",
       "schedule": "0 7 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "rollback/*": false,
+      "release/*": false,
+      "codex/advisor-reliability": false
+    }
+  }
 }
