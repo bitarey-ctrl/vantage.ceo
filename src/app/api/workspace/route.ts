@@ -36,7 +36,9 @@ const decisionFields = z.object({
   alternatives_considered: z.array(option).max(20).optional(),
   status: z.enum(['open', 'decided', 'archived']).optional(), actual_outcome: optionalText,
 });
-const message = z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(40000), incomplete: z.boolean().optional() });
+// Rollback build: keep fields written by the newer build (turn ids, answer status, earlier attempts) instead of
+// silently stripping them when a conversation is saved again.
+const message = z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(40000), incomplete: z.boolean().optional() }).passthrough();
 const command = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('create-decision'), input: decisionFields.extend({
     title: z.string().trim().min(1).max(120), source: z.enum(['signal', 'strategy', 'manual']).optional(), source_id: z.string().uuid().nullable().optional(),
