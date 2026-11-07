@@ -1778,3 +1778,16 @@ Removed the pointer smoke and its comparison UI at Bita's request. Large website
 **Recommendation:** limited founder pilot with manual refresh after 040–045 are applied and `79fbc2d` is deployed before 2026-11-30; not a general release.
 **Pending your action:** production migrations (sequence and rollback in the release decision); deploy; decide whether the 05:00 UTC ingest cron stays on during the pilot (deploying changes what it runs; not changed by me).
 **Status:** LOCAL ONLY. Not pushed or deployed.
+
+## 2026-11-07 — Pilot release preparation (no paid calls; nothing deployed or applied)
+**New files:** `docs/advisor/PILOT_RELEASE_PACKAGE.md`; `scripts/isolated/cron-scripted.mjs`; branch `rollback/1d31b02-isolation` (`40da4ed`, local, not pushed).
+**Files changed:** `src/app/api/cron/ingest/route.ts` (protected; covered by the earlier grant for status recording, composition, storage and wording: a failed shared-news check no longer skips the account's own collection or the stored status); `src/lib/company-context/run-status.ts` (stage-specific failure wording); `src/lib/advisor/numbers.ts` (neutral rewording, no placeholder); tests; `docs/advisor/production-preflight.sql` (exact-content hashes); `docs/advisor/PILOT_PREP_PROGRESS.md` (superseded).
+**What was done:**
+- Rollback: `1d31b02` verified compatible with 045 kept (user-role replay on the isolated project, rolled back), but unsafe as a rollback target: unscoped service-role fallback in `/api/signals/raw`, and conversation re-saves strip new message fields. Both fixed on the rollback branch, which builds.
+- Scheduled jobs: Vercel Cron calls with GET; both routes are POST-only in production and the candidate. GET returns 405 (verified locally), so the jobs are inert today and stay inert. The real handler was tested on the isolated project with scripted providers: authorization, rotation, time-budget deferral, cost ceiling, partial failures and persistence. One storage defect was fixed.
+- Permissions: 90 vs 413 reconciled (counting methods, no mismatch). Production is hash-identical to the 2026-11-05 snapshot in 7 categories; two definer functions are trigger-only, so harmless.
+- Presentation: unsupported figures are reworded without a placeholder, a substitute number or a direction. The nine captured answers were replayed through rendering, save and reload.
+**Isolated data note:** the scripted scheduled runs added run records, ingest markers and possibly one "[SCRIPTED TEST]" shared signal on the isolated project. Pact's latest status is now a scripted run.
+**Verification:** tsc clean; lint clean on changed files; 139 + 43 = 182 offline tests pass; build passes; candidate server on 3301 (no spend possible).
+**Pending your action:** release approval (preflight, backup, 040–044, deploy, 045, before 2026-11-30); push the rollback branch and create its preview deployment; choose the cohort and decide on public sign-up.
+**Status:** LOCAL ONLY. Not pushed or deployed.
