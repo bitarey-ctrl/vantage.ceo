@@ -13,6 +13,7 @@
  * Numbers: the model may only point at a percentage quoted in the item and at one of the founder's own estimates;
  * the arithmetic is done here, and the quote is checked against the item text. Unknown exposure stays unknown.
  */
+import { classifyFailure, failureCause, recordStage, type StageName } from './run-status';
 import { callClaude } from '@/lib/ai/claude';
 import { companyContextBlock, type CompanyContext } from './context';
 import type { Connection } from './relevance';
@@ -51,6 +52,7 @@ How to judge (these decide most items):
 - Never infer market presence, market share, customer demand or competitive importance that COMPANY or the item does not state (e.g. do not write "a market where X is a major player" unless that is stated).
 - Sharing a broad category word (coffee, software, freight) is not a connection. Name the mechanism: which stated product, buyer, dependency, market or constraint it changes, and how.
 - "relevant" means they could act on it this week; "watch" means a specific trigger would make it actionable.
+- exposure: "direct" only when the item itself states a change that applies now to something in COMPANY (a price or rule for a stated product, input, buyer group or market; a named customer, supplier or competitor action that reaches their customers). "possible" when it would matter only if something not stated is true (e.g. their customers care, the company enters their market). "none" otherwise. A "possible" exposure is at most "watch", with the trigger that would make it direct.
 - same_event_as: number of an EARLIER item reporting the same underlying event, else null.
 - what_changed: one plain sentence, only facts stated in the item.
 - connection: one sentence naming the company fact it touches (quote the fact, e.g. "you depend on AWS").
@@ -62,7 +64,7 @@ How to judge (these decide most items):
 - quantified: only if the item states a percentage change that applies to one founder estimate: {"estimate_id": id, "change_pct": number, "quote": exact text from the item containing the number}; else null. Never estimate numbers yourself.
 Write to the founder as "you". No jargon. When unsure, reject.
 
-Respond with ONLY JSON: [{"i": number, "decision": string, "reject_reason": string|null, "same_event_as": number|null, "what_changed": string|null, "connection": string|null, "basis_fact": string|null, "effect": string|null, "unknowns": string|null, "next_step": string|null, "watch_for": string|null, "quantified": object|null}]`;
+Respond with ONLY JSON: [{"i": number, "decision": string, "exposure": "direct"|"possible"|"none", "reject_reason": string|null, "same_event_as": number|null, "what_changed": string|null, "connection": string|null, "basis_fact": string|null, "effect": string|null, "unknowns": string|null, "next_step": string|null, "watch_for": string|null, "quantified": object|null}]`;
 }
 
 const clip = (v: unknown, n = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
@@ -95,10 +97,13 @@ export function exposureCalc(ctx: CompanyContext, itemText: string, q: { estimat
   };
 }
 
-export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], call: Caller = callClaude): Promise<Map<string, Verdict> | null> {
+export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], call: Caller = callClaude, stage: StageName = 'survivor-assessment'): Promise<Map<string, Verdict> | null> {
   if (!items.length) return new Map();
   try {
-    const rows = await call<Record<string, unknown>[]>(prompt(ctx, items), { maxTokens: 6000 });
+    let rows: Record<string, unknown>[];
+    try { rows = await call<Record<string, unknown>[]>(prompt(ctx, items), { maxTokens: 6000 }); }
+    catch (error) { recordStage(stage, { ok: false, kind: classifyFailure(error) }); throw error; }
+    recordStage(stage, { ok: true, items: items.length });
     const flat = (t: string) => t.toLowerCase().replace(/[“”"']/g, '').replace(/\s+/g, ' ').trim();
     const contextText = flat(companyContextBlock(ctx));
     const out = new Map<string, Verdict>();
@@ -117,20 +122,26 @@ export async function verifyCandidates(ctx: CompanyContext, items: Candidate[], 
       const basisFact = clip(r.basis_fact, 300);
       let downgraded: string | null = null;
       if (decision !== 'reject' && !(basisFact && basisFact.replace(/\s+/g, ' ').length >= 8 && contextText.includes(flat(basisFact)))) { decision = 'reject'; downgraded = 'unsupported_connection'; }
+      // Action needs supported, direct exposure; a possible exposure is something to watch (with its trigger) or background.
+      if (decision === 'relevant' && r.exposure !== 'direct') { if (fields.watchFor) decision = 'watch'; else { decision = 'reject'; downgraded = 'background'; } }
       const calculation = decision === 'reject' ? null : exposureCalc(ctx, `${item.title} ${item.content}`, (r.quantified as Record<string, unknown> | null) ?? null);
       out.set(item.key, { decision, rejectReason: decision === 'reject' ? (repeat ? 'duplicate' : downgraded ?? clip(r.reject_reason, 40) ?? 'incomplete') : null, ...fields, basisFact: decision === 'reject' ? null : basisFact, calculation });
     }
     for (const it of items) if (!out.has(it.key)) out.set(it.key, { decision: 'reject', rejectReason: 'not returned', whatChanged: null, connection: null, effect: null, unknowns: null, nextStep: null, watchFor: null, calculation: null });
     return out;
   } catch (error) {
-    console.error('[company-context] assessment failed:', error instanceof Error ? error.message.slice(0, 200) : 'unknown');
+    console.error(`[company-context] assessment failed (${classifyFailure(error)}; ${failureCause(error)})`);
     return null;
   }
 }
 
 /** The stored per-account assessment (signal_triages.relevance_reason holds this as JSON). */
+/** Bumped when the assessment rules change, so stored judgements made under older rules are rechecked. */
+export const ASSESSMENT_VERSION = 3;
+
 export interface StoredConnection {
   v: 2; status: 'relevant' | 'watch' | 'unassessed' | 'rejected'; checked: boolean;
+  assessmentVersion?: number;
   basisFact?: string | null;
   text: string; basis: string;
   whatChanged: string | null; connection: string | null; effect: string | null; unknowns: string | null; nextStep: string | null; watchFor: string | null;
@@ -140,10 +151,9 @@ export interface StoredConnection {
 }
 
 export function storedConnection(connection: Connection, verdict: Verdict | null, evidenceLevel: EvidenceLevel = 'aggregator-headline'): StoredConnection {
-  const base = { v: 2 as const, matched: connection.matched, contextVersion: connection.contextVersion, assessedAt: new Date().toISOString(), evidence: { level: evidenceLevel, claimsVerified: false as const } };
+  const base = { v: 2 as const, assessmentVersion: ASSESSMENT_VERSION, matched: connection.matched, contextVersion: connection.contextVersion, assessedAt: new Date().toISOString(), evidence: { level: evidenceLevel, claimsVerified: false as const } };
   if (!verdict) {
-    const facts = connection.text.replace(/^Why this may matter to you: it /, '').replace(/\. Possible relevance from your stated details — not a confirmed effect\.$/, '');
-    return { ...base, status: 'unassessed', checked: false, text: `Not yet assessed for your business. It matched your details: it ${facts}.`, basis: 'Keyword match only', whatChanged: null, connection: null, effect: null, unknowns: null, nextStep: null, watchFor: null, calculation: null, rejectReason: null };
+    return { ...base, status: 'unassessed', checked: false, text: 'Found by a search related to your business. Not yet checked for relevance.', basis: 'Not yet checked', whatChanged: null, connection: null, effect: null, unknowns: null, nextStep: null, watchFor: null, calculation: null, rejectReason: null };
   }
   if (verdict.decision === 'reject') return { ...base, status: 'rejected', checked: true, text: 'Not relevant to your business.', basis: 'Assessed', whatChanged: null, connection: null, effect: null, unknowns: null, nextStep: null, watchFor: null, calculation: null, rejectReason: verdict.rejectReason };
   const text = verdict.decision === 'watch'
@@ -169,14 +179,14 @@ export function parseStoredConnection(raw: string | null | undefined): StoredCon
  * "unassessed".
  */
 export async function connectAndCheck<T extends { key: string; title: string; content?: string | null; what_happened?: string | null; evidenceLevel?: EvidenceLevel; forceCandidate?: boolean }>(
-  ctx: CompanyContext, items: T[], opts: { call?: Caller; limit?: number; connectionFor: (s: T, c: CompanyContext) => Connection; includeRejected?: boolean },
+  ctx: CompanyContext, items: T[], opts: { call?: Caller; limit?: number; connectionFor: (s: T, c: CompanyContext) => Connection; includeRejected?: boolean; stage?: StageName },
 ): Promise<{ item: T; stored: StoredConnection; score: number }[]> {
   const matched = items.map((item) => ({ item, connection: opts.connectionFor(item, ctx) }))
     // Items from a source watched for this company are candidates even without a keyword match (indirect effects).
     .filter((x) => x.connection.candidate || x.item.forceCandidate)
     .sort((a, b) => (Number(b.connection.status === 'connected') - Number(a.connection.status === 'connected')) || (Number(Boolean(b.item.forceCandidate)) - Number(Boolean(a.item.forceCandidate))) || b.connection.score - a.connection.score)
     .slice(0, opts.limit ?? 25);
-  const verdicts = await verifyCandidates(ctx, matched.map(({ item, connection }) => ({ key: item.key, title: item.title, content: item.content ?? item.what_happened ?? '', connection, evidenceLevel: item.evidenceLevel })), opts.call);
+  const verdicts = await verifyCandidates(ctx, matched.map(({ item, connection }) => ({ key: item.key, title: item.title, content: item.content ?? item.what_happened ?? '', connection, evidenceLevel: item.evidenceLevel })), opts.call, opts.stage);
   return matched
     .filter(({ item, connection }) => (verdicts ? (opts.includeRejected || verdicts.get(item.key)?.decision !== 'reject') : connection.status === 'connected'))
     .map(({ item, connection }) => ({ item, stored: storedConnection(connection, verdicts?.get(item.key) ?? null, item.evidenceLevel), score: connection.score }));

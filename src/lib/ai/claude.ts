@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { recordProviderUsage, reserveProviderCall } from "./provider-budget";
+import { recordProviderFailure, recordProviderUsage, reserveProviderCall } from "./provider-budget";
+import { classifyFailure, failureCause } from "@/lib/company-context/run-status";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -26,22 +27,32 @@ export async function callClaude<T>(
   const { maxTokens = 2048 } = options;
 
   const slot = reserveProviderCall("callClaude", CLAUDE_MODEL, { inputBytes: Buffer.byteLength(prompt, "utf8"), maxTokens });
-  const response = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-  });
+  let response: Anthropic.Message;
+  try {
+    response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: maxTokens,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+  } catch (err) {
+    // Usage unknown: the slot keeps its worst-case reservation; the class and cause are kept for diagnosis.
+    recordProviderFailure(slot, classifyFailure(err), failureCause(err));
+    throw err;
+  }
 
   recordProviderUsage(slot, response.usage);
-  const content = response.content[0];
-  if (content.type !== "text") {
+  if (response.stop_reason === "refusal") throw new Error("The model declined this request (refusal).");
+  // Read text blocks by type: newer models can start a response with thinking blocks.
+  const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
+  if (!textBlocks.length) {
     throw new Error("Unexpected response type from Claude API");
   }
+  const content = { text: textBlocks.map((b) => b.text).join("") };
 
   const text = content.text.trim();
 

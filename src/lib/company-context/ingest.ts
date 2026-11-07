@@ -6,11 +6,12 @@
  * Retrieved text is untrusted: it is only parsed as RSS, length-capped and stored as text. Article pages are not
  * fetched, so no private-network or third-party page content is followed.
  */
+import { classifyFailure, recordStage } from './run-status';
 import type { CompanyContext } from './context';
 import { connectionFor } from './relevance';
 import { clusterEvents, sameEvent } from './events';
 import { buildSourcePlan, type SourcePlan } from './source-plan';
-import { connectAndCheck, parseStoredConnection, type EvidenceLevel } from './verify';
+import { ASSESSMENT_VERSION, connectAndCheck, parseStoredConnection, type EvidenceLevel } from './verify';
 import { verifyDueSources, collectVerifiedSources } from './sources';
 
 export interface FeedItem { title: string; url: string; published_at: string | null; content: string; publisher: string | null }
@@ -28,7 +29,7 @@ export interface PlanRunReport {
   inserted: number; linkedExisting: number; alreadyLinked: number; capped: number;
 }
 
-const decode = (s: string) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ');
+const decode = (s: string) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&#(\d{1,6});/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]{1,6});/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ');
 const strip = (s: string) => decode(decode(s)).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 /** Evergreen listicles and guides ("10 best …", "compare 7 …", "how to …") are not events. */
 export const NOT_NEWS = /^(?:\d+\s+(?:best|top|ways|tips|things|reasons)\b|(?:the\s+)?(?:best|top \d+)\b|compare\b|how to\b|what is\b|a guide\b|guide to\b)|\bbest\b.*\b(?:of|for|in) 20\d\d\b/i;
@@ -67,8 +68,8 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
   const runId: string | null = runRow?.id ?? null;
 
   // 1. Verified coverage: open due sources ourselves, then collect new entries from verified ones (original sources).
-  const verification = await verifyDueSources(admin, ctx.profileId, { fetchImpl: opts.fetchImpl }).catch(() => ({ checked: 0, verified: 0, failed: 0 }));
-  const collected = await collectVerifiedSources(admin, ctx.profileId, { fetchImpl: opts.fetchImpl }).catch(() => ({ items: [], report: [] }));
+  const verification = await verifyDueSources(admin, ctx.profileId, { fetchImpl: opts.fetchImpl, ctx }).catch(() => ({ checked: 0, verified: 0, failed: 0 }));
+  const collected = await collectVerifiedSources(admin, ctx.profileId, { fetchImpl: opts.fetchImpl, ctx }).catch(() => ({ items: [], report: [] }));
 
   // 2. Discovery: news-search leads (aggregator headlines, not verified claims).
   const results: SourceRunResult[] = [];
@@ -80,10 +81,13 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
       const parsed = parseRss((await res.text()).slice(0, 2_000_000));
       items.push(...parsed.map((p) => ({ ...p, sourceId: s.id, evidenceLevel: 'aggregator-headline' as const })));
       results.push({ id: s.id, label: s.label, ok: true, items: parsed.length });
+      recordStage('collection', { ok: true, items: parsed.length });
     } catch (error) {
       results.push({ id: s.id, label: s.label, ok: false, items: 0, error: (error as Error).message.slice(0, 120) });
+      recordStage('collection', { ok: false, kind: /^HTTP \d/.test((error as Error).message) ? 'other' : classifyFailure(error) });
     }
   }));
+  for (const r of collected.report) if (!r.error?.startsWith('Not monitored')) recordStage('collection', r.ok ? { ok: true, items: r.items } : { ok: false, kind: 'connection' });
   for (const r of collected.report) results.push({ id: `source:${r.id}`, label: r.url, ok: r.ok, items: r.items, ...(r.error ? { error: r.error } : {}) });
   // Items from verified sources go to the assessment even without a keyword match: indirect effects matter.
   items.push(...collected.items.map((it) => ({ ...it, sourceId: `source:${it.sourceId}`, forceCandidate: true })));
@@ -101,11 +105,11 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
   const { data: linkedRows } = await admin.from('signal_triages').select('signal_id,relevance_reason,signal:signals(id,title,content,what_happened)').eq('profile_id', ctx.profileId).order('created_at', { ascending: false }).limit(200);
   const linked = new Set<string>((linkedRows ?? []).map((r: { signal_id: string }) => r.signal_id));
   const stale = ((linkedRows ?? []) as { signal_id: string; relevance_reason: string | null; signal: { id: string; title: string; content: string | null; what_happened: string | null } | null }[])
-    .filter((r) => r.signal && (() => { const st = parseStoredConnection(r.relevance_reason); return !st || st.status === 'unassessed' || (st.status !== 'rejected' && st.contextVersion !== ctx.version); })())
+    .filter((r) => r.signal && (() => { const st = parseStoredConnection(r.relevance_reason); return !st || st.status === 'unassessed' || (st.status !== 'rejected' && (st.contextVersion !== ctx.version || (st.assessmentVersion ?? 0) < ASSESSMENT_VERSION)); })())
     .slice(0, 15);
   const reassessed = { checked: 0, retired: 0, kept: 0 };
   if (stale.length) {
-    const judged = await connectAndCheck(ctx, stale.map((r) => ({ key: r.signal_id, title: r.signal!.title, content: r.signal!.content, what_happened: r.signal!.what_happened, evidenceLevel: 'stored-signal' as const, forceCandidate: true })), { call: opts.call, connectionFor, includeRejected: true, limit: 15 });
+    const judged = await connectAndCheck(ctx, stale.map((r) => ({ key: r.signal_id, title: r.signal!.title, content: r.signal!.content, what_happened: r.signal!.what_happened, evidenceLevel: 'stored-signal' as const, forceCandidate: true })), { call: opts.call, connectionFor, includeRejected: true, limit: 15, stage: 'reassessment' });
     for (const j of judged) {
       if (!j.stored.checked) continue; // assessment unavailable: leave as it was
       reassessed.checked++;
@@ -115,7 +119,7 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
   }
 
   // 5. Assess new candidates.
-  const connected = (await connectAndCheck(ctx, canon.map((it) => ({ ...it, key: it.id })), { call: opts.call, connectionFor, limit: 30 }))
+  const connected = (await connectAndCheck(ctx, canon.map((it) => ({ ...it, key: it.id })), { call: opts.call, connectionFor, limit: 30, stage: 'company-assessment' }))
     .map(({ item, stored, score }) => ({ it: item, stored, score }));
   const checked = connected.length === 0 || connected.some((c) => c.stored.checked);
   const maxNew = opts.maxNew ?? 12;
@@ -154,6 +158,7 @@ export async function runSourcePlan(admin: Admin, ctx: CompanyContext, opts: { f
     }, { onConflict: 'signal_id,profile_id' });
     if (triageError) writeErrors++; else { linked.add(signalId!); signalIds.push(signalId!); }
   }
+  if (writeErrors) recordStage('persistence', { ok: false, kind: 'other', count: writeErrors });
   const failedSources = results.filter((r) => !r.ok).length;
   const status: PlanRunReport['status'] = writeErrors && !signalIds.length && chosen.length ? 'failed' : failedSources || writeErrors || !checked ? 'partial' : 'done';
   const report: PlanRunReport = {

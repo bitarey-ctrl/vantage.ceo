@@ -52,12 +52,12 @@ test('gate failure message names the category and never includes provider text',
   const busy = Object.assign(new Error('Overloaded'), { status: 529 });
   assert.equal(gateFailureKind(new ProviderBudgetError('x')), 'budget');
   assert.equal(gateFailureKind(auth), 'auth');
-  assert.equal(gateFailureKind(busy), 'availability');
-  assert.equal(gateFailureKind(Object.assign(new Error('fetch failed'), { name: 'APIConnectionError' })), 'availability');
-  assert.equal(gateFailureKind(new Error('Failed to parse Claude response as JSON: …')), 'other');
+  assert.equal(gateFailureKind(busy), 'provider');
+  assert.equal(gateFailureKind(Object.assign(new Error('fetch failed'), { name: 'APIConnectionError' })), 'connection');
+  assert.equal(gateFailureKind(new Error('Failed to parse Claude response as JSON: …')), 'parse');
   const m = gateFailureMessage(['budget', 'budget'], 2, 40);
   assert.match(m, /all 2 check\(s\) of 40 candidates failed because the model-call budget for this environment was reached/);
   assert.match(m, /not a quiet day/);
   assert.doesNotMatch(gateFailureMessage(['auth'], 1, 5), /sk-ant|x-api-key|ANTHROPIC_API_KEY/);
-  assert.match(gateFailureMessage(['auth', 'availability'], 2, 5), /credentials.*; and .*busy or unreachable/);
+  assert.match(gateFailureMessage(['auth', 'connection'], 2, 5), /credentials.*; and the connection to the AI service failed/);
 });

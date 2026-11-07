@@ -10,7 +10,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
-interface Call { at: string; kind: string; model: string; worstUsd?: number; usage?: Record<string, unknown> }
+interface Call { at: string; kind: string; model: string; worstUsd?: number; usage?: Record<string, unknown>; failure?: { kind: string; cause: string; at: string } }
 interface Ledger {
   limit: number; calls: Call[];
   dollarLimit?: number;
@@ -74,5 +74,17 @@ export function recordProviderUsage(slot: number | null, usage: unknown): void {
   const l = load();
   if (!l || !l.calls[slot]) return;
   l.calls[slot].usage = (usage ?? {}) as Record<string, unknown>;
+  writeFileSync(file()!, JSON.stringify(l, null, 1), { mode: 0o600 });
+}
+
+/**
+ * Record that a reserved call failed. Its usage stays unknown (the request may or may not have reached the provider),
+ * so it keeps counting at its reserved worst case; the failure class and low-level cause are kept for diagnosis.
+ */
+export function recordProviderFailure(slot: number | null, kind: string, cause: string): void {
+  if (slot === null) return;
+  const l = load();
+  if (!l || !l.calls[slot]) return;
+  l.calls[slot].failure = { kind, cause: cause.slice(0, 120), at: new Date().toISOString() };
   writeFileSync(file()!, JSON.stringify(l, null, 1), { mode: 0o600 });
 }

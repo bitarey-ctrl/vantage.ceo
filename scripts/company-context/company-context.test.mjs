@@ -127,7 +127,7 @@ test('the assessment keeps relevant/watch items with all five parts, drops rejec
     { key: 'k3', title: 'Toast the bread: breakfast ideas - C', content: '' },
     { key: 'k4', title: 'Gusto opens office', content: '' },
   ];
-  const full = { what_changed: 'Gusto added tip pooling.', connection: 'You compete with Gusto on restaurant payroll.', basis_fact: 'Competitors they named: Gusto, Toast', effect: 'If buyers want tip pooling, you could lose deals.', unknowns: 'How many of your buyers ask for it.', next_step: 'Ask five customers this week.' };
+  const full = { exposure: 'direct', what_changed: 'Gusto added tip pooling.', connection: 'You compete with Gusto on restaurant payroll.', basis_fact: 'Competitors they named: Gusto, Toast', effect: 'If buyers want tip pooling, you could lose deals.', unknowns: 'How many of your buyers ask for it.', next_step: 'Ask five customers this week.' };
   const call = async () => [
     { i: 0, decision: 'relevant', ...full },
     { i: 1, decision: 'relevant', same_event_as: 0, ...full },
@@ -150,8 +150,10 @@ test('if the assessment cannot run, strict matches are "unassessed" — never re
   const out = await connectAndCheck(payroll, items, { call: async () => { throw new Error('offline'); }, connectionFor });
   assert.deepEqual(out.map((o) => o.item.key), ['k1']);
   assert.equal(out[0].stored.status, 'unassessed');
-  assert.match(out[0].stored.text, /Not yet assessed/);
-  assert.doesNotMatch(out[0].stored.text, /monitor/i);
+  assert.match(out[0].stored.text, /Not yet checked for relevance/);
+  // No relevance claim for an unchecked item: no "matters to you", no matched-details list.
+  assert.doesNotMatch(out[0].stored.text, /monitor|matters to you|touches|matched your/i);
+  assert.equal(out[0].stored.checked, false);
 });
 
 test('items from watched sources are assessed even without a keyword match (indirect effects)', async () => {
@@ -261,14 +263,14 @@ test('assessment rule is structural and the same for every company: a kept item 
     item('rival', 'Brio Coffee Club launches pods for home brewers'), item('keurig', 'Keurig launches plastic-free pods'), item('para', 'Keurig launches plastic-free pods (paraphrased basis)')];
   const v = await verifyCandidates(pact, items, async () => [
     // An own-company development is not dismissed by rule: kept when the model judges it actionable and cites a fact.
-    { i: 0, decision: 'relevant', what_changed: 'A regulator fined Pact Coffee.', connection: 'This is your company.', basis_fact: 'Company: Pact Coffee', effect: 'If the ruling applies to your sign-up flow, you must change it.', next_step: 'Read the ruling.', watch_for: null },
+    { i: 0, decision: 'relevant', exposure: 'direct', what_changed: 'A regulator fined Pact Coffee.', connection: 'This is your company.', basis_fact: 'Company: Pact Coffee', effect: 'If the ruling applies to your sign-up flow, you must change it.', next_step: 'Read the ruling.', watch_for: null },
     { i: 1, decision: 'reject', reject_reason: 'background' },
     // A competitor item is kept only with a stated overlap.
     { i: 2, decision: 'watch', what_changed: 'Brio launched pods.', connection: 'You named Brio as a competitor and you sell pods.', basis_fact: 'Competitors they named: Brio Coffee Club', effect: 'If your subscribers compare pod prices, you could lose some.', next_step: 'Note it.', watch_for: 'Brio pod pricing below yours.' },
     // A cited "fact" that the founder never stated (an invented market position) is unsupported.
-    { i: 3, decision: 'relevant', what_changed: 'Keurig launched plastic-free pods.', connection: 'Keurig is a major player in your market.', basis_fact: 'Keurig is a major player in your market', effect: 'You may need to match it.', next_step: 'Check.', watch_for: null },
+    { i: 3, decision: 'relevant', exposure: 'direct', what_changed: 'Keurig launched plastic-free pods.', connection: 'Keurig is a major player in your market.', basis_fact: 'Keurig is a major player in your market', effect: 'You may need to match it.', next_step: 'Check.', watch_for: null },
     // Known strictness: a paraphrase of a real fact is also rejected (fails closed).
-    { i: 4, decision: 'relevant', what_changed: 'Keurig launched plastic-free pods.', connection: 'You sell pods.', basis_fact: 'They sell coffee pods', effect: 'Buyers may expect it.', next_step: 'Check.', watch_for: null },
+    { i: 4, decision: 'relevant', exposure: 'direct', what_changed: 'Keurig launched plastic-free pods.', connection: 'You sell pods.', basis_fact: 'They sell coffee pods', effect: 'Buyers may expect it.', next_step: 'Check.', watch_for: null },
   ]);
   assert.equal(v.get('own-fine').decision, 'relevant'); assert.equal(v.get('own-fine').basisFact, 'Company: Pact Coffee');
   assert.equal(v.get('own-growth').rejectReason, 'background');
@@ -277,7 +279,7 @@ test('assessment rule is structural and the same for every company: a kept item 
   assert.equal(v.get('para').rejectReason, 'unsupported_connection');
   // Same rule for an unrelated company: no customer-specific branch.
   const saas = normaliseCompanyContext('s', { company_name: 'Ledgerly' }, { product_description: 'Accounting software for dental clinics', business_facts: { dependencies: [{ text: 'AWS hosting' }] } });
-  const w = await verifyCandidates(saas, [item('aws', 'AWS raises EC2 prices')], async () => [{ i: 0, decision: 'relevant', what_changed: 'AWS raised prices.', connection: 'You depend on AWS.', basis_fact: 'Depends on: AWS hosting', effect: 'If your instances are affected, costs rise.', next_step: 'Check the bill.', watch_for: null }]);
+  const w = await verifyCandidates(saas, [item('aws', 'AWS raises EC2 prices')], async () => [{ i: 0, decision: 'relevant', exposure: 'direct', what_changed: 'AWS raised prices.', connection: 'You depend on AWS.', basis_fact: 'Depends on: AWS hosting', effect: 'If your instances are affected, costs rise.', next_step: 'Check the bill.', watch_for: null }]);
   assert.equal(w.get('aws').decision, 'relevant');
   // The assessment prompt states the generalised rules (no keyword patch remains in the parser).
   let seen = ''; await verifyCandidates(pact, [items[0]], async (p) => { seen = p; return []; });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { beginRunStatus, composeRunStatus, type RunStatus } from "@/lib/company-context/run-status";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { processSignalsForProfile } from "@/lib/signals/signal-processor";
 import { backfillTriagesForProfile } from "@/lib/signal-linking/backfill";
@@ -102,12 +103,16 @@ export async function POST(request: NextRequest) {
     let profilesProcessed = 0;
     let profilesAttempted = 0;
     const failures: string[] = [];
+    // Truthful status: every stage (collection, reassessment, company items, gate, survivor assessment, writes) reports
+    // its own outcome; a successful fetch never stands in for a completed analysis.
+    let runStatus: RunStatus | null = null;
 
     for (const profile of profiles as Profile[]) {
       if (Date.now() - startTime >= BUDGET_MS) {
         console.log("[refresh] Budget exhausted — stopping");
         break;
       }
+      const stagesOf = beginRunStatus();
 
       try {
         // Reconcile first: link gated signals this profile is missing. This
@@ -203,6 +208,13 @@ export async function POST(request: NextRequest) {
         console.error(`[refresh] Error for profile ${profile.id}:`, msg);
         failures.push(msg);
       }
+      runStatus = composeRunStatus(stagesOf());
+      // The stored run record carries the whole pipeline's status, not only source collection.
+      if (planReport?.runId) {
+        await adminSupabase.from("source_collection_runs")
+          .update({ status: runStatus.status === "complete" ? "done" : runStatus.status, report: { ...planReport, pipeline: runStatus } })
+          .eq("id", planReport.runId);
+      }
     }
 
     const elapsed = Date.now() - startTime;
@@ -229,7 +241,7 @@ export async function POST(request: NextRequest) {
     // everything" and the button said "No new signals found".
     if (failures.length > 0 && totalSignalsAdded === 0 && totalSignalsLinked === 0) {
       return NextResponse.json(
-        { error: failures[0], failures: failures.length },
+        { error: runStatus && runStatus.status !== "complete" ? runStatus.message : failures[0], failures: failures.length, ...(runStatus ? { status: runStatus.status, stages: runStatus.stages } : {}) },
         { status: 500 }
       );
     }
@@ -240,7 +252,8 @@ export async function POST(request: NextRequest) {
       signalsLinked: totalSignalsLinked,
       candidatesFetched: totalCandidates,
       profilesProcessed,
-      ...(planReport ? { sourcePlan: planReport, message: describePlanRun(planReport, totalSignalsLinked) } : {}),
+      ...(planReport ? { sourcePlan: planReport, message: describePlanRun(planReport, totalSignalsLinked, runStatus) } : runStatus && runStatus.status !== "complete" ? { message: runStatus.message } : {}),
+      ...(runStatus ? { status: runStatus.status, stages: runStatus.stages } : {}),
       ...(failures.length > 0 ? { partialFailures: failures.length } : {}),
     });
   } catch (error) {
@@ -251,14 +264,19 @@ export async function POST(request: NextRequest) {
 }
 
 /** What actually happened, in one or two sentences — never a generic "done". */
-function describePlanRun(r: PlanRunReport, linkedShared: number): string {
+function describePlanRun(r: PlanRunReport, linkedShared: number, run: RunStatus | null): string {
   const ok = r.sources.filter((s) => s.ok).length;
   const failed = r.sources.length - ok;
   const found = r.inserted + r.linkedExisting;
-  const parts = [`Checked ${ok} of ${r.sources.length} sources for your company${failed ? ` (${failed} could not be reached)` : ''}.`];
-  parts.push(found ? `${found} new ${found === 1 ? 'item connects' : 'items connect'} to your business` : 'Nothing material found in the checked scope (last 30 days)');
-  parts[1] += r.notConnected ? `; ${r.notConnected} unrelated ${r.notConnected === 1 ? 'result was' : 'results were'} left out.` : '.';
-  if (!r.checked) parts.push('The relevance check could not run, so matches are shown as "not yet checked".');
+  const complete = !run || run.status === "complete";
+  const parts = [`Reached ${ok} of ${r.sources.length} sources for your company${failed ? ` (${failed} could not be reached)` : ''}.`];
+  // "Nothing material" is only said when every check that had something to check actually finished.
+  if (!complete) parts.push(run!.message);
+  else {
+    parts.push(found ? `${found} new ${found === 1 ? 'item connects' : 'items connect'} to your business` : 'Nothing material found in the checked scope (last 30 days)');
+    parts[1] += r.notConnected ? `; ${r.notConnected} unrelated ${r.notConnected === 1 ? 'result was' : 'results were'} left out.` : '.';
+  }
+  if (!r.checked && complete) parts.push('The relevance check could not run, so matches are shown as "not yet checked".');
   if (linkedShared) parts.push(`${linkedShared} shared ${linkedShared === 1 ? 'signal' : 'signals'} also matched your details.`);
   if (r.gaps.length) parts.push(r.gaps[0]);
   return parts.join(' ');

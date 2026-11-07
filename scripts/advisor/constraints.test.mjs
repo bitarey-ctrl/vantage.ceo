@@ -89,8 +89,9 @@ test('prompt construction: no constraint → no hard-limits list and the unknown
 
 test('benchmark and tone rules are in the prompt', async () => {
   const sys = await systemPromptFor(ctxFor(pair('future-vs-feasible'), 'a'), 'q');
-  assert.match(sys, /"most businesses like yours…", "typically"/);
-  assert.match(sys, /Do not swap one invented number for another/);
+  assert.match(sys, /Every number you write .* must come from their details, the SIGNALS, or a calculation you show/);
+  assert.match(sys, /do not swap one invented number for another/);
+  assert.match(sys, /"Illustration, not a benchmark:"/);
   assert.match(sys, /not a dramatic preamble \("The hard truth"/);
 });
 

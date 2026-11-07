@@ -21,7 +21,7 @@ export interface Connection {
   candidate: boolean;
 }
 
-const STOP = new Set(('a an and are as at be by for from has have in into is it its of on or our that the their them they this to was we were will with your you ' +
+const STOP = new Set(('a an and are as at be by for from has have in into is it its of on or our that the their them they this to was we were will with your you comes come mainly plus via sells sell selling offers including mostly ' +
   'company companies business businesses customer customers client clients platform product products service services solution solutions software tool tools ' +
   'team teams market markets industry industries global new more most best help helps helping make makes making based small medium large mid sized size ' +
   'world online digital data via use using used one two three first year years month months want need needs other also any all each across within ' +
@@ -96,7 +96,9 @@ export function exposureTerms(c: CompanyContext) {
   const named = (list: string[]) => list.map((n) => n.trim()).filter((n) => n.length >= 3);
   // Nationality and place words are markets, not products or buyers (they still count inside phrases).
   const geoWords = new Set(Object.values(GEO_ALIASES).flat().map((a) => a.trim()).filter((a) => !a.includes(' ')));
-  const productText = `${c.product ?? ''} ${c.revenueModel ?? ''} ${c.sector ?? ''}`;
+  // Single words come from what they sell and the sector only. How they make money ("most revenue comes from …
+  // retailers") describes the model, not the product; its words matched unrelated news ("comes", "retailer").
+  const productText = `${c.product ?? ''} ${c.sector ?? ''}`;
   const productWords = [...new Set([...words(productText).map(stem), ...acronymsIn(productText)])].filter((w) => !geoWords.has(w));
   const buyerWords = [...new Set(words(c.buyers ?? '').map(stem))].filter((w) => !geoWords.has(w));
   const priorityText = [c.topPriority ?? '', ...c.priorities].join('. ');
@@ -180,7 +182,9 @@ export function connectionFor(signal: { title?: string | null; content?: string 
   const anyPhrase = matched.some((m) => (m.kind === 'product' || m.kind === 'priority') && m.term.includes(' '));
   // Something you depend on (a supplier, platform or input) changing is a candidate even with no other match.
   for (const d of dependencyHits) matched.push({ kind: 'dependency', term: d.name ?? d.words.find((w) => hayStems.has(w)) ?? d.text });
-  const candidate = connected || Boolean(companyHit) || competitorHits.length > 0 || dependencyHits.length > 0 || specificHits >= 1 || (anyPhrase && (matched.length >= 2 || marketHits.length > 0));
+  // One distinctive word alone is too weak to spend an assessment on: it takes one of your own phrases, or two words.
+  const specificWords = matched.filter((m) => (m.kind === 'product' || m.kind === 'buyers' || m.kind === 'priority') && !m.term.includes(' ') && !GENERIC.has(m.term)).length;
+  const candidate = connected || Boolean(companyHit) || competitorHits.length > 0 || dependencyHits.length > 0 || anyPhrase || specificWords >= 2;
   if (!connected && candidate) {
     if (companyHit && !matched.some((m) => m.kind === 'company')) matched.unshift({ kind: 'company', term: companyHit });
     for (const name of competitorHits) if (!matched.some((m) => m.term === name)) matched.unshift({ kind: 'competitor', term: name });

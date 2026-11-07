@@ -179,6 +179,10 @@ export async function GET() {
       sourcePlan: { version: plan.version, gaps: plan.gaps, sources: plan.sources.map(({ id, label, query, url, language, reason, coverage, limitations }) => ({ id, label, query, url, language, reason, coverage, limitations })) },
       coverage: {
         attemptedAt: run?.finished_at ?? run?.started_at ?? null,
+        // The last update's full-pipeline status (collection, assessments, gate, writes), when it was recorded.
+        analysis: (run?.report as { pipeline?: { status: string; message: string; affected: string[] } } | undefined)?.pipeline
+          ? (({ status, message, affected }) => ({ status, message, affected }))((run!.report as { pipeline: { status: string; message: string; affected: string[] } }).pipeline)
+          : null,
         sources: [
           // Original sources we opened ourselves.
           ...verified.map((v) => ({ label: `${v.title || v.url} · ${v.kind}${v.jurisdiction ? ` · ${v.jurisdiction}` : ''}`, state: v.status === 'verified' ? 'available' : v.status === 'failed' ? 'failed' : 'planned', checkedAt: v.last_ok_at, note: `${v.why ?? ''} Can support: ${v.claims ?? 'not stated'}. ${v.status === 'verified' ? 'Opened and read by VANTAGE; individual claims are not verified.' : v.status === 'failed' ? `Last attempt failed: ${v.last_error ?? 'unknown'}. Retried automatically.` : 'Proposed by research; not opened yet.'}`, url: v.final_url ?? v.url })),

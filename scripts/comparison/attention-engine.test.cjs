@@ -1,5 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const A=require('../../public/comparison/attention-engine.js');
-const event=(extra={})=>({id:'a',eventId:'a',title:'Change',published_at:'2026-10-20',development:{id:'v1',at:'2026-10-20'},reports:[{id:'r1',claim:'External claim'}],...extra});
+const event=(extra={})=>({id:'a',eventId:'a',title:'Change',published_at:'2026-10-20',development:{id:'v1',at:'2026-10-20'},reports:[{id:'r1',claim:'External claim'}],connection:{status:'relevant'},...extra});
 const prefs=()=>({watch:[],dismiss:[],ack:{},watchBaseline:{}});
 test('only explicit event IDs group reports; similar titles do not',()=>{const rows=[event(),event({id:'reprint',reports:[{id:'r2',claim:'Same announcement'}]}),event({id:'other',eventId:undefined,reports:[{id:'r3'}]})];const result=A.events(rows);assert.equal(result.length,2);assert.equal(result[0].reports.length,2);assert.equal(result[0].id,'a');assert.equal(result[1].id,'other');});
 test('watch establishes a baseline without acknowledging the current item',()=>{const p=A.transition(prefs(),event(),'watch');assert.equal(p.watchBaseline.a,'v1');assert.equal(A.seen(event(),p),false);assert.equal(A.updated(event(),p),false);assert.deepEqual(prefs().watch,[]);});
@@ -15,3 +15,13 @@ test('quiet view is scoped to available records, not a coverage claim',()=>{cons
 test('only an explicit ended offer gets a temporal caveat; publication age alone never ages out a fact',()=>{assert.equal(A.temporalNote(event({published_at:'2020-01-01'}),'2026-10-28'),'');assert.match(A.temporalNote(event({offerEnds:'2026-10-27'}),'2026-10-28'),/offer window has ended/);});
 
 test('the unseen slot can surface existing open work before unrelated recency without losing discovery',()=>{const a=event({published_at:'2020-01-01'}),b=event({id:'b',eventId:'b',published_at:'2026-10-28'});const d={id:'open',status:'open',source:'signal',source_id:'a'};const m=A.todayModel({signals:[b,a],decisions:[d],prefs:prefs(),date:'2026-10-28',isDue:()=>false});assert.equal(m.shown[0].id,'a');assert.equal(m.total,2);assert.equal(m.resume.length,0);});
+
+test('Today never surfaces an item whose relevance was not checked, and coverage follows analysis status, not fetching',()=>{
+  const m=A.todayModel({signals:[event({id:'u',eventId:'u',connection:{status:'unassessed'}}),event({id:'w',eventId:'w',connection:{status:'watch'}})],decisions:[],prefs:prefs(),date:'2026-10-28',isDue:()=>false,limit:10});
+  assert.deepEqual(m.all.map(x=>x.id),['w']);
+  const sources=[{label:'S',state:'available'}];
+  assert.equal(A.coverage({sources,analysis:{status:'partial',message:'m'}}).label,'Last update only partly checked');
+  assert.equal(A.coverage({sources,analysis:{status:'failed',message:'m'}}).label,'Last update failed · new items not checked');
+  assert.equal(A.coverage({sources,analysis:{status:'complete',message:''}}).label,'Sources reached and checked');
+  assert.equal(A.coverage({sources}).label,'Sources reached · analysis status not reported');
+});

@@ -9,6 +9,7 @@
  * advice complies — semantic compliance is not established by keyword matching, and nothing here claims it is.
  */
 import type { BusinessFact, CompanyContext } from './context';
+import { traceNumbers } from '../advisor/numbers';
 
 export type LimitKind = 'engineering' | 'capacity' | 'cash' | 'hiring' | 'responsibility' | 'other';
 export interface Limit { text: string; kind: LimitKind; strength: 'hard' | 'preference'; until: string | null }
@@ -90,7 +91,6 @@ export function finalCheckBlock(c: Pick<CompanyContext, 'constraints' | 'estimat
 // ── Answer check (grading and diagnostics; never shown as a guarantee) ──────────────────────────────────────────
 
 const BENCHMARK = /\b(?:most|many|the average|typical)\s+(?:[a-z-]+\s+){0,3}(?:shops?|businesses|companies|stores|brands|contractors|marketplaces|founders|retailers|startups)\b|\btypically\b|\bindustry (?:average|standard|benchmark|norm)s?\b|\bon average\b/gi;
-const FIGURE = /[£$€]\s?\d[\d,.]*(?:\s?[-–]\s?[£$€]?\d[\d,.]*)?k?|\b\d[\d,.]*(?:\s?[-–]\s?\d[\d,.]*)?\s?%/g;
 
 function limitMentioned(answer: string, l: Limit): boolean {
   const a = answer.toLowerCase();
@@ -120,9 +120,8 @@ export interface AnswerCheck {
  */
 export function checkAnswer(answer: string, c: Pick<CompanyContext, 'constraints' | 'estimates' | 'revenueModel'>, sourceText: string): AnswerCheck {
   const hard = companyLimits(c).filter((l) => l.strength === 'hard');
-  const norm = (s: string) => s.replace(/\s+/g, '').replace(/[–]/g, '-');
-  const allowed = norm(sourceText);
-  const figures = [...new Set(answer.match(FIGURE) ?? [])].filter((f) => !allowed.includes(norm(f).replace(/[£$€%]/g, '')));
+  // Numbers are traced (supplied, shown calculation, labelled illustration), not merely found — see advisor/numbers.ts.
+  const figures = [...new Set(traceNumbers(answer, sourceText).unsupported.map((c) => c.text))];
   return {
     limitsMissing: hard.filter((l) => !limitMentioned(answer, l)).map((l) => l.text),
     commissionDirectCompared: isCommissionModel(c.revenueModel) ? /\b(direct(ly)?|off[- ]platform|bypass|go(ing)? around (you|the platform)|zero[- ]fee|cut (you|the platform) out|without (paying|you))\b/i.test(answer) : null,

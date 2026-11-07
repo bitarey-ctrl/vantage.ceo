@@ -1,4 +1,5 @@
 import { callClaude } from "@/lib/ai/claude";
+import { classifyFailure, failureCause, recordStage, type FailureKind } from "@/lib/company-context/run-status";
 import { buildGatePrompt, type GateCandidate } from "@/lib/ai/prompts/triage";
 import { GATE_ENV, requireEnv } from "@/lib/env";
 import { isSignalCategory, type SignalCategory } from "./icp";
@@ -52,22 +53,19 @@ const MIN_WHY_LENGTH = 40;
  * without a valid category, or returns with an empty/stub `why_it_matters`
  * is dropped here and never reaches the database.
  */
-export type GateFailureKind = "budget" | "auth" | "availability" | "other";
+export type GateFailureKind = FailureKind;
 
 /** Classify a failed gate call without looking at its message text (which may hold provider details). */
-export function gateFailureKind(err: unknown): GateFailureKind {
-  const e = err as { name?: string; status?: number } | null;
-  if (e?.name === "ProviderBudgetError") return "budget";
-  if (e?.status === 401 || e?.status === 403 || e?.name === "AuthenticationError" || e?.name === "PermissionDeniedError") return "auth";
-  if (e?.status === 429 || (typeof e?.status === "number" && e.status >= 500) || e?.name === "APIConnectionError" || e?.name === "APIConnectionTimeoutError" || e?.name === "RateLimitError" || e?.name === "InternalServerError") return "availability";
-  return "other";
-}
+export const gateFailureKind = (err: unknown): GateFailureKind => classifyFailure(err);
 
 const FAILURE_TEXT: Record<GateFailureKind, string> = {
   budget: "the model-call budget for this environment was reached, so no request was sent for them",
   auth: "the AI service did not accept this server's credentials — the server configuration needs attention",
-  availability: "the AI service was busy or unreachable — try again later",
-  other: "of an unexpected error while reading the AI service's response",
+  connection: "the connection to the AI service failed",
+  timeout: "the AI service did not answer in time",
+  provider: "the AI service was busy or returned an error — try again later",
+  parse: "the AI service's answer could not be read",
+  other: "of an unexpected error",
 };
 
 export function gateFailureMessage(kinds: GateFailureKind[], batchesRun: number, candidateCount: number): string {
@@ -114,11 +112,14 @@ export async function gateSignals(
       // Silence is the safe default for a filter whose job is to discard —
       // but only when it is partial. See the all-failed check below.
       batchesFailed++;
-      failureKinds.push(gateFailureKind(err));
-      console.error("[gate] Batch failed, dropping its candidates:", err instanceof Error ? `${err.name}: ${err.message.slice(0, 200)}` : "unknown");
+      const kind = gateFailureKind(err);
+      failureKinds.push(kind);
+      recordStage("gate", { ok: false, kind });
+      console.error(`[gate] Batch failed (${kind}; ${failureCause(err)}), dropping its candidates.`);
       continue;
     }
 
+    recordStage("gate", { ok: true, items: batch.length });
     if (!Array.isArray(results)) continue;
 
     for (const r of results) {

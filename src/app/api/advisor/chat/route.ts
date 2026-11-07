@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { companyContextBlock, normaliseCompanyContext } from "@/lib/company-context/context";
 import { decisiveLimitsBlock, finalCheckBlock } from "@/lib/company-context/constraints";
+import { traceNumbers, unsupportedFiguresNote } from "@/lib/advisor/numbers";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { isMemoryField } from "@/lib/advisor/apply-memory";
@@ -152,7 +153,8 @@ Your role: Be a direct, honest advisor for THIS business. Reference their actual
 - Keep these distinctions: making an introduction vs taking responsibility for payment, financing, quality or delivery; subscription vs commission revenue; positive contribution per sale vs enough cash to survive; a capability they might build later vs a step they can take now.
 - Respect stated constraints. If the best answer breaks one, say so and give the best option inside it.
 - No statistics, benchmarks, thresholds, deadlines or legal, regulatory or provider claims unless they are in their context or signals — then say where they came from. No invented urgency. No certain predictions.
-- That includes "most businesses like yours…", "typically", industry ranges and made-up example figures ("if your margin is £3…"). Do not swap one invented number for another: use the numbers they gave, or name the number you need and ask for it.
+- Every number you write (a percentage, an amount, a multiple, a range) must come from their details, the SIGNALS, or a calculation you show in the same sentence from their numbers. Never state commission rates, fee levels, price points, conversion rates or "typical" percentages from general knowledge, and do not swap one invented number for another.
+- When there is no supported number, give the advice in words and name the number they should measure or tell you. If a made-up figure genuinely helps to explain a mechanism, start that sentence with "Illustration, not a benchmark:" and keep it to one.
 - When a missing fact would change the answer, give the answer for each likely case in a sentence or two, then ask ONE focused question. Never recommend a commitment that rests on an assumption you made up.
 
 ## SELF-CHECK BEFORE ANSWERING
@@ -300,7 +302,11 @@ ${finalCheckBlock(company)}`.trimEnd();
             system: systemPrompt,
             messages: messages.map((m) => ({ role: m.role, content: m.content })),
           }, { signal: request.signal });
-          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply, onUsage: (u) => recordProviderUsage(slot, u) });
+          // Numbers in the answer must trace to what the model was given: their details, the signals and their own
+          // messages (not the instructions above, whose examples would otherwise count as "supplied").
+          const supplied = [companyContextBlock(company), signalContext.text, decisionsText, strategiesText, consequencesText, ...messages.filter((m) => m.role === "user").map((m) => m.content)].join("\n");
+          await relayAdvisorStream({ stream: messageStream, send, clientGone, applyFromReply, onUsage: (u) => recordProviderUsage(slot, u),
+            afterReply: (reply) => unsupportedFiguresNote(traceNumbers(reply.split("[[VANTAGE_MEMORY]]")[0], supplied).unsupported) });
         } finally {
           try { controller.close(); } catch { /* already closed */ }
         }

@@ -92,6 +92,8 @@ export async function relayAdvisorStream(opts: {
   stream: ProviderStream; send: Send; clientGone: () => boolean;
   applyFromReply: (reply: string) => Promise<MemoryReport | null>;
   onUsage?: (usage: unknown) => void;
+  /** Text appended to a finished answer before it ends (e.g. a note on unsupported figures). */
+  afterReply?: (reply: string) => string | null;
 }): Promise<{ status: EndStatus | 'error' | 'disconnected'; memory: 'applied' | 'none' | 'skipped' | 'failed' }> {
   const { stream, send, clientGone, applyFromReply } = opts;
   const filter = createMarkerFilter();
@@ -104,6 +106,8 @@ export async function relayAdvisorStream(opts: {
     const status = endStatus(final.stop_reason);
     const replyText = final.content.map((b) => (b.type === 'text' ? b.text ?? '' : '')).join('');
     let memory: 'applied' | 'none' | 'skipped' | 'failed' = 'none';
+    const note = status === 'complete' || status === 'max_tokens' ? opts.afterReply?.(replyText) ?? null : null;
+    if (note) send({ delta: note });
     if (clientGone()) return { status: 'disconnected', memory: replyText.includes(MEMORY_TAG) ? 'skipped' : 'none' };
     if (status === 'complete') {
       try {

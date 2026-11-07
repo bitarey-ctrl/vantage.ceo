@@ -12,6 +12,7 @@
  *   4. Return summary
  */
 
+import { beginRunStatus, composeRunStatus } from '@/lib/company-context/run-status';
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processSignalsForProfile } from '@/lib/signals/signal-processor';
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ── Run pipeline per profile ─────────────────────────────────────────
-    const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; collected?: number; collection?: string; error?: string }[] = [];
+    const results: { profileId: string; signalsProcessed: number; consequencesGenerated: number; collected?: number; collection?: string; status?: string; statusMessage?: string; error?: string }[] = [];
 
     // Least-recently-served first, so a profile cut off by the budget leads
     // tomorrow's queue instead of being starved every morning. Never-served
@@ -105,6 +106,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Truthful status for scheduled runs too: every stage reports its outcome (see run-status.ts).
+      const stagesOf = beginRunStatus();
       try {
         // Get recent decisions for context-aware processing
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -124,17 +127,21 @@ export async function POST(request: NextRequest) {
           company
         );
 
-        let collected: number | undefined, collection: string | undefined;
+        let collected: number | undefined, collection: string | undefined, runId: string | null = null, planReport: object | null = null;
         if (Date.now() - startedAt < BUDGET_MS - COLLECTION_MS) {
           try {
             const run = await runSourcePlan(supabase, company, { maxNew: 8, trigger: 'scheduled' });
             collected = run.inserted + run.linkedExisting;
             collection = run.status;
+            runId = run.runId; planReport = run;
           } catch (err) {
             collection = 'failed';
             console.error(`[cron/ingest] Collection failed for ${profile.id}:`, err);
           }
         } else collection = 'skipped (budget)';
+
+        const pipeline = composeRunStatus(stagesOf());
+        if (runId && planReport) await supabase.from('source_collection_runs').update({ status: pipeline.status === 'complete' ? 'done' : pipeline.status, report: { ...planReport, pipeline } }).eq('id', runId);
 
         // Served — go to the back of the queue.
         await markProfileIngested(profile.id);
@@ -145,6 +152,8 @@ export async function POST(request: NextRequest) {
           consequencesGenerated: result.consequencesGenerated,
           collected,
           collection,
+          status: pipeline.status,
+          ...(pipeline.status !== 'complete' ? { statusMessage: pipeline.message } : {}),
         });
       } catch (err) {
         console.error(`[cron/ingest] Failed for profile ${profile.id}:`, err);
