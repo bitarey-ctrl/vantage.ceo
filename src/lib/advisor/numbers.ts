@@ -31,7 +31,7 @@ const WORD_NUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, fi
 
 /** Business meanings a number can carry; a claim and its source must share one. */
 const MEANINGS: [string, RegExp][] = [
-  ['commission', /\b(commission|take ?rate|fee|fees|cut|platform charge|booking fee)\b/i],
+  ['commission', /\b(commission|take ?rate|fee|fees|cut|platform|booking fee|takes)\b/i],
   ['price', /\b(price|prices|pricing|charge|charges|membership|subscription|plan|tier|per seat|aov|order value)\b/i],
   ['cost', /\b(cost|costs|spend|spending|expense|expenses|bill|budget|outgoings|share of costs)\b/i],
   ['margin', /\b(margin|margins|profit|profitability|contribution)\b/i],
@@ -71,6 +71,15 @@ function clauseAround(text: string, start: number, end: number): string {
   return `${l.split(/\s+/).slice(-7).join(' ')} ${r.split(/\s+/).slice(0, 7).join(' ')}`;
 }
 
+/** Words right next to the number: two before and three after, within its clause. These describe what it measures. */
+function adjacent(text: string, start: number, end: number): string {
+  const left = (text.slice(0, start).split(/[;—\n]|,\s|\s-\s|\.\s/).pop() ?? '').trim().split(/\s+/).slice(-2).join(' ');
+  const right = (text.slice(end).split(/[;:—.!?\n]|,\s|\s-\s/)[0] ?? '').trim().split(/\s+/).slice(0, 3).join(' ');
+  return `${left} ${right}`;
+}
+// "20% of your walkers" is a share of a group of people or things, not a rate charged or paid.
+const POPULATION = /^\s*of\s+(your|the|their|all|our)?\s*(customers|users|walkers|buyers|clients|subscribers|members|visitors|owners|contractors|makers|sellers|people|staff|team|leads|traffic|sign-?ups|shoppers)\b/i;
+
 function quantities(text: string): Quantity[] {
   const out: Quantity[] = [];
   for (const m of text.matchAll(QUANTITY)) {
@@ -80,7 +89,9 @@ function quantities(text: string): Quantity[] {
     const values = valuesOf(raw.replace(/[£$€]/g, ''));
     if (!values.length) continue;
     const ctx = clauseAround(text, m.index ?? 0, (m.index ?? 0) + raw.length);
-    const meanings = new Set(MEANINGS.filter(([, re]) => re.test(ctx)).map(([k]) => k));
+    const near = adjacent(text, m.index ?? 0, (m.index ?? 0) + raw.length);
+    const meanings = new Set(MEANINGS.filter(([, re]) => re.test(near)).map(([k]) => k));
+    if (POPULATION.test(text.slice((m.index ?? 0) + raw.length))) meanings.add('population-share');
     if (unit === 'duration' && /\b(cash|runway)\b/i.test(ctx)) meanings.add('cash');
     out.push({ text: raw.trim(), values, unit, currency: raw.match(/[£$€]/)?.[0] ?? null, period: PERIOD.find(([, re]) => re.test(ctx))?.[0] ?? null, meanings, index: m.index ?? 0 });
   }
@@ -129,7 +140,9 @@ function supports(s: Quantity, c: Quantity): boolean {
   if (c.period && s.period && c.period !== s.period) return false;
   return true;
 }
-const sharesMeaning = (a: Set<string>, b: Set<string>) => [...a].some((m) => b.has(m));
+// What the business pays or charges per transaction is one family: a commission is a fee, a price and a cost to someone.
+const PAID = new Set(['commission', 'price', 'cost', 'payment']);
+const sharesMeaning = (a: Set<string>, b: Set<string>) => [...a].some((m) => b.has(m) || (PAID.has(m) && [...b].some((n) => PAID.has(n))));
 
 /** Classify every quantitative claim in `answer` against the material the model was given. */
 export function traceNumbers(answer: string, suppliedText: string): { claims: NumericClaim[]; unsupported: NumericClaim[] } {

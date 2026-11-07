@@ -39,6 +39,16 @@ test('invented rates and ranges are unsupported; supplied durations and next-ste
   assert.deepEqual(kinds('Call three customers this week and review in two weeks.', ''), []);
 });
 
+test('real retest answers (Sonnet 5.5, 2026-11-07): the founder\'s own figures are not removed (were false positives)', () => {
+  const tradeloop = 'How they make money: Commission on each order (8%)';
+  assert.deepEqual(kinds("If it's leakage, the real comparison is the zero-fee alternative: once a buyer has a maker's contact, going direct costs them nothing, while the platform costs 8% of each order.", tradeloop), ['8%=supplied']);
+  const shop = 'Our payment provider charges us 3.4% per transaction. Is that normal?';
+  assert.deepEqual(kinds('Whether 3.4% hurts depends on your margin per camera, which I don\'t have.', shop), ['3.4%=supplied']);
+  assert.deepEqual(kinds('If you tell me your rough monthly sales volume and average camera price, I can show you what 3.4% costs in absolute terms and how much a rate change would be worth.', shop), ['3.4%=supplied']);
+  // The model's genuinely unsupported figure in the same run stays removed.
+  assert.deepEqual(kinds("Dropping to, say, 15% doesn't change that math much.", 'How they make money: 20% commission on each booked walk'), ['15%=unsupported']);
+});
+
 test('the gate replaces unsupported figures in place, keeps the qualitative advice and states what was removed', () => {
   const gate = createNumberGate('How they make money: Commission on each order (8%)');
   const out = gate.push('You take 8% today. Charge 2-3% on first orders and 12-15% on repeats, but only if you handle payment risk. ') + gate.flush();
