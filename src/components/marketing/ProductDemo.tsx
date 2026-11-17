@@ -1,156 +1,195 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowUpRight, ChevronRight, Command, GitBranch, LayoutGrid, Link2, MessageSquare, Plus, RotateCcw, Zap } from 'lucide-react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import { Activity, ArrowLeft, ArrowRight, ChevronRight, FileText, RotateCcw, Sparkles } from 'lucide-react';
 import { BrandLogo } from '@/components/vantage/brand-logo';
 
-// Public, fictional examples only. Keep the screen hierarchy and field names
-// aligned with Command, Signals, Strategies and Decisions in the real app.
+// Public, fictional example only. Mirrors the current signed-in app (/app):
+// Today, Signals, My decisions, Ask Advisor and Your company.
 // This walkthrough never calls the authenticated app or generates AI output.
+
+type ContextKey = 'focus' | 'buyers' | 'risks' | 'limits';
+const company = {
+  name: 'Halden', full: 'Halden Components', initial: 'H',
+  fields: [
+    ['What you sell', 'Precision steel fasteners for industrial equipment makers.'],
+    ['Who buys', 'Equipment makers in Germany and the Netherlands, through three EU distributors.'],
+    ['Current focus', 'Grow EU volume 15% this year without gross margin falling below 18%.'],
+    ['Top risks', 'Steel input costs. One distributor is 40% of EU revenue.'],
+    ['Keep within', 'No price changes inside signed contracts. Renewals in June.'],
+    ['Competitors', 'Two lower-priced suppliers selling into the same distributors.'],
+    ['Past decisions', '3 recorded, including “Move to quarterly steel contracts” (reviewed).'],
+  ],
+} as const;
+const contextLabel: Record<ContextKey, string> = { focus: 'Your focus: 18% margin floor', buyers: 'Your buyers: 3 EU distributors', risks: 'Your risk: one distributor is 40%', limits: 'Your limit: no mid-contract price change' };
+
 const signals = [
-  {
-    title: 'A competitor adds usage-based pricing.', category: 'Competition', urgency: 'Decide this month', source: 'Example pricing announcement',
-    summary: 'A rival now offers a monthly allowance with extra charges above it.',
-    why: 'Buyers may start comparing your flat price with a lower starting price. The total bill depends on how much they use.',
-    next: 'Compare the full cost for your typical customers before changing your plans.',
-    soWhat: 'Your flat price could become a useful point of difference. First check whether your busiest accounts still have healthy margins.',
-    act: 'A usage allowance may protect margins, but makes the customer’s bill less predictable.',
-    dont: 'Your price stays easy to understand. High-usage accounts may still need a closer look.',
-    action: 'Review usage and cost across your busiest accounts. Ask customers how much they value a predictable bill.',
-  },
-  {
-    title: 'An infrastructure supplier changes its rates.', category: 'Cost Base', urgency: 'Act this week', source: 'Example supplier notice',
-    summary: 'A supplier announces a change to its consumption rates at renewal.',
-    why: 'A change in one supplier’s rates could affect your cost per account. Check the contract and your actual usage.',
-    next: 'Model the new rates against your usage before your next renewal.',
-    soWhat: 'The impact depends on your contract and which features drive consumption. The headline alone cannot tell you the margin effect.',
-    act: 'You can compare a renewal, an alternative supplier and a change to usage before committing.',
-    dont: 'You preserve your current setup, but may miss the chance to negotiate before renewal.',
-    action: 'Confirm when the rates apply. Compare your last invoice with a model using the new rates.',
-  },
-  {
-    title: 'A larger rival acquires a complementary product.', category: 'Competition', urgency: 'Watch', source: 'Example acquisition announcement',
-    summary: 'A competitor announces an acquisition that could broaden its offer.',
-    why: 'A broader offer may change buyer comparisons. An announcement does not prove the products already work together.',
-    next: 'Check what is available now and which of your buyers would value the combination.',
-    soWhat: 'Watch for a change in real buyer requirements before moving your roadmap. The acquisition itself is not evidence of lost demand.',
-    act: 'Customer conversations can help separate a new requirement from a competitor’s promise.',
-    dont: 'You keep your roadmap focused, but should still check whether the combination appears in sales conversations.',
-    action: 'Review recent buyer objections and ask which missing capability would change the purchase decision.',
-  },
+  { category: 'Tariffs', date: 'Mar 2', sources: 2, title: 'EU raises duties on imported steel fasteners', summary: 'A provisional 9% duty applies to fastener imports from outside the EU from April 1.', domain: 'example-trade-journal.com', touches: ['focus', 'buyers', 'limits'] as ContextKey[],
+    why: 'Most of your EU revenue ships under contracts you can’t reprice until June. The duty lands on margin first, and on your largest distributor most.',
+    act: 'A surcharge, where contracts allow it, protects margin but tests the distributor relationships.',
+    dont: 'Absorbing the duty until June keeps volume steady but likely takes gross margin below your 18% floor.',
+    check: 'Which contracts allow a surcharge, and whether the duty covers your product codes.' },
+  { category: 'Competition', date: 'Feb 27', sources: 1, title: 'A rival supplier opens an EU warehouse', summary: 'A competing supplier now holds stock in Rotterdam with 48-hour delivery.', domain: 'example-industry-news.com', touches: ['buyers', 'risks'] as ContextKey[],
+    why: 'Faster delivery could matter most to the distributor that already carries 40% of your EU revenue.',
+    act: 'Matching delivery times may mean holding stock in the EU, which ties up cash.',
+    dont: 'Price and quality may still win, but watch whether delivery time comes up at renewal.',
+    check: 'Whether your distributors have raised delivery speed in the last two quarters.' },
+  { category: 'Cost base', date: 'Feb 24', sources: 3, title: 'Steel prices fall for a third month', summary: 'Benchmark prices for the steel you buy are down 6% since December.', domain: 'example-commodities.com', touches: ['risks', 'focus'] as ContextKey[],
+    why: 'Lower input cost could offset part of the new duty, and your quarterly steel contract renews next month.',
+    act: 'A longer contract now could hold the lower price through the duty period.',
+    dont: 'Staying quarterly keeps flexibility if prices keep falling.',
+    check: 'Your current contract terms and the supplier’s minimum volumes.' },
 ] as const;
 
-const strategies = [
-  { title: 'Test a usage allowance before changing every plan.', description: 'Use the usage review and customer conversations to frame a small pricing test. Keep existing plans in place while you examine the trade-off.', now: 'Review cost and usage by account. Talk to customers about predictable bills.', later: 'Compare the evidence with a flat price increase before choosing a model.', inaction: 'Keep the current price, with the high-usage margin question still unresolved.' },
-  { title: 'Keep flat pricing and improve the cost picture.', description: 'Retain a predictable bill while investigating which features and accounts drive cost. Examine whether cost changes can address the margin question.', now: 'Check cost by feature and account. Confirm which costs you can influence.', later: 'Review whether the cost work changes the need for a pricing test.', inaction: 'The offer stays simple, but the reason for weak margins may remain unclear.' },
+const decisions = [
+  { title: 'Absorb the EU duty, or add a surcharge?', note: 'The new duty lands before June renewals.', status: 'Thinking it through', date: 'Decide by Mar 20' },
+  { title: 'Add a second EU distributor?', note: 'Reduce dependence on one distributor.', status: 'Thinking it through', date: 'No decision date set' },
+  { title: 'Move to quarterly steel contracts', note: 'Chosen in October. Reviewed in January.', status: 'Reviewed', date: 'Past' },
 ] as const;
 
-type View = 'Command' | 'Signals' | 'Strategies' | 'Decisions' | 'Advisor';
-const navigation = [{ label: 'Command', icon: Command }, { label: 'Signals', icon: Zap }, { label: 'Strategies', icon: LayoutGrid }, { label: 'Decisions', icon: GitBranch }, { label: 'Advisor', icon: MessageSquare }] as const;
+const responses = [
+  ['Add a surcharge where contracts allow it', 'Protects most of the margin from April.', 'Tests the two smaller distributor relationships.', 'Easy: remove it at renewal.'],
+  ['Absorb the duty until June renewals', 'Keeps volume steady through Q2.', 'Gross margin likely below 18% for a quarter.', 'Nothing to undo; the cost is spent.'],
+  ['Lock a 12-month steel contract now', 'Offsets part of the duty.', 'Less flexibility if prices keep falling.', 'Hard: a 12-month commitment.'],
+] as const;
+
 const advisorExamples = [
-  { question: 'Should we change our pricing?', answer: 'First check account costs and customer expectations. A competitor’s move is a reason to investigate, not a reason to copy it.', next: 'Which customers would benefit from a predictable bill?' },
-  { question: 'What are we missing?', answer: 'High usage could signal strong customer value. Compare retention and willingness to pay before treating those accounts only as a cost problem.', next: 'What evidence would change your mind?' },
+  { question: 'Should we absorb the duty or add a surcharge?', answer: 'Start with the contracts. If the two smaller distributors allow a surcharge, you can protect most of the margin without touching your largest account before June. Absorbing everywhere would likely take you below the 18% floor you set.', next: 'What would your largest distributor do if a rival offered a lower landed price?' },
+  { question: 'What am I missing?', answer: 'You’re treating the duty only as a cost. It’s also a negotiating moment: your steel contract renews next month and prices are down 6%. Together they may close most of the gap.', next: 'What evidence would change your mind?' },
+  { question: 'What did we learn last time?', answer: 'When you moved to quarterly steel contracts, your review noted that distributors accepted a price change with 60 days’ notice. That supports announcing any surcharge early.', next: 'Do the June renewals leave enough notice?' },
 ] as const;
 
-function AdvisorExample({ selected, onChoose, compact = false }: { selected: number | null; onChoose: (index: number) => void; compact?: boolean }) {
-  return <div className={`vd-advisor-example${compact ? ' vd-advisor-compact' : ''}`}>
-    <span className="vd-advisor-context"><i className="vs-dot" />Aster · Pricing context attached</span>
-    {selected === null ? <div className="vd-advisor-welcome"><BrandLogo /><h3>What are you weighing?</h3><p>Bring a decision or an assumption you want challenged.</p></div> : <div className="vd-advisor-conversation" aria-live="polite"><div className="vd-advisor-question"><span>You</span><p>{advisorExamples[selected].question}</p></div><div className="vd-advisor-answer"><span>VANTAGE Advisor · Sample answer</span><p>{advisorExamples[selected].answer}</p><p>{advisorExamples[selected].next}</p></div></div>}
-    <div className="vd-advisor-prompts" aria-label={compact ? 'Phone Advisor sample questions' : 'Advisor sample questions'}><span>Choose a sample question</span>{advisorExamples.map((item, index) => <button key={item.question} aria-pressed={selected === index} onClick={() => onChoose(index)}>{item.question}<ArrowUpRight size={12} aria-hidden="true" /></button>)}</div>
+type View = 'today' | 'signals' | 'signal' | 'decisions' | 'decision' | 'advisor' | 'company';
+const tabs: [View, string][] = [['today', 'Today'], ['signals', 'Signals'], ['decisions', 'My decisions']];
+
+function Chips({ keys }: { keys: readonly ContextKey[] }) {
+  return <div className="vx-chips" aria-label="Company context this touches">{keys.map(key => <span key={key}>{contextLabel[key]}</span>)}</div>;
+}
+
+function Btn({ children, onClick, dark = false }: { children: ReactNode; onClick: () => void; dark?: boolean }) {
+  return <button className={dark ? 'vx-btn vx-btn-dark' : 'vx-btn'} onClick={onClick}>{children}</button>;
+}
+
+/** A static "Your company" card, matching the app's company context page. */
+export function CompanyContextPreview() {
+  return <div className="vx-context" aria-label="Illustrative company context in VANTAGE">
+    <div className="vx-context-top"><span className="vx-avatar">{company.initial}</span><span><strong>Your company.</strong><small>The context behind the guidance</small></span><em>Illustrative example</em></div>
+    <dl>{company.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    <p className="vx-fine">Advisor suggests updates as your business changes. Every answer starts from this.</p>
   </div>;
-}
-
-function SampleAnalysis({ index = 0 }: { index?: number }) {
-  const signal = signals[index];
-  return <div className="vd-analysis">
-    <div className="vd-analysis-lead"><span className="vd-label">So what</span><p>{signal.soWhat}</p></div>
-    <div className="vd-outcomes"><div><span className="vd-label">If you act</span><p>{signal.act}</p></div><div><span className="vd-label">If you don’t</span><p>{signal.dont}</p></div></div>
-    <div className="vd-callout"><span className="vd-label">Immediate action</span><p>{signal.action}</p></div>
-  </div>;
-}
-
-export function ImpactPreview() {
-  return <div className="vd-snippet"><div className="vd-snippet-top"><Zap size={14} aria-hidden="true" /><span>Company-specific analysis</span><small>Example data</small></div><SampleAnalysis /><span className="vd-footnote">Aster · Fictional B2B SaaS company reviewing pricing</span></div>;
-}
-
-function DemoButton({ children, onClick, secondary = false }: { children: ReactNode; onClick: () => void; secondary?: boolean }) {
-  return <button className={secondary ? 'vd-text-button' : 'vd-button'} onClick={onClick}>{children}<ArrowUpRight size={14} aria-hidden="true" /></button>;
 }
 
 export function ProductDemo() {
-  const [view, setView] = useState<View>('Command');
-  const [selectedSignal, setSelectedSignal] = useState<number | null>(null);
-  const [showAnalysis, setShowAnalysis] = useState(false);
-  const [showSource, setShowSource] = useState(false);
-  const [strategy, setStrategy] = useState(0);
-  const [queue, setQueue] = useState<'Decisions' | 'Signals' | 'Strategies'>('Decisions');
-  const [advisorQuestion, setAdvisorQuestion] = useState<number | null>(null);
-  const [inspection, setInspection] = useState(0);
+  const [view, setView] = useState<View>('today');
+  const [signal, setSignal] = useState(0);
+  const [analysed, setAnalysed] = useState(false);
+  const [recorded, setRecorded] = useState(false);
+  const [question, setQuestion] = useState<number | null>(null);
   const screen = useRef<HTMLDivElement>(null);
-  const phoneScreen = useRef<HTMLDivElement>(null);
-  const analysis = useRef<HTMLDetailsElement>(null);
   const screenId = useId();
-  const signal = signals[selectedSignal ?? 0];
+  const active = view === 'signal' ? 'signals' : view === 'decision' ? 'decisions' : view;
 
-  useEffect(() => {
-    const pane = screen.current;
-    const detail = analysis.current;
-    if (view === 'Signals' && showAnalysis && pane && detail) {
-      pane.scrollTo({ top: detail.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - 16, behavior: 'instant' });
-    }
-  }, [view, showAnalysis, selectedSignal, inspection]);
-
-  useEffect(() => {
-    phoneScreen.current?.scrollTo({ top: 0, behavior: 'instant' });
-    if (view === 'Advisor') screen.current?.scrollTo({ top: 0, behavior: 'instant' });
-  }, [advisorQuestion, view]);
-
-  function go(next: View) {
-    setView(next); setShowSource(false);
-    if (next !== 'Signals') setSelectedSignal(null);
-    screen.current?.scrollTo({ top: 0, behavior: 'instant' });
-  }
-  function openSignal(index: number, analysis = false) {
-    setSelectedSignal(index); setShowAnalysis(analysis); setShowSource(false); go('Signals');
-    if (analysis) setInspection(value => value + 1);
-  }
-  function reset() {
-    setSelectedSignal(null); setShowAnalysis(false); setStrategy(0); setQueue('Decisions'); setAdvisorQuestion(null); go('Command');
-  }
+  function go(next: View) { setView(next); screen.current?.scrollTo({ top: 0, behavior: 'instant' }); }
+  function openSignal(index: number) { setSignal(index); setAnalysed(false); go('signal'); }
+  function reset() { setSignal(0); setAnalysed(false); setRecorded(false); setQuestion(null); go('today'); }
+  const s = signals[signal];
 
   return <div id="product-demo" className="vs-product-demo" data-hero-layer>
-    <div className="vd-shell" aria-label="Interactive VANTAGE product walkthrough with fictional data">
-      <aside className="vd-sidebar"><div className="vd-brand"><BrandLogo /><span>Vantage</span></div><span className="vd-workspace">Aster<small>Example workspace</small></span><nav aria-label="Product walkthrough navigation">{navigation.map(({ label, icon: Icon }) => <button key={label} aria-label={label} title={label} aria-current={view === label ? 'page' : undefined} aria-controls={screenId} onClick={() => { if (label === 'Signals') { setSelectedSignal(null); setShowAnalysis(false); } go(label); }}><Icon size={17} aria-hidden="true" /><span>{label}</span></button>)}</nav><div className="vd-sidebar-note"><span className="vd-label">Your focus</span><p>Review pricing.<br />Protect customer trust.</p></div></aside>
-      <div className="vd-workbench"><div className="vd-toolbar"><span>Aster <ChevronRight size={12} aria-hidden="true" /><strong>{view}</strong></span><span className="vd-sample-label">Fictional example</span><button aria-label="Restart product walkthrough" title="Restart walkthrough" onClick={reset}><RotateCcw size={14} aria-hidden="true" /></button></div>
-        <div ref={screen} id={screenId} className="vd-screen" tabIndex={0} aria-label={`${view} sample screen`}>
-          {view === 'Command' && <>
-            <div className="vd-heading"><span className="vd-label">Command centre</span><h2>Your day, in focus.</h2><p>Know what to move forward—and what can wait.</p></div>
-            <div className="vd-command-grid"><section className="vd-priority"><span className="vd-label"><i className="vs-dot" />Ready for review</span><h3>Should we change<br />our pricing model?</h3><p>Compare costs and customer expectations.</p><DemoButton onClick={() => go('Decisions')}>Continue decision</DemoButton></section><section className="vd-brief"><span className="vd-label"><Zap size={12} aria-hidden="true" />Signal brief</span><h3>One change to<br />look at first.</h3><button className="vd-brief-story" onClick={() => openSignal(0)}>{signals[0].title}<small>Competition · Decide this month</small></button><DemoButton secondary onClick={() => openSignal(0)}>Review signal</DemoButton></section></div>
-            <div className="vd-progress"><strong>0 <span>/ 1</span></strong><span>decisions resolved</span><div /><small>1 still open <span>3 signals tracked</span></small></div>
-            <div className="vd-queue"><div className="vd-queue-tabs" aria-label="Command queue">{(['Decisions', 'Signals', 'Strategies'] as const).map(label => <button key={label} aria-pressed={queue === label} onClick={() => setQueue(label)}>{label}<span>{label === 'Decisions' ? 1 : label === 'Signals' ? 3 : 2}</span></button>)}</div>
-              {queue === 'Decisions' ? <button className="vd-row" onClick={() => go('Decisions')}><span><small>Open · Pricing</small><strong>Should we change our pricing model?</strong></span><ChevronRight size={14} aria-hidden="true" /></button> : queue === 'Signals' ? signals.map((item, index) => <button className="vd-row" key={item.title} onClick={() => openSignal(index)}><span><small>{item.category}</small><strong>{item.title}</strong></span><ChevronRight size={14} aria-hidden="true" /></button>) : strategies.map((item, index) => <button className="vd-row" key={item.title} onClick={() => { setStrategy(index); go('Strategies'); }}><span><small>Considering</small><strong>{item.title}</strong></span><ChevronRight size={14} aria-hidden="true" /></button>)}
-            </div>
+    <div className="vx-app" aria-label="Interactive VANTAGE walkthrough with a fictional company">
+      <header className="vx-header">
+        <span className="vx-brand"><BrandLogo />Vantage</span>
+        <nav aria-label="Walkthrough navigation">{tabs.map(([key, label]) => <button key={key} aria-current={active === key ? 'page' : undefined} aria-controls={screenId} onClick={() => go(key)}>{label}</button>)}</nav>
+        <button className="vx-ask" aria-current={view === 'advisor' ? 'page' : undefined} onClick={() => go('advisor')}>Ask Advisor</button>
+        <button className="vx-company" aria-label="Open company context" aria-current={view === 'company' ? 'page' : undefined} onClick={() => go('company')}><span className="vx-avatar">{company.initial}</span><span>{company.name}</span></button>
+      </header>
+      <div className="vx-strip"><span>Fictional example workspace</span><button aria-label="Restart walkthrough" title="Restart walkthrough" onClick={reset}><RotateCcw size={12} aria-hidden="true" /></button></div>
+      <div ref={screen} id={screenId} className="vx-screen" tabIndex={0} aria-label="Sample screen">
+
+        {view === 'today' && <>
+          <span className="vx-date">Tuesday, March 3</span>
+          <h2>What needs your attention?</h2>
+          <p className="vx-sub">3 check-ins and changes for {company.full}.</p>
+          <button className="vx-askbox" onClick={() => go('advisor')}><Sparkles size={15} aria-hidden="true" /><span><small>Already have something on your mind?</small>Ask a question, or think something through…</span><span className="vx-btn vx-btn-dark">Ask Advisor <ArrowRight size={12} aria-hidden="true" /></span></button>
+          <div className="vx-section-head"><strong>Check-ins &amp; changes</strong><span>Why these items?</span></div>
+          <article className="vx-card">
+            <span className="vx-meta"><Activity size={12} aria-hidden="true" />New · {signals[0].date} · {signals[0].category}</span>
+            <h3>{signals[0].title}</h3>
+            <p>{signals[0].summary}</p>
+            <div className="vx-rule" />
+            <span className="vx-small-strong">Why it may matter to you</span>
+            <Chips keys={signals[0].touches} />
+            <div className="vx-actions"><Btn onClick={() => openSignal(0)}>Inspect the signal <ArrowRight size={12} aria-hidden="true" /></Btn><button className="vx-link" onClick={() => go('decision')}>Continue the decision</button></div>
+          </article>
+          <div className="vx-section-head"><strong>Continue your work</strong></div>
+          {decisions.slice(0, 2).map(d => <button key={d.title} className="vx-row" onClick={() => go('decision')}><span><strong>{d.title}</strong><small>{d.status}</small></span><ChevronRight size={14} aria-hidden="true" /></button>)}
+        </>}
+
+        {view === 'signals' && <>
+          <h2>Signals.</h2>
+          <p className="vx-sub">Understand a change, inspect its basis, then decide whether to watch or respond.</p>
+          <div className="vx-tabs"><span aria-current="true">All signals</span><span>Watching</span><span>Dismissed</span></div>
+          {signals.map((item, index) => <button key={item.title} className="vx-signal-row" onClick={() => openSignal(index)}><span><small>{item.category} · Published {item.date} · {item.sources} source record{item.sources > 1 ? 's' : ''}</small><strong>{item.title}</strong><span>{item.summary}</span><Chips keys={item.touches} /></span><ArrowRight size={14} aria-hidden="true" /></button>)}
+        </>}
+
+        {view === 'signal' && <article>
+          <button className="vx-back" onClick={() => go('signals')}><ArrowLeft size={12} aria-hidden="true" />Signals</button>
+          <span className="vx-kicker">{s.category} · External event</span>
+          <h2>{s.title}</h2>
+          <div className="vx-block"><span className="vx-small-strong">What changed</span><p>{s.summary}</p><span className="vx-source"><FileText size={12} aria-hidden="true" />{s.domain}</span><small className="vx-fine">{s.sources} source record{s.sources > 1 ? 's' : ''}. Fictional for this example.</small></div>
+          <div className="vx-block"><span className="vx-small-strong">Why it may matter to you</span><Chips keys={s.touches} /><p>{s.why}</p><small className="vx-fine">Interpretation from your company context. Not a verified effect on your business.</small></div>
+          <div className="vx-block"><div className="vx-split"><span className="vx-small-strong">What a response could change</span>{!analysed && <Btn onClick={() => setAnalysed(true)}>Analyse impact</Btn>}</div>
+            {analysed ? <div className="vx-impact"><div><small>If you act</small><p>{s.act}</p></div><div><small>If you don’t</small><p>{s.dont}</p></div><div><small>Check first</small><p>{s.check}</p></div></div> : <p className="vx-muted">See the trade-off for {company.name} before you respond.</p>}
+            {analysed && signal === 0 && <div className="vx-actions"><Btn dark onClick={() => go('decision')}>Work it through as a decision <ArrowRight size={12} aria-hidden="true" /></Btn></div>}
+          </div>
+        </article>}
+
+        {view === 'decisions' && <>
+          <h2>My decisions.</h2>
+          <p className="vx-sub">Every question, your reasoning, the choice and what happened next.</p>
+          <div className="vx-tabs"><span aria-current="true">Active</span><span>Past</span><span>Review due</span><span>Strategies</span></div>
+          {decisions.map(d => <button key={d.title} className="vx-row vx-row-tall" onClick={() => go('decision')}><span><strong>{d.title}</strong><small>{d.note}</small></span><span className="vx-status"><small>{d.title === decisions[0].title && recorded ? 'Choice recorded' : d.status}</small><small>{d.date}</small></span><ChevronRight size={14} aria-hidden="true" /></button>)}
+        </>}
+
+        {view === 'decision' && <article>
+          <button className="vx-back" onClick={() => go('decisions')}><ArrowLeft size={12} aria-hidden="true" />My decisions</button>
+          <span className="vx-badge">{recorded ? 'Choice recorded' : 'Thinking it through'}</span>
+          <h2>{decisions[0].title}</h2>
+          <div className="vx-card vx-card-tight">
+            <span className="vx-small-strong">What a good outcome looks like</span>
+            <p className="vx-strong">Keep EU volume while holding gross margin above 18%.</p>
+            <p className="vx-muted"><b>Keep within</b> No price changes inside signed contracts.</p>
+          </div>
+          {recorded ? <div className="vx-card vx-card-tight vx-recorded"><span className="vx-small-strong">Your recorded choice</span><p className="vx-strong">Surcharge for the two smaller distributors. Absorb for the largest until June.</p><p className="vx-muted">Reasoning, options and evidence saved as they were today. Review set for June 1: did EU volume hold, and where did margin land?</p><div className="vx-actions"><span className="vx-btn vx-btn-off">Review what happened · June 1</span></div></div> : <>
+            <span className="vx-small-strong vx-gap">Responses considered</span>
+            <div className="vx-responses">{responses.map(([title, effect, downside, undo]) => <div key={title}><strong>{title}</strong><dl><dt>Expected effect</dt><dd>{effect}</dd><dt>Downside</dt><dd>{downside}</dd><dt>Undoing it</dt><dd>{undo}</dd></dl></div>)}</div>
+            <span className="vx-small-strong vx-gap">What supports this?</span>
+            <button className="vx-evidence" onClick={() => openSignal(0)}><FileText size={12} aria-hidden="true" /><span>Signal · {signals[0].title}</span></button>
+            <div className="vx-evidence"><Activity size={12} aria-hidden="true" /><span>Assumption · The duty covers our product codes. <em>Not yet checked.</em></span></div>
           </>}
-          {view === 'Signals' && selectedSignal === null && <>
-            <div className="vd-heading"><span className="vd-label">Your field of view</span><h2>Signals</h2><p>Changes that could affect your next decision.</p></div><div className="vd-feed-heading"><span>3 sample signals</span><span>Company focus: pricing</span></div>
-            {signals.map((item, index) => <button className="vd-feed-row" key={item.title} onClick={() => openSignal(index)}><span className="vd-feed-dot" /><span><small>{item.category} · {item.urgency}</small><strong>{item.title}</strong><p>{item.summary}</p><small>{item.source}</small></span><ChevronRight size={15} aria-hidden="true" /></button>)}
-          </>}
-          {view === 'Signals' && selectedSignal !== null && <article className="vd-document">
-            <button className="vd-back" onClick={() => { setSelectedSignal(null); screen.current?.scrollTo({ top: 0, behavior: 'instant' }); }}><ArrowLeft size={13} aria-hidden="true" />All signals</button><div className="vd-document-meta"><span>{showAnalysis ? 'Analysed example' : signal.urgency}</span>{signal.category}</div><h2>{signal.title}</h2><p className="vd-lede">{signal.summary}</p>
-            <button className="vd-source" aria-expanded={showSource} onClick={() => setShowSource(value => !value)}><Link2 size={13} aria-hidden="true" />{signal.source}<Plus size={12} aria-hidden="true" /></button>
-            {showSource && <div className="vd-source-example"><span className="vd-label">Fictional source excerpt</span><p>{signal.summary}</p><small>This walkthrough uses fictional announcements. The live app links to the original source.</small></div>}
-            <h3>Why it matters</h3><p>{signal.why}</p>
-            {!showAnalysis ? <div className="vd-callout"><span className="vd-label">Suggested next step</span><p>{signal.next}</p><DemoButton onClick={() => { setShowAnalysis(true); setInspection(value => value + 1); }}>View sample impact analysis</DemoButton></div> : <><details ref={analysis} className="vd-disclosure" open><summary>Company-specific analysis<Plus size={13} aria-hidden="true" /></summary><SampleAnalysis index={selectedSignal} /></details>{selectedSignal === 0 && <DemoButton onClick={() => { setStrategy(0); go('Strategies'); }}>Explore sample strategy</DemoButton>}</>}
-          </article>}
-          {view === 'Strategies' && <article className="vd-document"><div className="vd-heading"><span className="vd-label">Strategies · Considering</span><h2>Work through a response.</h2><p>Two sample strategies. Different trade-offs.</p></div><div className="vd-strategy-picker" aria-label="Sample strategies">{strategies.map((item, index) => <button key={item.title} aria-pressed={strategy === index} onClick={() => setStrategy(index)}><span>0{index + 1}</span>{index === 0 ? 'Test an allowance' : 'Keep flat pricing'}</button>)}</div>
-            <span className="vd-label">Strategic response</span><h3 className="vd-record-title">{strategies[strategy].title}</h3><p>{strategies[strategy].description}</p><button className="vd-origin" onClick={() => openSignal(0, true)}><span className="vd-label">Originating signal <ArrowUpRight size={12} aria-hidden="true" /></span><strong>{signals[0].title}</strong></button><details className="vd-disclosure" open><summary>Timeline &amp; longer-term impact<Plus size={13} aria-hidden="true" /></summary><div className="vd-timeline"><div><span className="vd-label">Now</span><p>{strategies[strategy].now}</p></div><div><span className="vd-label">Next</span><p>{strategies[strategy].later}</p></div></div><div className="vd-callout"><span className="vd-label">If you do nothing</span><p>{strategies[strategy].inaction}</p></div></details><DemoButton onClick={() => go('Decisions')}>View framed decision</DemoButton>
-          </article>}
-          {view === 'Advisor' && <article className="vd-advisor"><div className="vd-heading"><h2>Advisor</h2><p>Work through the decision. Keep the context.</p></div><AdvisorExample selected={advisorQuestion} onChoose={setAdvisorQuestion} /></article>}
-          {view === 'Decisions' && <article className="vd-document"><div className="vd-document-meta"><span>Open</span>Needs more clarity · Pricing</div><h2>Should we change our pricing model?</h2><span className="vd-label">The choice</span><p>Test a usage allowance, keep flat pricing, or change the flat price. Decide after reviewing account costs and customer expectations.</p><details className="vd-disclosure" open><summary>Context &amp; supporting evidence<Plus size={13} aria-hidden="true" /></summary><div className="vd-analysis"><div><span className="vd-label">Why now</span><p>A competitor’s new offer changes the comparison. It does not prove we should follow it.</p></div><div className="vd-outcomes"><div><span className="vd-label">What we know</span><p>Our current plans offer predictable bills. We have not yet compared usage costs across our busiest accounts.</p></div><div><span className="vd-label">What’s uncertain</span><p>Would customers accept a less predictable bill? Would an allowance improve margins enough to justify it?</p></div></div></div></details><span className="vd-label">Blind spot review</span><details className="vd-risk"><summary><span>Example</span>Customer perspective<Plus size={13} aria-hidden="true" /></summary><p>High usage may be a sign of strong customer value. Check retention and willingness to pay before treating those accounts only as a cost problem.</p></details><span className="vd-footnote">Sample saved reasoning. The decision remains open.</span><DemoButton secondary onClick={() => openSignal(0)}>Return to the signal</DemoButton></article>}
-        </div>
+          <aside className="vx-advisor-panel"><span className="vx-panel-head"><Sparkles size={13} aria-hidden="true" />Advisor<small>One continuing conversation with this decision.</small></span>
+            <span className="vx-kicker">Next useful step</span>
+            <p className="vx-strong">{recorded ? 'Set what you’ll compare on June 1.' : 'Check which contracts allow a surcharge.'}</p>
+            <p className="vx-muted">{recorded ? 'Note the margin and volume you expect, so the review is honest.' : 'Two of three distributor contracts decide whether the first response is open to you.'}</p>
+            <div className="vx-actions">{!recorded && <Btn dark onClick={() => setRecorded(true)}>Record a choice</Btn>}<Btn onClick={() => go('advisor')}>Ask Advisor</Btn></div>
+          </aside>
+        </article>}
+
+        {view === 'advisor' && <article>
+          <h2>Ask Advisor.</h2>
+          <p className="vx-sub">Think it through with your company context attached.</p>
+          <span className="vx-context-pill"><Sparkles size={12} aria-hidden="true" />{company.full} context: focus, risks, limits, signals and past decisions</span>
+          {question !== null && <div className="vx-chat" aria-live="polite"><div className="vx-you"><small>You</small><p>{advisorExamples[question].question}</p></div><div className="vx-answer"><small>Advisor · Sample answer</small><p>{advisorExamples[question].answer}</p><p className="vx-strong">{advisorExamples[question].next}</p></div></div>}
+          <div className="vx-prompts"><small>Choose a sample question</small>{advisorExamples.map((item, index) => <button key={item.question} aria-pressed={question === index} onClick={() => setQuestion(index)}>{item.question}<ArrowRight size={12} aria-hidden="true" /></button>)}</div>
+        </article>}
+
+        {view === 'company' && <article>
+          <h2>Your company.</h2>
+          <p className="vx-sub">The context behind the guidance.</p>
+          <dl className="vx-fields">{company.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          <p className="vx-fine">Supplied context is not independently verified. Advisor suggests updates as your business changes.</p>
+        </article>}
       </div>
     </div>
-    <aside className="vd-phone" aria-label="Phone preview of VANTAGE Advisor with fictional data"><span className="vd-phone-speaker" aria-hidden="true" /><div className="vd-phone-head"><BrandLogo /><strong>Advisor</strong><MessageSquare size={12} aria-hidden="true" /></div><div ref={phoneScreen} className="vd-phone-screen" tabIndex={0} aria-label="Phone Advisor sample screen"><AdvisorExample compact selected={advisorQuestion} onChoose={setAdvisorQuestion} /></div><span className="vd-phone-note">Fictional conversation</span><span className="vd-phone-home" aria-hidden="true" /></aside>
     <p className="vs-demo-caption">Click inside the workspace.<br />Fictional company, signals and conversations.</p>
     <span className="vs-sr-only" role="status" aria-live="polite">{view} sample screen.</span>
   </div>;

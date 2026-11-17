@@ -54,7 +54,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
       <div><Link href="/" className="vs-wordmark"><BrandLogo />VANTAGE</Link><p>Command the signal.<br />Eliminate the noise.</p></div>
       <div><span className="vs-kicker">Explore</span><Link href="/product">How VANTAGE works</Link><Link href="/use-cases">Who it’s for</Link><Link href="/pilot">The free pilot</Link><Link href="/book">Book a walkthrough</Link></div>
       <div><span className="vs-kicker">Company</span><Link href="/about">Our story</Link><Link href="/trust">Sources & AI</Link><Link href="/about#mission">Mission & vision</Link><Link href="/contact">Contact us</Link></div>
-      <div className="vs-footer-note"><span className="vs-kicker">Decision intelligence</span><p>For founder-led companies. See what changed, stress-test the call, keep the record.</p></div>
+      <div className="vs-footer-note"><span className="vs-kicker">Decision intelligence</span><p>For founder-led companies. Know your business, connect what changed, make the call and keep the record.</p></div>
     </div><div className="vs-container vs-footer-bottom"><span>© {new Date().getFullYear()} VANTAGE</span><span>Better evidence. Clearer decisions.</span><Link href="/login">Open your workspace <ArrowUpRight size={14} /></Link></div></footer>
   </div></MarketingMotionContext.Provider>;
 }

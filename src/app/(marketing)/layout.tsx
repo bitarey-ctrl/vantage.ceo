@@ -14,10 +14,10 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.vantage.ceo"),
   title: { default: "VANTAGE: Decision intelligence for founders and CEOs", template: "%s | VANTAGE" },
   description:
-    "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies. Try it free for 14 days.",
+    "VANTAGE knows your business, connects the outside changes that touch it, and helps you make and record the decision. Decision intelligence for founder-led companies. Free 14-day pilot.",
   openGraph: {
     title: "VANTAGE: Decision intelligence for founders and CEOs",
-    description: "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies.",
+    description: "VANTAGE knows your business, connects the outside changes that touch it, and helps you make and record the decision.",
     images: [{ url: "/logo.png", width: 1200, height: 630 }],
   },
 };

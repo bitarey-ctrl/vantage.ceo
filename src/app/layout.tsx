@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.vantage.ceo"),
   title: "VANTAGE: Decision intelligence for founders and CEOs",
   description:
-    "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies.",
+    "VANTAGE knows your business, connects the outside changes that touch it, and helps you make and record the decision.",
   // Icons are driven entirely from here. The Next scaffold's
   // src/app/favicon.ico used to sit alongside this and won — the file
   // convention takes precedence over metadata — which is why the tab
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "VANTAGE: Decision intelligence for founders and CEOs",
     description:
-      "See what changed, stress-test the decision, keep the record. Command the signal. Eliminate the noise.",
+      "Your business, the world around it, one clear decision. Decision intelligence for founder-led companies.",
     images: [{ url: "/logo.png", width: 1200, height: 630 }],
   },
 };
