@@ -25,9 +25,9 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.vantage.ceo"),
-  title: "VANTAGE — Strategic Intelligence Platform",
+  title: "VANTAGE: Decision intelligence for founders and CEOs",
   description:
-    "Strategic second brain for founders and CEOs. Consequence-mapped executive intelligence.",
+    "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies.",
   // Icons are driven entirely from here. The Next scaffold's
   // src/app/favicon.ico used to sit alongside this and won — the file
   // convention takes precedence over metadata — which is why the tab
@@ -44,9 +44,9 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
   openGraph: {
-    title: "VANTAGE — Command the Signal",
+    title: "VANTAGE: Decision intelligence for founders and CEOs",
     description:
-      "Strategic intelligence platform for CEOs. Command the signal. Eliminate the noise.",
+      "See what changed, stress-test the decision, keep the record. Command the signal. Eliminate the noise.",
     images: [{ url: "/logo.png", width: 1200, height: 630 }],
   },
 };

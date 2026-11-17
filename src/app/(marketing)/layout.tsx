@@ -12,9 +12,14 @@ const display = Inter_Tight({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.vantage.ceo"),
-  title: { default: "VANTAGE — Strategic intelligence for operating CEOs", template: "%s | VANTAGE" },
+  title: { default: "VANTAGE: Decision intelligence for founders and CEOs", template: "%s | VANTAGE" },
   description:
-    "Connect market and competitor signals to your business. Weigh your options and keep the reasoning behind your next decision. Explore a free 14-day founder-led pilot.",
+    "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies. Try it free for 14 days.",
+  openGraph: {
+    title: "VANTAGE: Decision intelligence for founders and CEOs",
+    description: "See what changed, stress-test the decision, keep the record. Decision intelligence for founder-led companies.",
+    images: [{ url: "/logo.png", width: 1200, height: 630 }],
+  },
 };
 
 export const viewport: Viewport = { themeColor: "#fbfbfb" };
